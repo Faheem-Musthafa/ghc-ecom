@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../components/ProductCard';
 import { useCart } from '../contexts/CartContext';
-import { categories, products, canisterImg, kettleImg, cutleryImg, nutsImg, jugImg, cupImg, logo } from '../data/products';
+import { categories, products, canisterImg, kettleImg, cutleryImg, nutsImg, jugImg, logo } from '../data/products';
 
 const HomePage: React.FC = () => {
     const cartContext = useCart();
