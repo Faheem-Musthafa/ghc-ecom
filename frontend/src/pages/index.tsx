@@ -1,8 +1,8 @@
-import React from 'react';
+﻿import React from 'react';
 import { Link } from 'react-router-dom';
 import ProductCard from '../components/ProductCard';
 import { useCart } from '../contexts/CartContext';
-import { categories, products, canisterImg, kettleImg, cutleryImg, nutsImg, jugImg, cupImg, denner123, logo } from '../data/products';
+import { categories, products, canisterImg, kettleImg, cutleryImg, nutsImg, jugImg, cupImg, logo } from '../data/products';
 
 const HomePage: React.FC = () => {
     const cartContext = useCart();
@@ -15,7 +15,9 @@ const HomePage: React.FC = () => {
             {/* Header */}
             <header className="header">
                 <div className="header-content">
-                    {/* <div className="header-logo">Glockry Home Center</div> */}
+                    <Link to="/" className="header-logo-link" aria-label="Glockry Home Center home">
+                        <img src={logo} alt="Glockry Home Center" className="header-logo-image" />
+                    </Link>
                     <nav className="header-nav">
                         <Link to="/" className="nav-link">Home</Link>
                         <a href="#products" className="nav-link">Products</a>
@@ -29,37 +31,57 @@ const HomePage: React.FC = () => {
 
             {/* Hero Section */}
             <section className="hero-section">
-                <div className="hero-content">
-                    <span className="hero-eyebrow">Premium Crockery Destination</span>
-                    <h1 className="hero-title">Glockry Home Center</h1>
-                    <p className="hero-subtitle">
-                        Luxury crockery curated for homes that value elegance. Discover timeless dining pieces,
-                        fine textures, and premium designs crafted to elevate every table.
-                    </p>
-                    <div className="hero-actions">
-                        <a href="#products" className="hero-cta">Explore Collection</a>
-                        <Link to="/category/sets" className="hero-cta-secondary">View Signature Sets</Link>
+                <div className="hero-custom-inner">
+                    <div className="hero-left">
+                        <span className="hero-eyebrow">Premium crockery destination</span>
+                        <img src={logo} alt="Glockry Home Center" className="hero-brand-logo" />
+                        <p className="hero-copy">
+                            Premium crockery crafted for elegant homes. Discover refined canister sets,
+                            signature serveware, and luxury table pieces designed to elevate everyday dining.
+                        </p>
+                        <a href="#products" className="hero-btn">
+                            Buy Now
+                        </a>
+                        <div className="hero-stats">
+                            <div className="hero-stat">
+                                <strong>10k+</strong>
+                                <span>Happy homes</span>
+                            </div>
+                            <div className="hero-stat">
+                                <strong>Premium</strong>
+                                <span>Finish & feel</span>
+                            </div>
+                            <div className="hero-stat">
+                                <strong>Luxury</strong>
+                                <span>Everyday dining</span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="hero-points">
-                        <div className="hero-point">Premium finish crockery</div>
-                        <div className="hero-point">Elegant handcrafted feel</div>
-                        <div className="hero-point">Trusted by 10k+ families</div>
-                    </div>
-                </div>
 
-                <div className="hero-visual">
-                    <div className="hero-glow" aria-hidden="true"></div>
-                    <div className="hero-frame">
-                        <img src={logo} alt="Glockry Home Center logo" className="hero-logo" />
-                        <img src={kettleImg} alt="Premium kettle collection" className="hero-main-image" />
-                    </div>
-                    <div className="hero-highlight-card">
-                        <span className="hero-highlight-badge">Luxury Pick</span>
-                        <img src={denner123} alt="Signature dinner collection" />
-                        <p>Signature Dinner Collection</p>
-                    </div>
-                    <div className="hero-floating-thumb">
-                        <img src={cutleryImg} alt="Gold cutlery set" />
+                    <div className="hero-right">
+                        <div className="hero-visual-stack">
+                            <div className="hero-frame">
+                                <img
+                                    src={kettleImg}
+                                    alt="Premium crockery collection"
+                                    className="hero-main-shot"
+                                />
+                            </div>
+                            <div className="hero-side-card hero-side-card-top">
+                                <img src={canisterImg} alt="Luxury canister set" />
+                                <div>
+                                    <span>Signature set</span>
+                                    <strong>Elegant storage collection</strong>
+                                </div>
+                            </div>
+                            <div className="hero-side-card hero-side-card-bottom">
+                                <img src={cutleryImg} alt="Luxury cutlery set" />
+                                <div>
+                                    <span>Gold accent</span>
+                                    <strong>Premium table styling</strong>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -134,12 +156,17 @@ const HomePage: React.FC = () => {
             </section>
 
             {/* Banner Section */}
-            <section className="banner-section">
-                <h2>Pure. Simple. Premium.</h2>
-                <div className="banner-images">
-                    <img src={canisterImg} alt="Why Glockery" />
-                    <img src={kettleImg} alt="Why Glockery" />
-                    <img src={cupImg} alt="Why Glockery" />
+            <section className="trusted-by-banner">
+                <img
+                    className="banner-image"
+                    src={nutsImg}
+                    alt="Trusted by customers"
+                    loading="lazy"
+                />
+                <div className="banner-overlay"></div>
+                <div className="banner-content">
+                    <h2 className="banner-title">Trusted By 10k+ Family</h2>
+                    <p className="banner-subtitle">Quality products loved by households</p>
                 </div>
             </section>
 
