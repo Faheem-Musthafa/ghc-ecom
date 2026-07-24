@@ -1,68 +1,34 @@
-import React from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import CartDrawer from '../components/CartDrawer';
+import Header from '../components/Header';
 import ProductCard from '../components/ProductCard';
-import { useCart } from '../contexts/CartContext';
-import { products } from '../data/products';
+import SEOHead from '../components/SEOHead';
+import StoreFooter from '../components/StoreFooter';
+import Toast from '../components/Toast';
+import { api } from '../lib/api';
+import { Product } from '../types';
 
-const CategoryPage: React.FC = () => {
+const CategoryPage = () => {
     const { categoryId } = useParams<{ categoryId: string }>();
-    const cartContext = useCart();
-    const cartCount = cartContext?.state.items.length || 0;
-
-    const categoryName = categoryId ? categoryId.charAt(0).toUpperCase() + categoryId.slice(1) : '';
-    const filteredProducts = products.filter(product => 
-  product.category?.toLowerCase() === (categoryId || "").toLowerCase()
-);
+    const [products, setProducts] = useState<Product[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    useEffect(() => {
+        const params = new URLSearchParams({ page: '1', limit: '48', category: categoryId });
+        setLoading(true);
+        api.products(params).then((result) => setProducts(result.items)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load category.')).finally(() => setLoading(false));
+    }, [categoryId]);
+    const name = products[0]?.category.name || categoryId.replace(/-/g, ' ');
 
     return (
-        <div>
-            {/* Header */}
-            <header className="header">
-                <div className="header-content">
-                    <div className="header-logo">Glockery Home Center</div>
-                    <nav className="header-nav">
-                        <Link to="/" className="nav-link">Home</Link>
-                        <a href="#products" className="nav-link">Products</a>
-                        <Link to="/cart" className="cart-link">
-                            Cart {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
-                        </Link>
-                        <a href="#contact" className="nav-link">Contact</a>
-                    </nav>
-                </div>
-            </header>
-
-            {/* Category Products Section */}
-            <section className="products-section">
-                <h2>{categoryName} Collection</h2>
-                <div className="products-grid">
-                    {filteredProducts.map(product => (
-                        <ProductCard key={product.id} product={product} />
-                    ))}
-                </div>
-                {filteredProducts.length === 0 && (
-                    <p>No products found in this category.</p>
-                )}
-            </section>
-
-            {/* Footer */}
-            <footer className="footer">
-                <div className="footer-content">
-                    <div className="email-signup">
-                        <h2>Join our email list</h2>
-                        <p>Get exclusive deals and early access to new products.</p>
-                        <form className="signup-form">
-                            <input type="email" placeholder="Email address" />
-                            <button type="submit">Sign up</button>
-                        </form>
-                    </div>
-                    <a href="https://wa.me/919207232303" className="whatsapp-link" target="_blank" rel="noopener noreferrer">
-                        <img src="https://img.icons8.com/color/48/000000/whatsapp.png" alt="Chat on WhatsApp" />
-                        Chat on WhatsApp
-                    </a>
-                </div>
-            </footer>
+        <div className="min-h-screen bg-obsidian text-cream"><SEOHead title={`${name} | Glockery`} /><Header />
+            <main id="main-content" className="mx-auto max-w-[1440px] px-6 py-14 sm:px-10 lg:px-12 lg:py-20">
+                <nav className="text-[10px] uppercase tracking-[0.24em] text-cream/35"><Link className="hover:text-gold-300" to="/">Home</Link><span className="mx-3 text-gold-500">/</span>{name}</nav>
+                <header className="mt-12 border-b border-gold-500/20 pb-12"><p className="text-[10px] uppercase tracking-[0.3em] text-gold-400">Curated category</p><h1 className="mt-4 font-display text-6xl capitalize sm:text-7xl">{name}</h1><p className="mt-5 text-sm text-cream/45">{loading ? 'Loading…' : `${products.length} statement ${products.length === 1 ? 'piece' : 'pieces'}`}</p></header>
+                {error ? <p className="mt-12 border border-red-500/30 p-6 text-red-200">{error}</p> : !loading && products.length === 0 ? <div className="py-28 text-center"><h2 className="font-display text-4xl">No published pieces in this category.</h2><Link to="/" className="mt-6 inline-block text-xs uppercase tracking-[0.2em] text-gold-300 underline">View the full collection</Link></div> : <div className="mt-14 grid grid-cols-1 gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{products.map((product) => <ProductCard key={product.id} product={product} />)}</div>}
+            </main><StoreFooter /><CartDrawer /><Toast />
         </div>
     );
 };
-
 export default CategoryPage;
