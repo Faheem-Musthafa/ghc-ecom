@@ -1,0 +1,38 @@
+import {
+  IsBoolean,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+} from 'class-validator';
+
+export class CreateVariantDto {
+  @IsString()
+  @MaxLength(80)
+  @Matches(/^[A-Z0-9][A-Z0-9._-]*$/)
+  sku!: string;
+
+  @IsString()
+  @MaxLength(120)
+  name!: string;
+
+  @IsInt()
+  @Min(0)
+  pricePaise!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  compareAtPricePaise?: number;
+
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}

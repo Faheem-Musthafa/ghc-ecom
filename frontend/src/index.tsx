@@ -1,25 +1,82 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
-import './styles/globals.css';
-import HomePage from './pages';
-import CartPage from './pages/cart';
-import CategoryPage from './pages/category';
-import ProductDetailPage from './pages/product';
+import ErrorBoundary from './components/ErrorBoundary';
+import OfflineBanner from './components/OfflineBanner';
+import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
+import { ToastProvider } from './contexts/ToastContext';
+import { WishlistProvider } from './contexts/WishlistContext';
+import './index.css';
+
+import ScrollToTop from './components/ScrollToTop';
+
+const HomePage = lazy(() => import('./pages'));
+const AccountPage = lazy(() => import('./pages/account'));
+const AdminPage = lazy(() => import('./pages/admin'));
+const AuthPage = lazy(() => import('./pages/auth'));
+const CartPage = lazy(() => import('./pages/cart'));
+const CategoryPage = lazy(() => import('./pages/category'));
+const CheckoutPage = lazy(() => import('./pages/checkout'));
+const ErrorPage = lazy(() => import('./pages/error'));
+const OrderConfirmationPage = lazy(() => import('./pages/order-confirmation'));
+const OrderDetailPage = lazy(() => import('./pages/order'));
+const OrderLookupPage = lazy(() => import('./pages/order-lookup'));
+const ProductDetailPage = lazy(() => import('./pages/product'));
+const ResetPasswordPage = lazy(() => import('./pages/reset-password'));
+const SearchPage = lazy(() => import('./pages/search'));
+const ShipmentTrackingPage = lazy(() => import('./pages/tracking'));
+const WishlistPage = lazy(() => import('./pages/wishlist'));
+const InfoPage = lazy(() => import('./pages/info'));
+
+const RouteFallback = () => (
+  <div className="grid min-h-screen place-items-center bg-obsidian text-gold-300" role="status">
+    <span className="text-xs uppercase tracking-[0.28em]">Loading Glockery…</span>
+  </div>
+);
 
 ReactDOM.render(
   <React.StrictMode>
-    <CartProvider>
-      <Router>
-        <Switch>
-          <Route exact path="/" component={HomePage} />
-          <Route path="/cart" component={CartPage} />
-          <Route path="/category/:categoryId" component={CategoryPage} />
-          <Route path="/product/:productId" component={ProductDetailPage} />
-        </Switch>
-      </Router>
-    </CartProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <CartProvider>
+          <WishlistProvider>
+            <ToastProvider>
+              <OfflineBanner />
+              <Router>
+                <ScrollToTop />
+                <Suspense fallback={<RouteFallback />}>
+                  <Switch>
+                    <Route exact path="/" component={HomePage} />
+                    <Route exact path="/cart" component={CartPage} />
+                    <Route exact path="/checkout" component={CheckoutPage} />
+                    <Route exact path="/auth" component={AuthPage} />
+                    <Route exact path="/auth/reset-password" component={ResetPasswordPage} />
+                    <Route exact path="/search" component={SearchPage} />
+                    <Route exact path="/wishlist" component={WishlistPage} />
+                    <Route exact path="/about" render={() => <InfoPage kind="about" />} />
+                    <Route exact path="/shipping-returns" render={() => <InfoPage kind="shipping" />} />
+                    <Route exact path="/faq" render={() => <InfoPage kind="faq" />} />
+                    <Route exact path="/contact" render={() => <InfoPage kind="contact" />} />
+                    <Route exact path="/privacy" render={() => <InfoPage kind="privacy" />} />
+                    <Route exact path="/terms" render={() => <InfoPage kind="terms" />} />
+                    <Route exact path="/order-confirmation/:orderId" component={OrderConfirmationPage} />
+                    <Route exact path="/order-lookup" component={OrderLookupPage} />
+                    <Route exact path="/tracking/:trackingNumber?" component={ShipmentTrackingPage} />
+                    <Route path="/account/orders/:orderId" component={OrderDetailPage} />
+                    <Route path="/account" component={AccountPage} />
+                    <Route path="/admin" component={AdminPage} />
+                    <Route path="/category/:categoryId" component={CategoryPage} />
+                    <Route path="/product/:productId" component={ProductDetailPage} />
+                    <Route component={ErrorPage} />
+                  </Switch>
+                </Suspense>
+              </Router>
+            </ToastProvider>
+          </WishlistProvider>
+        </CartProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
   document.getElementById('root')
 );

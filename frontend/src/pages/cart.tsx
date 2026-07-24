@@ -1,169 +1,35 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
+import Header from '../components/Header';
+import { IconArrowRight, IconMinus, IconPackage, IconPlus, IconShieldCheck } from '../components/Icons';
+import StoreFooter from '../components/StoreFooter';
+import SEOHead from '../components/SEOHead';
 import { useCart } from '../contexts/CartContext';
+import { fallbackImage, rupees } from '../lib/commerce';
 
-const fallbackProductImage = `${process.env.PUBLIC_URL}/img/canister.jpeg`;
-
-const CartPage: React.FC = () => {
-    const cartContext = useCart();
-    
-    if (!cartContext) {
-        throw new Error('CartPage must be used within CartProvider');
-    }
-
-    const { state, removeItem, clearCart } = cartContext;
-    const [removingId, setRemovingId] = useState<string | null>(null);
-
-    const totalPrice = state.items.reduce((total, item) => total + item.price, 0);
-    const taxAmount = totalPrice * 0.1;
-    const shippingCost = totalPrice > 50 ? 0 : 5;
-    const finalTotal = totalPrice + taxAmount + shippingCost;
-
-    const handleRemove = (id: string) => {
-        setRemovingId(id);
-        setTimeout(() => {
-            removeItem(id);
-            setRemovingId(null);
-        }, 300);
-    };
-
-    if (state.items.length === 0) {
-        return (
-            <div>
-                <header className="header">
-                    <div className="header-content">
-                        <div className="header-logo">🍽️ Glockery Home Center</div>
-                        <Link to="/" className="nav-link">← Back to Home</Link>
-                    </div>
-                </header>
-                <div className="cart-container">
-                    <h1>Shopping Cart</h1>
-                    <div className="empty-cart">
-                        <div className="empty-icon">🛒</div>
-                        <p>Your cart is empty</p>
-                        <small>Add some delicious crockery to get started!</small>
-                        <Link to="/" className="btn-continue-shopping">Continue Shopping</Link>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
+const CartPage = () => {
+    const { cart, loading, error, updateQuantity, removeItem } = useCart();
+    const items = cart?.items || [];
     return (
-        <div>
-            <header className="header">
-                <div className="header-content">
-                    <div className="header-logo">🍽️ Glockery Home Center</div>
-                    <Link to="/" className="nav-link">← Back to Home</Link>
-                </div>
-            </header>
-
-            <div className="cart-container">
-                <h1>Shopping Cart 🛒</h1>
-                <p className="cart-subtitle">{state.items.length} item{state.items.length !== 1 ? 's' : ''} in your cart</p>
-
-                <div className="cart-content">
-                    <div className="cart-items-section">
-                        <div className="cart-items">
-                            {state.items.map((item, index) => (
-                                <div 
-                                    key={item.id} 
-                                    className={`cart-item ${removingId === item.id ? 'removing' : ''}`}
-                                    style={{ animationDelay: `${index * 50}ms` }}
-                                >
-                                    <div className="item-image-wrapper">
-                                        <img
-                                            src={item.imageUrl}
-                                            alt={item.name}
-                                            onError={(event) => {
-                                                event.currentTarget.onerror = null;
-                                                event.currentTarget.src = fallbackProductImage;
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="item-details">
-                                        <h3>{item.name}</h3>
-                                        <p className="item-desc">{item.description}</p>
-                                        <div className="item-meta">
-                                            {typeof item.mrp === 'number' && (
-                                                <span className="item-price-mrp">MRP: ${item.mrp.toFixed(2)}</span>
-                                            )}
-                                            <span className="item-price-ghp">GHP: ${item.price.toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                    <button 
-                                        className="btn-remove-item" 
-                                        onClick={() => handleRemove(item.id)}
-                                        title="Remove from cart"
-                                    >
-                                        ✕
-                                    </button>
+        <div className="min-h-screen bg-obsidian text-cream"><SEOHead title="Shopping bag | Glockery" /><Header />
+            <main id="main-content" className="mx-auto max-w-[1280px] px-6 py-14 sm:px-10 lg:px-12 lg:py-20">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-gold-400">Your selection</p><h1 className="mt-4 font-display text-6xl">Shopping bag.</h1>
+                {error && <p className="mt-6 border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-200">{error}</p>}
+                {!items.length && !loading ? <div className="mt-14 grid min-h-[420px] place-content-center border border-gold-500/20 bg-carbon text-center"><IconPackage className="mx-auto text-gold-400" size={44} /><h2 className="mt-6 font-display text-4xl">Nothing here—yet.</h2><Link to="/" className="mt-7 inline-flex h-12 items-center justify-center bg-gold-400 px-6 text-xs font-bold uppercase tracking-[0.2em] text-obsidian">Explore collection</Link></div> :
+                    <div className="mt-12 grid gap-12 lg:grid-cols-[1fr_380px]">
+                        <div className="divide-y divide-gold-500/20 border-y border-gold-500/20">
+                            {items.map((item) => <article key={item.id} className="grid gap-6 py-7 sm:grid-cols-[130px_1fr]">
+                                <img src={item.imageUrl || fallbackImage} alt={item.productName} className="aspect-[4/5] w-full object-cover" />
+                                <div className="flex min-w-0 flex-col justify-between">
+                                    <div className="flex items-start justify-between gap-4"><div><p className="text-[9px] uppercase tracking-[0.22em] text-gold-400">{item.sku}</p><h2 className="mt-2 font-display text-2xl">{item.productName}</h2><p className="mt-2 text-sm text-cream/40">{item.variantName}</p></div><button onClick={() => void removeItem(item.variantId)} className="text-xs text-cream/40 hover:text-gold-300">Remove</button></div>
+                                    <div className="mt-6 flex items-center justify-between"><div className="flex h-11 border border-gold-500/25"><button className="grid w-11 place-items-center" onClick={() => void updateQuantity(item.variantId, item.quantity - 1)}><IconMinus size={13} /></button><span className="grid w-10 place-items-center text-sm">{item.quantity}</span><button className="grid w-11 place-items-center" onClick={() => void updateQuantity(item.variantId, item.quantity + 1)}><IconPlus size={13} /></button></div><strong className="font-display text-2xl font-normal text-gold-300">{rupees(item.lineTotalPaise)}</strong></div>
                                 </div>
-                            ))}
+                            </article>)}
                         </div>
-                    </div>
-
-                    <div className="cart-sidebar">
-                        <div className="order-summary">
-                            <h2>Order Summary</h2>
-                            
-                            <div className="summary-row">
-                                <span className="label">Subtotal</span>
-                                <span className="value">${totalPrice.toFixed(2)}</span>
-                            </div>
-
-                            <div className="summary-row">
-                                <span className="label">
-                                    Shipping
-                                    <small>{shippingCost === 0 ? '(Free!)' : ''}</small>
-                                </span>
-                                <span className="value">${shippingCost.toFixed(2)}</span>
-                            </div>
-
-                            <div className="summary-row">
-                                <span className="label">Tax (10%)</span>
-                                <span className="value">${taxAmount.toFixed(2)}</span>
-                            </div>
-
-                            <div className="summary-divider"></div>
-
-                            <div className="summary-total">
-                                <span>Total Amount</span>
-                                <span className="total-price">${finalTotal.toFixed(2)}</span>
-                            </div>
-
-                            <button className="btn-checkout-primary">
-                                Proceed to Checkout
-                            </button>
-
-                            <Link to="/" className="btn-continue-shopping-link">
-                                Continue Shopping
-                            </Link>
-
-                            <button 
-                                className="btn-clear-cart-link" 
-                                onClick={() => {
-                                    if (window.confirm('Are you sure you want to clear your cart?')) {
-                                        clearCart();
-                                    }
-                                }}
-                            >
-                                Clear Cart
-                            </button>
-                        </div>
-
-                        <div className="promo-card">
-                            <h3>Got a promo code?</h3>
-                            <div className="promo-input-group">
-                                <input type="text" placeholder="Enter code" className="promo-input" />
-                                <button className="btn-apply">Apply</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                        <aside className="h-fit border border-gold-500/25 bg-carbon p-7 lg:sticky lg:top-32"><p className="text-[10px] uppercase tracking-[0.3em] text-gold-400">Order summary</p><div className="mt-7 flex justify-between border-b border-gold-500/15 pb-5 text-sm"><span className="text-cream/45">Subtotal</span><strong className="font-normal">{rupees(cart?.subtotalPaise || 0)}</strong></div><p className="mt-5 text-xs leading-6 text-cream/40">Delivery, discount, and GST are calculated securely by the backend at checkout.</p><Link to="/checkout" className="mt-7 flex h-14 items-center justify-center gap-3 bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian hover:bg-gold-300">Continue securely <IconArrowRight size={17} /></Link><p className="mt-5 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.14em] text-cream/35"><IconShieldCheck size={14} /> Razorpay protected</p></aside>
+                    </div>}
+            </main><StoreFooter />
         </div>
     );
 };
-
 export default CartPage;

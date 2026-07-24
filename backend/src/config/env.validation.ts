@@ -1,0 +1,93 @@
+import { z } from 'zod';
+
+export function normalizeSupabaseUrl(value: string): string {
+  return new URL(value).origin;
+}
+
+const environmentSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    HOST: z.string().min(1).default('0.0.0.0'),
+    PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
+    API_BODY_LIMIT: z
+      .string()
+      .regex(/^\d+(?:kb|mb)$/i)
+      .default('1mb'),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+    ENABLE_SWAGGER: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    HTTP_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
+    HTTP_HEADERS_TIMEOUT_MS: z.coerce.number().int().min(2_000).max(121_000).default(35_000),
+    HTTP_KEEP_ALIVE_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(5_000),
+    OUTBOUND_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+    CSRF_SECRET: z.string().min(32).default('development-only-csrf-secret-change-me'),
+    SESSION_REFRESH_TTL_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(3_600)
+      .max(31_536_000)
+      .default(2_592_000),
+    FRONTEND_ORIGIN: z.string().url(),
+    API_PUBLIC_URL: z.string().url(),
+    DATABASE_URL: z.string().url(),
+    DIRECT_URL: z.string().url(),
+    REDIS_URL: z.string().url(),
+    RATE_LIMIT_TTL_MS: z.coerce.number().int().positive().default(60_000),
+    RATE_LIMIT_LIMIT: z.coerce.number().int().positive().default(100),
+    SUPABASE_URL: z.string().url().transform(normalizeSupabaseUrl),
+    SUPABASE_ANON_KEY: z.string().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    RAZORPAY_KEY_ID: z.string().min(1),
+    RAZORPAY_KEY_SECRET: z.string().min(1),
+    RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
+    EMAIL_FROM: z.string().email(),
+    SMTP_HOST: z.string().min(1),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
+    SMTP_USER: z.string().min(1),
+    SMTP_PASSWORD: z.string().min(1),
+    NOTIFICATION_WEBHOOK_URL: z.string().url().optional(),
+    NOTIFICATION_WEBHOOK_TOKEN: z.string().min(1).optional(),
+    SHIPPING_PROVIDER_URL: z.string().url().optional(),
+    SHIPPING_PROVIDER_TOKEN: z.string().min(1).optional(),
+    SHIPPING_PROVIDER_NAME: z.string().min(1).default('manual'),
+    ALERT_WEBHOOK_URL: z.string().url().optional(),
+    ALERT_WEBHOOK_TOKEN: z.string().min(1).optional(),
+    RETURN_WINDOW_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  })
+  .superRefine((environment, context) => {
+    if (environment.HTTP_HEADERS_TIMEOUT_MS <= environment.HTTP_REQUEST_TIMEOUT_MS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['HTTP_HEADERS_TIMEOUT_MS'],
+        message: 'must be greater than HTTP_REQUEST_TIMEOUT_MS',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      (environment.CSRF_SECRET.includes('replace-with') ||
+        environment.CSRF_SECRET.includes('development-only'))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CSRF_SECRET'],
+        message: 'must be a production secret',
+      });
+    }
+  });
+
+export type Environment = z.infer<typeof environmentSchema>;
+
+export function validateEnvironment(config: Record<string, unknown>): Environment {
+  const result = environmentSchema.safeParse(config);
+
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid environment configuration: ${issues}`);
+  }
+
+  return result.data;
+}
