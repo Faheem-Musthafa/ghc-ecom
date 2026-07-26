@@ -162,11 +162,13 @@ export class CartService {
     guestToken?: string,
   ): Promise<CartWithItems> {
     const userId = await this.optionalUserId(authorization);
-    const ownerWhere: Prisma.CartWhereInput = userId
-      ? { userId }
-      : guestToken
-        ? { guestTokenHash: this.hashToken(guestToken) }
-        : { id: '__unauthorized__' };
+    let ownerWhere: Prisma.CartWhereInput;
+    if (userId) {
+      ownerWhere = { userId };
+    } else {
+      if (!guestToken) throw new UnauthorizedException('Cart access denied');
+      ownerWhere = { guestTokenHash: this.hashToken(guestToken) };
+    }
     const cart = await this.prisma.cart.findFirst({
       where: {
         id: cartId,

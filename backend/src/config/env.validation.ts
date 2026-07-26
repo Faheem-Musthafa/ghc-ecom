@@ -4,6 +4,10 @@ export function normalizeSupabaseUrl(value: string): string {
   return new URL(value).origin;
 }
 
+function normalizeOrigin(value: string): string {
+  return new URL(value).origin;
+}
+
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -29,7 +33,7 @@ const environmentSchema = z
       .min(3_600)
       .max(31_536_000)
       .default(2_592_000),
-    FRONTEND_ORIGIN: z.string().url(),
+    FRONTEND_ORIGIN: z.string().url().transform(normalizeOrigin),
     API_PUBLIC_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     DIRECT_URL: z.string().url(),
@@ -74,6 +78,17 @@ const environmentSchema = z
         path: ['CSRF_SECRET'],
         message: 'must be a production secret',
       });
+    }
+    if (environment.NODE_ENV === 'production') {
+      const frontend = new URL(environment.FRONTEND_ORIGIN);
+      const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+      if (frontend.protocol !== 'https:' || localHosts.has(frontend.hostname)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['FRONTEND_ORIGIN'],
+          message: 'must use a public HTTPS origin in production',
+        });
+      }
     }
   });
 

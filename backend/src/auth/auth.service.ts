@@ -40,6 +40,10 @@ export class AuthService {
     return data;
   }
 
+  verifyAccessToken(accessToken: string): Promise<User> {
+    return this.supabase.verifyAccessToken(accessToken);
+  }
+
   logout(accessToken: string): Promise<void> {
     return this.supabase.logout(accessToken);
   }

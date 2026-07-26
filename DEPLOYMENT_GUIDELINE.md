@@ -285,10 +285,10 @@ Production branch: main
 
 ### 6.2 Add frontend environment
 
-For the custom-domain deployment:
+Use the same-origin API proxy in production:
 
 ```env
-VITE_API_URL=https://api.example.com/api/v1
+VITE_API_URL=/api/v1
 ```
 
 This is the only required frontend environment variable. Never put Supabase
@@ -304,7 +304,11 @@ Create `frontend/vercel.json` before deployment:
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/((?!api/).*)",
+      "source": "/api/:path*",
+      "destination": "https://YOUR-BACKEND.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ],
@@ -314,7 +318,7 @@ Create `frontend/vercel.json` before deployment:
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.example.com https://*.razorpay.com https://*.razorpay.in; frame-src https://*.razorpay.com https://*.razorpay.in;"
+          "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.razorpay.com https://*.razorpay.in; frame-src https://*.razorpay.com https://*.razorpay.in;"
         },
         {
           "key": "Referrer-Policy",
@@ -338,7 +342,8 @@ Create `frontend/vercel.json` before deployment:
 }
 ```
 
-Replace `api.example.com` with the real API domain.
+Replace `YOUR-BACKEND` with the Railway backend service name. The committed
+configuration already contains this repository's current Railway service URL.
 
 ### 6.4 Add frontend domain
 
@@ -351,10 +356,10 @@ shop.example.com
 Create the DNS records shown by Vercel. After verification, redeploy so the final
 production environment uses the correct `VITE_API_URL`.
 
-## 7. Temporary deployment without a custom domain
+## 7. Railway-generated backend domain
 
-Do not call the Railway/Render URL directly from a `vercel.app` frontend. Proxy
-`/api` through Vercel so the browser sees one origin.
+Do not call the Railway/Render URL directly from the browser. Proxy `/api` through
+Vercel so session cookies remain first-party and the browser sees one origin.
 
 Set:
 
