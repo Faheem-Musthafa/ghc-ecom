@@ -157,6 +157,11 @@ describe('PaymentsService', () => {
         razorpaySignature: 'a'.repeat(64),
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(razorpay.verifyCheckoutSignature).toHaveBeenCalledWith(
+      'order_provider_1',
+      'pay_1',
+      'a'.repeat(64),
+    );
     expect(razorpay.fetchPayment).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

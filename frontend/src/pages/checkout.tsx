@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { api } from '../lib/api';
 import { fallbackImage, rupees } from '../lib/commerce';
+import { formatRazorpayContact, resolveCheckoutEmail } from '../lib/razorpay';
 import { Address, CheckoutQuote, Order, ShippingAddressInput } from '../types';
 
 declare global {
@@ -60,6 +61,11 @@ const CheckoutPage = () => {
         setError('');
 
         const form = new FormData(event.currentTarget);
+        const submittedEmail = form.get('email');
+        const contactEmail = resolveCheckoutEmail(
+            typeof submittedEmail === 'string' ? submittedEmail : null,
+            session?.user?.email,
+        );
         const shippingAddress: ShippingAddressInput = {
             recipientName: String(form.get('recipientName')),
             phone: String(form.get('phone')),
@@ -80,7 +86,7 @@ const CheckoutPage = () => {
 
             const createdQuote = await api.quote({
                 cartId: cart.id,
-                contactEmail: String(form.get('email')),
+                contactEmail,
                 couponCode: String(form.get('couponCode') || '') || undefined,
                 deliveryMethod,
                 ...(signedIn ? { addressId } : { shippingAddress }),
@@ -89,6 +95,7 @@ const CheckoutPage = () => {
             setQuote(createdQuote);
             const intent = await api.paymentIntent(createdQuote.id);
             await loadRazorpay();
+            const checkoutAddress = intent.checkout.shippingAddress;
 
             await new Promise<void>((resolve, reject) => {
                 const checkout = new window.Razorpay({
@@ -99,7 +106,11 @@ const CheckoutPage = () => {
                     name: 'Glockery Home Centre',
                     description: `Order ${intent.orderNumber}`,
                     theme: { color: '#d4af37' },
-                    prefill: { email: String(form.get('email')), contact: shippingAddress.phone, name: shippingAddress.recipientName },
+                    prefill: {
+                        email: checkoutAddress.email || contactEmail,
+                        contact: formatRazorpayContact(checkoutAddress.phone, checkoutAddress.country),
+                        name: checkoutAddress.recipientName,
+                    },
                     handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
                         try {
                             const verified = await api.verifyPayment({
