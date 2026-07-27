@@ -46,6 +46,15 @@ describe('validateEnvironment', () => {
     ).toBe('https://example.supabase.co');
   });
 
+  it('normalizes the frontend URL to an exact origin', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        FRONTEND_ORIGIN: 'https://www.glockery.com/store/',
+      }).FRONTEND_ORIGIN,
+    ).toBe('https://www.glockery.com');
+  });
+
   it('rejects the development CSRF secret in production', () => {
     expect(() =>
       validateEnvironment({
@@ -54,5 +63,15 @@ describe('validateEnvironment', () => {
         CSRF_SECRET: 'development-only-csrf-secret-change-me',
       }),
     ).toThrow('must be a production secret');
+  });
+
+  it('rejects a localhost frontend origin in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+      }),
+    ).toThrow('must use a public HTTPS origin in production');
   });
 });

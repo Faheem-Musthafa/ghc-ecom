@@ -116,7 +116,7 @@ export class PaymentsService {
     }
     if (
       !this.razorpay.verifyCheckoutSignature(
-        input.razorpayOrderId,
+        order.razorpayOrderId!,
         input.razorpayPaymentId,
         input.razorpaySignature,
       )

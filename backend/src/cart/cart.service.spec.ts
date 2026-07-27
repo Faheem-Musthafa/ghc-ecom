@@ -1,3 +1,4 @@
+import { UnauthorizedException } from '@nestjs/common';
 import { CartStatus } from '@prisma/client';
 import { CartService } from './cart.service';
 
@@ -43,5 +44,19 @@ describe('CartService', () => {
         },
       ],
     });
+  });
+
+  it('rejects a cart request without querying an invalid UUID sentinel', async () => {
+    const prisma = {
+      cart: {
+        findFirst: jest.fn(),
+      },
+    };
+    const service = new CartService(prisma as never, {} as never);
+
+    await expect(service.getCart('c3fd0b35-6f59-4d7b-be52-4b278bd0895c')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(prisma.cart.findFirst).not.toHaveBeenCalled();
   });
 });

@@ -33,6 +33,7 @@ describe('Application health (e2e)', () => {
   const supabase = {
     verifyAccessToken: jest.fn(),
     login: jest.fn(),
+    refresh: jest.fn(),
     logout: jest.fn(),
     resetPassword: jest.fn(),
   };
@@ -66,6 +67,26 @@ describe('Application health (e2e)', () => {
         session: {
           access_token: 'server-only-access-token',
           refresh_token: 'server-only-refresh-token',
+          expires_at: Math.floor(Date.now() / 1_000) + 3_600,
+          user: {
+            id: 'customer-id',
+            email: 'customer@example.com',
+            user_metadata: { full_name: 'Customer' },
+          },
+        },
+      },
+      error: null,
+    });
+    supabase.refresh.mockResolvedValue({
+      data: {
+        user: {
+          id: 'customer-id',
+          email: 'customer@example.com',
+          user_metadata: { full_name: 'Customer' },
+        },
+        session: {
+          access_token: 'refreshed-server-only-access-token',
+          refresh_token: 'refreshed-server-only-refresh-token',
           expires_at: Math.floor(Date.now() / 1_000) + 3_600,
           user: {
             id: 'customer-id',
@@ -176,6 +197,34 @@ describe('Application health (e2e)', () => {
     await request(app.getHttpServer()).get('/api/v1/me/profile').expect(401);
   });
 
+  it('reports an anonymous browser session without expected 401 responses', async () => {
+    const response = await request(app.getHttpServer()).get('/api/v1/auth/session').expect(200);
+
+    expect(response.body).toEqual({ authenticated: false, user: null });
+    expect(supabase.verifyAccessToken).not.toHaveBeenCalled();
+    expect(supabase.refresh).not.toHaveBeenCalled();
+  });
+
+  it('restores an expired browser session from its refresh cookie', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/auth/session')
+      .set('cookie', 'ghc_refresh=server-only-refresh-token')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      authenticated: true,
+      user: { id: 'customer-id', email: 'customer@example.com' },
+      csrfToken: expect.any(String),
+    });
+    expect(supabase.refresh).toHaveBeenCalledWith('server-only-refresh-token');
+    expect(response.headers['set-cookie']).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^ghc_access=.*HttpOnly.*SameSite=Lax/),
+        expect.stringMatching(/^ghc_refresh=.*HttpOnly.*SameSite=Lax/),
+      ]),
+    );
+  });
+
   it('keeps session credentials in HttpOnly cookies and enforces CSRF', async () => {
     const browser = request.agent(app.getHttpServer());
     const login = await browser
@@ -197,6 +246,17 @@ describe('Application health (e2e)', () => {
         expect.stringMatching(/^ghc_csrf=.*HttpOnly.*SameSite=Lax/),
       ]),
     );
+
+    await browser
+      .get('/api/v1/auth/session')
+      .expect(200)
+      .expect({
+        authenticated: true,
+        user: {
+          id: 'customer-id',
+          email: 'customer@example.com',
+        },
+      });
 
     await browser.post('/api/v1/auth/logout').expect(403);
     await browser.post('/api/v1/auth/logout').set('x-csrf-token', login.body.csrfToken).expect(204);

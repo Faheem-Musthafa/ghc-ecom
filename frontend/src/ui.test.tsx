@@ -46,7 +46,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     if (url.endsWith('/auth/session')) {
         return mockAuthenticated
             ? json({ authenticated: true, user: { id: 'user-1', email: 'admin@example.com' } })
-            : json({ message: 'Authentication is required' }, 401);
+            : json({ authenticated: false, user: null });
     }
     if (url.endsWith('/auth/refresh')) return json({ message: 'Session refresh is unavailable' }, 401);
     if (url.endsWith('/carts') && init?.method === 'POST') return json({ cart: emptyCart, guestToken: 'guest-token' });
@@ -93,9 +93,10 @@ describe('black and gold commerce UI', () => {
 
     it('renders the black-and-gold storefront from the catalogue API', async () => {
         const container = await render(<HomePage />);
-        expect(container.textContent).toContain('Craft the moment.');
+        expect(container.textContent).toContain('Morning ritual.');
         expect(container.textContent).toContain('Noir Gold Serving Set');
         expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/products?'), expect.anything());
+        expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), expect.anything());
     });
 
     it('loads a product by slug and writes its variant to the backend cart', async () => {

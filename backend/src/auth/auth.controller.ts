@@ -8,19 +8,15 @@ import {
   Req,
   Res,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService, AuthResult } from './auth.service';
-import { AuthenticatedUser } from './authenticated-user';
 import { CsrfService } from './csrf.service';
-import { CurrentUser } from './decorators/current-user.decorator';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
 import { SessionCookieService } from './session-cookie.service';
 
 interface BrowserUser {
@@ -53,13 +49,43 @@ export class AuthController {
   }
 
   @Get('session')
-  @UseGuards(SupabaseAuthGuard)
-  session(
-    @CurrentUser() user: AuthenticatedUser,
+  async session(
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): BrowserAuthResponse {
+  ): Promise<BrowserAuthResponse> {
     this.cookies.noStore(response);
-    return { authenticated: true, user };
+    const accessToken = this.cookies.readAccessToken(request);
+
+    if (accessToken) {
+      try {
+        const user = await this.authService.verifyAccessToken(accessToken);
+        return {
+          authenticated: true,
+          user: this.publicUser({ user, session: null }),
+        };
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException)) throw error;
+      }
+    }
+
+    const refreshToken = this.cookies.readRefreshToken(request);
+    if (!refreshToken) {
+      if (accessToken) this.cookies.clear(response);
+      return { authenticated: false, user: null };
+    }
+
+    try {
+      const result = await this.authService.refresh(refreshToken);
+      if (!result.session) {
+        this.cookies.clear(response);
+        return { authenticated: false, user: null };
+      }
+      return this.completeAuthentication(result, request, response);
+    } catch (error) {
+      if (!(error instanceof UnauthorizedException)) throw error;
+      this.cookies.clear(response);
+      return { authenticated: false, user: null };
+    }
   }
 
   @Post('register')

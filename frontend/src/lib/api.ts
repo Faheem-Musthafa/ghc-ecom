@@ -138,20 +138,10 @@ export const api = {
         try {
             const csrf = await request<{ csrfToken: string }>('/auth/csrf', {}, { retry: false });
             csrfToken = csrf.csrfToken;
-            try {
-                const result = await request<AuthResult>('/auth/session', {}, { retry: false });
-                const session = normalizeAuth(result);
-                saveSession(session);
-                return session;
-            } catch (error) {
-                if (!(error instanceof ApiError) || error.status !== 401) throw error;
-                const refreshed = await request<AuthResult>('/auth/refresh', {
-                    method: 'POST',
-                }, { retry: false });
-                const session = normalizeAuth(refreshed);
-                saveSession(session);
-                return session;
-            }
+            const result = await request<AuthResult>('/auth/session', {}, { retry: false });
+            const session = normalizeAuth(result);
+            saveSession(session);
+            return session;
         } catch {
             saveSession(null);
             return null;
