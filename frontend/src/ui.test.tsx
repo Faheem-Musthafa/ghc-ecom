@@ -93,7 +93,7 @@ describe('black and gold commerce UI', () => {
 
     it('renders the black-and-gold storefront from the catalogue API', async () => {
         const container = await render(<HomePage />);
-        expect(container.textContent).toContain('Morning ritual.');
+        expect(container.textContent).toContain('Objects with presence.');
         expect(container.textContent).toContain('Noir Gold Serving Set');
         expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/products?'), expect.anything());
         expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), expect.anything());
