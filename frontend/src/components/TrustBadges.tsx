@@ -2,16 +2,19 @@ import React from 'react';
 import { IconAward, IconShieldCheck, IconTruck } from './Icons';
 
 const TrustBadges = () => (
-    <section className="border-y border-gold-500/20 bg-carbon">
-        <div className="mx-auto grid max-w-[1440px] divide-y divide-gold-500/15 px-6 sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:px-12">
+    <section className="border-y border-line bg-obsidian" aria-label="Shopping assurances">
+        <div className="mx-auto grid max-w-[1440px] divide-y divide-line px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:px-8 lg:px-12">
             {[
-                [<IconAward />, 'Made to command attention', 'Distinctive material and finish'],
-                [<IconTruck />, 'Protected delivery', 'Breakage-safe packaging across India'],
-                [<IconShieldCheck />, 'Secure by design', 'Server-verified Razorpay payments'],
+                [<IconAward size={20} className="shrink-0 text-gold-400" />, 'Considered selection', 'Chosen for material, proportion, and daily use'],
+                [<IconTruck size={20} className="shrink-0 text-gold-400" />, 'Careful delivery', 'Protected packing and tracked shipping across India'],
+                [<IconShieldCheck size={20} className="shrink-0 text-gold-400" />, 'Secure checkout', 'Server-verified payments powered by Razorpay'],
             ].map(([icon, title, copy]) => (
-                <article key={String(title)} className="flex items-center gap-5 py-7 sm:px-7">
-                    <span className="text-gold-400">{icon}</span>
-                    <div><h3 className="text-sm text-cream">{title}</h3><p className="mt-1 text-xs text-cream/40">{copy}</p></div>
+                <article key={String(title)} className="flex min-h-32 items-start gap-4 py-7 sm:px-7">
+                    <span className="grid size-10 shrink-0 place-items-center border border-line">{icon}</span>
+                    <div>
+                        <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-cream">{title}</h3>
+                        <p className="mt-2 text-xs leading-5 text-cream/45">{copy}</p>
+                    </div>
                 </article>
             ))}
         </div>

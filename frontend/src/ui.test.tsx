@@ -27,6 +27,7 @@ const product: Product = {
     category: { id: '11111111-1111-4111-8111-111111111111', name: 'Serveware', slug: 'serveware', isPublished: true, sortOrder: 0 },
     variants: [{ id: '33333333-3333-4333-8333-333333333333', sku: 'GHC-NOIR-1', name: 'Gold', pricePaise: 249900, isActive: true }],
     images: [{ id: '44444444-4444-4444-8444-444444444444', thumbnailUrl: '/product.webp', mediumUrl: '/product.webp', largeUrl: '/product.webp', altText: 'Noir Gold Serving Set', sortOrder: 0 }],
+    videos: [{ id: '55555555-5555-4555-8555-555555555556', url: 'https://cdn.example.com/noir-gold.mp4', altText: 'Noir Gold Serving Set video', sortOrder: 1 }],
 };
 
 const emptyCart = {
@@ -102,6 +103,9 @@ describe('black and gold commerce UI', () => {
     it('loads a product by slug and writes its variant to the backend cart', async () => {
         const container = await render(<Route path="/product/:productId"><ProductDetailPage /></Route>, `/product/${product.slug}`);
         expect(container.textContent).toContain('₹2,499');
+        const videoThumbnail = container.querySelector<HTMLButtonElement>('button[aria-label="View video 2"]');
+        await act(async () => { videoThumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+        expect(container.querySelector('video')).not.toBeNull();
         const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add to bag'));
         await act(async () => { add?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve(); });
         expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/carts/${emptyCart.id}/items`), expect.objectContaining({ method: 'PUT' }));
@@ -130,7 +134,7 @@ describe('black and gold commerce UI', () => {
     it('surfaces backend authorization failures in the admin console', async () => {
         mockAuthenticated = true;
         const container = await render(<AdminPage />, '/admin');
-        expect(container.textContent).toContain('Operations command');
+        expect(container.textContent).toContain('Admin workspace');
         expect(container.textContent).toContain('Request failed');
     });
 

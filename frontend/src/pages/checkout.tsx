@@ -142,17 +142,24 @@ const CheckoutPage = () => {
         }
     };
 
-    const input = 'h-12 w-full border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none placeholder:text-cream/25 focus:border-gold-400 rounded-sm';
+    const input = 'field h-12 w-full text-sm placeholder:text-cream/25';
 
     return (
         <div className="min-h-screen bg-obsidian text-cream">
             <SEOHead title="Secure Checkout | Glockery" />
-            <header className="flex h-20 items-center justify-between gap-4 border-b border-gold-500/20 px-4 sm:px-10">
-                <Link to="/" className="shrink-0 font-display text-xl tracking-[0.16em] text-gold-300 sm:text-2xl sm:tracking-[0.2em]">GLOCKERY</Link>
+            <header className="flex h-20 items-center justify-between gap-4 border-b border-line px-4 sm:px-10">
+                <Link to="/" className="shrink-0 text-base font-bold tracking-[0.22em] text-cream sm:text-lg">GLOCKERY</Link>
                 <span className="flex items-center gap-2 text-right text-[9px] uppercase tracking-[0.12em] text-cream/35 sm:text-[10px] sm:tracking-[0.18em]">
                     <IconShieldCheck size={15} className="shrink-0" /> Secure Razorpay Checkout
                 </span>
             </header>
+            <nav className="border-b border-line" aria-label="Checkout progress">
+                <ol className="mx-auto flex max-w-[1240px] items-center gap-3 px-6 py-3 text-[10px] font-bold uppercase tracking-[0.14em] sm:px-10 lg:px-12">
+                    <li className="text-cream/35">Bag</li><li className="text-cream/25" aria-hidden="true">/</li>
+                    <li className="text-gold-300" aria-current="step">Delivery</li><li className="text-cream/25" aria-hidden="true">/</li>
+                    <li className="text-cream/35">Payment</li>
+                </ol>
+            </nav>
 
             {/* Payment Processing Overlay */}
             {processingPayment && !paymentFailed && (
@@ -167,10 +174,10 @@ const CheckoutPage = () => {
                 </div>
             )}
 
-            <main className="mx-auto grid max-w-[1240px] gap-12 px-6 py-12 sm:px-10 lg:grid-cols-[1fr_420px] lg:px-12 lg:py-16">
+            <main id="main-content" className="mx-auto grid max-w-[1240px] gap-12 px-6 py-12 sm:px-10 lg:grid-cols-[1fr_420px] lg:px-12 lg:py-16">
                 <form onSubmit={submit}>
-                    <p className="text-[10px] uppercase tracking-[0.3em] font-semibold text-gold-400">Delivery & Payment</p>
-                    <h1 className="mt-2 font-display text-5xl">Complete Your Order</h1>
+                    <p className="eyebrow">Delivery &amp; payment</p>
+                    <h1 className="mt-2 font-display text-5xl font-semibold">Complete your order</h1>
 
                     {paymentFailed && (
                         <div className="mt-6 border border-amber-500/30 bg-amber-950/20 p-5 rounded-sm flex items-start gap-4">
@@ -200,35 +207,35 @@ const CheckoutPage = () => {
                         <section className="mt-8 grid gap-4 sm:grid-cols-2">
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Full Name</span>
-                                <input className={input} name="recipientName" required />
+                                <input className={input} name="recipientName" autoComplete="name" required />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Email Address</span>
-                                <input className={input} name="email" type="email" defaultValue={session?.user?.email || ''} required />
+                                <input className={input} name="email" type="email" autoComplete="email" defaultValue={session?.user?.email || ''} required />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Mobile Number</span>
-                                <input className={input} name="phone" type="tel" minLength={10} required />
+                                <input className={input} name="phone" type="tel" inputMode="tel" autoComplete="tel" minLength={10} required />
                             </label>
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Street Address</span>
-                                <input className={input} name="line1" required />
+                                <input className={input} name="line1" autoComplete="address-line1" required />
                             </label>
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Apartment / Suite / Landmark</span>
-                                <input className={input} name="line2" />
+                                <input className={input} name="line2" autoComplete="address-line2" />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">City</span>
-                                <input className={input} name="city" required />
+                                <input className={input} name="city" autoComplete="address-level2" required />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">State</span>
-                                <input className={input} name="state" required />
+                                <input className={input} name="state" autoComplete="address-level1" required />
                             </label>
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">PIN Code</span>
-                                <input className={input} name="postalCode" pattern="[0-9]{6}" required />
+                                <input className={input} name="postalCode" inputMode="numeric" autoComplete="postal-code" pattern="[0-9]{6}" required />
                             </label>
                         </section>
                     )}
@@ -283,7 +290,7 @@ const CheckoutPage = () => {
 
                     <button
                         disabled={loading}
-                        className="mt-8 flex h-14 w-full items-center justify-center gap-3 bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian hover:bg-gold-300 disabled:opacity-50 rounded-sm shadow-xl"
+                        className="button-primary mt-8 h-14 w-full gap-3 disabled:opacity-50"
                     >
                         {loading ? 'Preparing Razorpay Gateway…' : <>Pay Securely with Razorpay <IconArrowRight size={16} /></>}
                     </button>

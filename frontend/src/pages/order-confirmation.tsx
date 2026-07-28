@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import { IconCheckCircle, IconDownload, IconPackage, IconTruck } from '../components/Icons';
+import { IconCheckCircle, IconDownload, IconTruck } from '../components/Icons';
 import { api } from '../lib/api';
 import { rupees, shortDate } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
@@ -34,77 +34,77 @@ export const OrderConfirmationPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between">
+        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
             <SEOHead title="Order Confirmed | Glockery" />
             <Header />
-            <main className="flex-1 px-6 py-12 lg:px-10 lg:py-16 max-w-4xl mx-auto w-full">
+            <main id="main-content" className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:px-8 lg:py-16">
                 {loading ? (
-                    <div className="text-center py-20 text-cream/40">Loading order confirmation details…</div>
+                    <div className="text-center py-20 text-cream/40 font-mono text-xs">Loading order confirmation details…</div>
                 ) : error || !order ? (
                     <div className="border border-red-500/30 bg-red-950/20 p-8 text-center rounded-sm">
                         <h2 className="font-display text-2xl text-red-200">Confirmation Unavailable</h2>
                         <p className="mt-2 text-xs text-cream/60">{error || 'Order detail not found.'}</p>
-                        <Link to="/" className="mt-6 inline-block bg-gold-400 px-6 py-2.5 text-xs font-bold text-obsidian uppercase">Return to Store</Link>
+                        <Link to="/" className="mt-6 inline-block bg-gold-400 px-6 py-2.5 text-xs font-bold text-obsidian uppercase rounded-sm">Return to Store</Link>
                     </div>
                 ) : (
                     <div className="space-y-8 animate-fadeIn">
                         {/* Banner */}
-                        <div className="border border-gold-500/30 bg-gradient-to-r from-carbon via-obsidian to-carbon p-8 text-center rounded-sm shadow-2xl">
-                            <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-emerald-950/50 border border-emerald-500/40 text-emerald-400">
+                        <div className="border border-line bg-carbon p-8 text-center sm:p-12">
+                            <div className="mx-auto flex size-16 items-center justify-center border border-emerald-500/40 bg-emerald-950/50 text-emerald-400">
                                 <IconCheckCircle size={36} color="#10B981" />
                             </div>
-                            <span className="mt-4 block text-[10px] font-bold uppercase tracking-[0.3em] text-gold-400">
-                                Payment Verified & Confirmed
+                            <span className="mt-5 block text-[10px] font-bold uppercase tracking-[0.3em] text-gold-400">
+                                Payment Verified &amp; Confirmed
                             </span>
-                            <h1 className="mt-2 font-display text-4xl text-cream">Thank You for Your Order</h1>
-                            <p className="mt-2 text-xs text-cream/60">
-                                Order number <strong className="text-gold-300 font-mono text-sm">{order.orderNumber}</strong> has been successfully received and dispatched to fulfilment.
+                            <h1 className="mt-2 font-display text-5xl font-semibold text-cream">Thank you for your order</h1>
+                            <p className="mt-3 text-xs text-cream/65 leading-relaxed max-w-lg mx-auto">
+                                Order <strong className="text-sm text-gold-300">{order.orderNumber}</strong> has been received and is now being prepared.
                             </p>
                         </div>
 
                         {/* Order Snapshot & Timeline */}
                         <div className="grid gap-6 md:grid-cols-2">
-                            <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm">
-                                <h3 className="font-display text-xl text-gold-300 border-b border-gold-500/15 pb-3">Order Details</h3>
+                            <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm shadow-lg">
+                                <h3 className="font-display text-xl font-bold text-gold-300 border-b border-gold-500/15 pb-3">Order Details</h3>
                                 <div className="mt-4 space-y-2 text-xs text-cream/70">
-                                    <p><strong>Order Reference:</strong> {order.orderNumber}</p>
+                                    <p><strong>Order Reference:</strong> <span className="font-mono text-cream">{order.orderNumber}</span></p>
                                     <p><strong>Placed Date:</strong> {shortDate(order.createdAt)}</p>
                                     <p><strong>Payment Status:</strong> <span className="text-emerald-400 font-bold">VERIFIED</span></p>
-                                    <p><strong>Total Amount:</strong> <span className="font-display text-lg text-gold-300">{rupees(order.totalPaise)}</span></p>
+                                    <p><strong>Total Amount:</strong> <span className="font-display font-bold text-lg text-gold-300">{rupees(order.totalPaise)}</span></p>
                                 </div>
                                 <button
                                     onClick={handleDownloadInvoice}
-                                    className="mt-6 flex items-center gap-2 rounded-sm border border-gold-500/30 bg-obsidian px-4 py-2.5 text-xs text-gold-300 hover:border-gold-400 w-full justify-center"
+                                    className="mt-6 flex items-center gap-2 rounded-sm border border-gold-500/30 bg-obsidian px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gold-300 hover:border-gold-400 hover:bg-gold-400 hover:text-obsidian transition w-full justify-center shadow-sm"
                                 >
                                     <IconDownload size={16} /> Download Tax Invoice
                                 </button>
                             </div>
 
-                            <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm">
-                                <h3 className="font-display text-xl text-gold-300 border-b border-gold-500/15 pb-3">Delivery Information</h3>
+                            <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm shadow-lg">
+                                <h3 className="font-display text-xl font-bold text-gold-300 border-b border-gold-500/15 pb-3">Delivery Information</h3>
                                 <div className="mt-4 space-y-2 text-xs text-cream/70">
                                     <p><strong>Recipient:</strong> {order.addressSnapshot?.recipientName}</p>
                                     <p><strong>Shipping Address:</strong> {order.addressSnapshot?.line1}, {order.addressSnapshot?.city}, {order.addressSnapshot?.state} {order.addressSnapshot?.postalCode}</p>
                                     <p><strong>Estimated Delivery:</strong> 3 – 5 Business Days</p>
                                 </div>
                                 <div className="mt-6 pt-4 border-t border-gold-500/15 flex items-center justify-between text-xs text-cream/50">
-                                    <span className="flex items-center gap-2"><IconTruck size={16} /> Express Carrier</span>
-                                    <Link to={`/tracking/${order.orderNumber}`} className="text-gold-400 hover:underline">Track Package →</Link>
+                                    <span className="flex items-center gap-2"><IconTruck size={16} className="text-gold-400" /> Express Carrier</span>
+                                    <Link to={`/tracking/${order.orderNumber}`} className="font-bold text-gold-400 hover:text-gold-200">Track package</Link>
                                 </div>
                             </div>
                         </div>
 
                         {/* Items Snapshot */}
-                        <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm">
-                            <h3 className="font-display text-xl text-cream mb-4">Purchased Luxury Items</h3>
+                        <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm shadow-lg">
+                            <h3 className="mb-4 font-display text-xl font-semibold text-cream">Items in this order</h3>
                             <div className="divide-y divide-gold-500/10">
                                 {(order.itemsSnapshot || []).map((item, idx) => (
-                                    <div key={idx} className="py-3 flex items-center justify-between text-xs">
+                                    <div key={idx} className="py-3.5 flex items-center justify-between text-xs">
                                         <div>
-                                            <p className="font-medium text-cream">{item.productName}</p>
-                                            <p className="text-[10px] text-cream/40">SKU: {item.sku} · Qty: {item.quantity}</p>
+                                            <p className="font-bold text-cream">{item.productName}</p>
+                                            <p className="text-[10px] text-cream/40 font-mono">SKU: {item.sku} · Qty: {item.quantity}</p>
                                         </div>
-                                        <span className="font-semibold text-gold-300">{rupees(item.lineTotalPaise)}</span>
+                                        <span className="font-bold text-gold-300 font-mono">{rupees(item.lineTotalPaise)}</span>
                                     </div>
                                 ))}
                             </div>
@@ -116,4 +116,5 @@ export const OrderConfirmationPage = () => {
         </div>
     );
 };
+
 export default OrderConfirmationPage;

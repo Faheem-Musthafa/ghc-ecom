@@ -47,20 +47,20 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between">
             <SEOHead title={`${code} - ${errorDetails.title} | Glockery`} />
             <Header />
-            <main className="flex-1 flex items-center justify-center px-6 py-20">
-                <div className="w-full max-w-lg border border-gold-500/25 bg-carbon p-8 text-center rounded-sm shadow-2xl">
-                    <div className="mx-auto flex size-20 items-center justify-center rounded-full bg-gold-500/10 border border-gold-500/30">
+            <main id="main-content" className="flex flex-1 items-center justify-center px-6 py-20">
+                <div className="w-full max-w-lg border border-line bg-carbon p-8 text-center sm:p-10">
+                    <div className="mx-auto flex size-20 items-center justify-center border border-gold-500/30 bg-gold-500/10">
                         {errorDetails.icon}
                     </div>
                     <span className="mt-6 block font-mono text-xs font-bold uppercase tracking-[0.3em] text-gold-400">
                         HTTP Error {code}
                     </span>
-                    <h1 className="mt-2 font-display text-4xl text-cream">{errorDetails.title}</h1>
+                    <h1 className="mt-2 font-display text-5xl font-semibold text-cream">{errorDetails.title}</h1>
                     <p className="mt-3 text-xs leading-relaxed text-cream/60">{errorDetails.desc}</p>
                     <div className="mt-8">
                         <Link
                             to={errorDetails.action.href}
-                            className="inline-block bg-gold-400 px-8 py-3 text-xs font-bold uppercase tracking-wider text-obsidian shadow-md hover:bg-gold-300 rounded-sm"
+                            className="button-primary"
                         >
                             {errorDetails.action.label}
                         </Link>

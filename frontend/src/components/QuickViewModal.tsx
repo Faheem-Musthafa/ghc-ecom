@@ -78,7 +78,7 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
 
                 <div className="p-6 md:p-8 flex flex-col justify-between overflow-y-auto max-h-[80vh] md:max-h-none">
                     <div>
-                        <p className="text-[10px] uppercase tracking-[0.3em] text-gold-400 mb-2">Luxury Craft</p>
+                        <p className="eyebrow mb-2">Product preview</p>
                         <h2 id="quick-view-title" className="font-display text-3xl text-cream leading-tight">{product.name}</h2>
                         <p className="mt-3 text-xs text-cream/60 leading-relaxed line-clamp-3">{product.description}</p>
 

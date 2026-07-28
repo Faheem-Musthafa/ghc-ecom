@@ -16,8 +16,10 @@ import {
     Product,
     ProductImage,
     ProductVariant,
+    ProductVideo,
     Profile,
     Session,
+    Shipment,
     ShippingAddressInput,
     Warehouse,
 } from '../types';
@@ -205,6 +207,7 @@ export const api = {
     deleteAddress: (id: string) => request<void>(`/me/addresses/${id}`, { method: 'DELETE' }, { auth: true }),
     orders: () => request<Order[]>('/orders', {}, { auth: true }),
     order: (id: string) => request<Order>(`/orders/${id}`, {}, { auth: true }),
+    shipments: (orderId: string) => request<Shipment[]>(`/orders/${orderId}/shipments`, {}, { auth: true }),
     invoice: (id: string) => request<{ url: string; expiresIn: number }>(`/orders/${id}/invoice`, {}, { auth: true }),
     cancelOrder: (id: string) => request<Order>(`/orders/${id}/cancel`, { method: 'POST' }, { auth: true }),
     createReturn: (id: string, reason: string) =>
@@ -230,10 +233,17 @@ export const api = {
         request<ProductImage>(`/admin/catalogue/products/${productId}/images`, { method: 'POST', body: form }, { auth: true }),
     deleteProductImage: (productId: string, imageId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }, { auth: true }),
+    addProductVideoUrl: (productId: string, input: { url: string; altText?: string; sortOrder?: number }) =>
+        request<ProductVideo>(`/admin/catalogue/products/${productId}/videos/url`, { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
+    uploadProductVideo: (productId: string, form: FormData) =>
+        request<ProductVideo>(`/admin/catalogue/products/${productId}/videos/upload`, { method: 'POST', body: form }, { auth: true }),
+    deleteProductVideo: (productId: string, videoId: string) =>
+        request<void>(`/admin/catalogue/products/${productId}/videos/${videoId}`, { method: 'DELETE' }, { auth: true }),
     adminOrders: (params = '') => request<Order[]>(`/admin/orders${params ? `?${params}` : ''}`, {}, { auth: true }),
     transitionOrder: (id: string, status: string) =>
         request<Order>(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }, { auth: true }),
     inventory: () => request<InventoryLevel[]>('/admin/inventory/levels', {}, { auth: true }),
+    warehouses: () => request<Warehouse[]>('/admin/inventory/warehouses', {}, { auth: true }),
     setInventory: (warehouseId: string, input: { variantId: string; onHand: number; lowStockThreshold?: number }) =>
         request<InventoryLevel>(`/admin/inventory/warehouses/${warehouseId}/levels`, { method: 'PUT', body: JSON.stringify(input) }, { auth: true }),
     operations: () => request<OperationsSnapshot>('/admin/operations/dashboard', {}, { auth: true }),
@@ -244,6 +254,6 @@ export const api = {
     auditLogs: () => request<AuditLog[]>('/admin/audit-logs', {}, { auth: true }),
     assignRole: (userId: string, role: string) =>
         request<unknown>(`/admin/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ role }) }, { auth: true }),
-    createWarehouse: (input: { code: string; name: string; isPrimary?: boolean }) =>
+    createWarehouse: (input: { code: string; name: string; isActive?: boolean }) =>
         request<Warehouse>('/admin/inventory/warehouses', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
 };

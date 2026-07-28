@@ -138,6 +138,31 @@ export class SupabaseService {
     return this.adminClient.storage.from('product-images').getPublicUrl(path).data.publicUrl;
   }
 
+  async uploadProductVideo(path: string, body: Buffer, contentType: string): Promise<void> {
+    const { error } = await this.adminClient.storage.from('product-videos').upload(path, body, {
+      cacheControl: '31536000',
+      contentType,
+      upsert: false,
+    });
+    if (error) {
+      throw error;
+    }
+  }
+
+  async removeProductVideos(paths: string[]): Promise<void> {
+    if (paths.length === 0) {
+      return;
+    }
+    const { error } = await this.adminClient.storage.from('product-videos').remove(paths);
+    if (error) {
+      throw error;
+    }
+  }
+
+  getProductVideoPublicUrl(path: string): string {
+    return this.adminClient.storage.from('product-videos').getPublicUrl(path).data.publicUrl;
+  }
+
   async uploadPrivateDocument(path: string, body: Buffer, contentType: string): Promise<void> {
     const { error } = await this.adminClient.storage.from('private-documents').upload(path, body, {
       cacheControl: '3600',

@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import { api } from '../lib/api';
 import { Category } from '../types';
-import { IconClose, IconHeart, IconMenu, IconSearch, IconShoppingBag, IconUser } from './Icons';
+import {
+    IconArrowRight,
+    IconClose,
+    IconHeart,
+    IconMenu,
+    IconSearch,
+    IconShoppingBag,
+    IconUser,
+} from './Icons';
 import QuickSearchModal from './QuickSearchModal';
-
-const navLink = 'relative py-2 text-xs uppercase tracking-[0.22em] text-cream/70 transition hover:text-gold-300 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-gold-400';
 
 const Header = () => {
     const { itemCount, openCart } = useCart();
@@ -19,66 +25,110 @@ const Header = () => {
     const [categories, setCategories] = useState<Category[]>([]);
     const location = useLocation();
 
-    useEffect(() => { api.categories().then(setCategories).catch(() => setCategories([])); }, []);
-    useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+    useEffect(() => {
+        api.categories().then(setCategories).catch(() => setCategories([]));
+    }, []);
+
+    useEffect(() => {
+        setMobileOpen(false);
+    }, [location.pathname]);
+
+    const countBadge = (count: number) => count > 0 && (
+        <span className="absolute -right-0.5 -top-0.5 grid min-h-4 min-w-4 place-items-center bg-gold-400 px-1 text-[9px] font-bold leading-none text-obsidian">
+            {count > 99 ? '99+' : count}
+        </span>
+    );
 
     return (
         <>
-            <a href="#main-content" className="fixed left-3 top-3 z-[100] -translate-y-24 bg-gold-400 px-4 py-3 text-sm font-bold text-obsidian focus:translate-y-0">Skip to content</a>
-            <div className="border-b border-gold-500/20 bg-gold-400 px-3 py-2 text-center text-[9px] font-bold uppercase tracking-[0.16em] text-obsidian sm:px-4 sm:text-[10px] sm:tracking-[0.22em]">
-                Complimentary delivery over ₹1,000 · Secure payments by Razorpay
+            <a
+                href="#main-content"
+                className="fixed left-3 top-3 z-50 -translate-y-24 bg-gold-400 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-obsidian focus:translate-y-0"
+            >
+                Skip to content
+            </a>
+
+            <div className="border-b border-gold-500/20 bg-gold-400 px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.18em] text-obsidian">
+                Complimentary delivery above ₹1,000 · Easy 30-day returns
             </div>
-            <header className="sticky top-0 z-40 border-b border-gold-500/20 bg-obsidian/90 backdrop-blur-xl transition-all">
-                <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between gap-1 px-3 sm:h-20 sm:gap-2 sm:px-8 lg:px-12">
+
+            <header className="sticky top-0 z-40 border-b border-line bg-obsidian/95 supports-[backdrop-filter]:backdrop-blur-md">
+                <div className="mx-auto flex h-[76px] max-w-[1440px] items-center gap-5 px-4 sm:px-8 lg:px-12">
                     <button
                         className="grid size-11 shrink-0 place-items-center text-gold-300 lg:hidden"
-                        onClick={() => setMobileOpen(!mobileOpen)}
-                        aria-label="Toggle navigation"
+                        onClick={() => setMobileOpen((open) => !open)}
+                        aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
                         aria-expanded={mobileOpen}
                         aria-controls="mobile-navigation"
                     >
-                        {mobileOpen ? <IconClose /> : <IconMenu />}
+                        {mobileOpen ? <IconClose size={21} /> : <IconMenu size={21} />}
                     </button>
-                    <Link to="/" className="group min-w-0 text-center leading-none text-gold-300" aria-label="Glockery Home Centre">
-                        <span className="block truncate font-display text-xl tracking-[0.14em] min-[380px]:text-2xl min-[380px]:tracking-[0.18em] sm:text-3xl sm:tracking-[0.2em]">GLOCKERY</span>
-                        <small className="mt-1 block truncate text-[7px] tracking-[0.32em] text-cream/55 sm:text-[8px] sm:tracking-[0.48em]">HOME CENTRE</small>
+
+                    <Link to="/" className="flex shrink-0 items-center gap-3" aria-label="Glockery Home Centre">
+                        <span className="grid size-10 place-items-center border border-gold-400 font-display text-2xl font-semibold text-gold-300">G</span>
+                        <span className="leading-none">
+                            <span className="block text-base font-bold tracking-[0.24em] text-cream sm:text-lg">GLOCKERY</span>
+                            <small className="mt-1.5 block text-[8px] font-semibold uppercase tracking-[0.38em] text-cream/45">Home Centre</small>
+                        </span>
                     </Link>
-                    <nav className="hidden items-center gap-9 lg:flex" aria-label="Primary navigation">
-                        <Link className={navLink} to="/">The collection</Link>
-                        {categories.slice(0, 4).map((category) => <Link className={navLink} key={category.id} to={`/category/${category.slug}`}>{category.name}</Link>)}
-                        <Link className={navLink} to="/#craft">Craft</Link>
+
+                    <nav className="ml-6 hidden h-full items-center gap-7 lg:flex" aria-label="Primary navigation">
+                        <NavLink exact to="/" activeClassName="text-gold-300" className="flex h-full items-center border-b border-transparent text-[11px] font-semibold uppercase tracking-[0.14em] text-cream/65 hover:border-gold-400 hover:text-cream">
+                            Shop all
+                        </NavLink>
+                        {categories.slice(0, 4).map((category) => (
+                            <NavLink
+                                key={category.id}
+                                to={`/category/${category.slug}`}
+                                activeClassName="text-gold-300 border-gold-400"
+                                className="flex h-full items-center border-b border-transparent text-[11px] font-semibold uppercase tracking-[0.14em] text-cream/65 hover:border-gold-400 hover:text-cream"
+                            >
+                                {category.name}
+                            </NavLink>
+                        ))}
+                        <NavLink to="/about" activeClassName="text-gold-300 border-gold-400" className="flex h-full items-center border-b border-transparent text-[11px] font-semibold uppercase tracking-[0.14em] text-cream/65 hover:border-gold-400 hover:text-cream">
+                            Our story
+                        </NavLink>
                     </nav>
-                    <div className="flex shrink-0 items-center gap-0 sm:gap-1 lg:gap-2">
-                        <button className="grid size-10 place-items-center rounded-sm border border-gold-500/20 bg-carbon text-xs text-cream/80 transition hover:border-gold-400 hover:text-gold-300 sm:flex sm:w-auto sm:gap-2 sm:px-3 sm:py-1.5" onClick={() => setSearchOpen(true)} aria-label="Search">
-                            <IconSearch size={16} />
-                            <span className="hidden sm:inline text-[11px] text-cream/50">Search</span>
-                            <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[9px] font-mono bg-obsidian text-gold-400 border border-gold-500/30 rounded">⌘K</kbd>
+
+                    <div className="ml-auto flex items-center gap-0.5 sm:gap-1.5">
+                        <button className="flex h-11 items-center gap-2 px-3 text-cream/70 hover:text-gold-300" onClick={() => setSearchOpen(true)} aria-label="Search collection">
+                            <IconSearch size={19} />
+                            <span className="hidden text-[11px] font-semibold uppercase tracking-[0.14em] xl:inline">Search</span>
                         </button>
-                        <Link className="relative hidden size-11 place-items-center text-cream/80 transition hover:text-gold-300 sm:grid" to="/wishlist" aria-label="Wishlist">
-                            <IconHeart size={20} />
-                            {wishlistIds.length > 0 && (
-                                <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-gold-400 text-[9px] font-bold text-obsidian animate-pulse">
-                                    {wishlistIds.length}
-                                </span>
-                            )}
+                        <Link to="/wishlist" className="relative hidden size-11 place-items-center text-cream/70 hover:text-gold-300 sm:grid" aria-label={`Wishlist with ${wishlistIds.length} items`}>
+                            <IconHeart size={19} />
+                            {countBadge(wishlistIds.length)}
                         </Link>
-                        <Link className="hidden size-11 place-items-center text-cream/80 transition hover:text-gold-300 sm:grid" to={signedIn ? '/account' : '/auth'} aria-label="Account">
-                            <IconUser />
+                        <Link to={signedIn ? '/account' : '/auth'} className="hidden size-11 place-items-center text-cream/70 hover:text-gold-300 sm:grid" aria-label={signedIn ? 'Account' : 'Sign in'}>
+                            <IconUser size={19} />
                         </Link>
-                        <button className="relative grid size-11 place-items-center text-cream/80 transition hover:text-gold-300" onClick={openCart} aria-label={`Bag with ${itemCount} items`}>
-                            <IconShoppingBag />
-                            {itemCount > 0 && <span className="absolute right-1 top-1 grid size-4 place-items-center rounded-full bg-gold-400 text-[9px] font-bold text-obsidian">{itemCount}</span>}
+                        <button onClick={openCart} className="relative ml-1 flex h-11 items-center gap-2 border border-gold-500/55 px-3 text-gold-200 hover:border-gold-300 hover:bg-gold-400 hover:text-obsidian" aria-label={`Bag with ${itemCount} items`}>
+                            <IconShoppingBag size={18} />
+                            <span className="hidden text-[11px] font-bold uppercase tracking-[0.14em] sm:inline">Bag</span>
+                            {countBadge(itemCount)}
                         </button>
                     </div>
                 </div>
+
                 {mobileOpen && (
-                    <nav id="mobile-navigation" className="max-h-[calc(100svh-110px)] overflow-y-auto border-t border-gold-500/20 bg-carbon px-6 py-6 lg:hidden">
-                        <div className="flex flex-col gap-3">
-                            <Link className={navLink} to="/">The collection</Link>
-                            {categories.slice(0, 6).map((category) => <Link className={navLink} key={category.id} to={`/category/${category.slug}`}>{category.name}</Link>)}
-                            <Link className={navLink} to="/#craft">Craft</Link>
-                            <Link className={navLink} to="/wishlist">Wishlist ({wishlistIds.length})</Link>
-                            <Link className={navLink} to={signedIn ? '/account' : '/auth'}>{signedIn ? 'My account' : 'Sign in'}</Link>
+                    <nav id="mobile-navigation" className="max-h-[calc(100dvh-108px)] overflow-y-auto border-t border-line bg-carbon px-5 py-6 lg:hidden" aria-label="Mobile navigation">
+                        <button onClick={() => setSearchOpen(true)} className="mb-6 flex min-h-12 w-full items-center justify-between border border-line bg-obsidian px-4 text-sm text-cream/60">
+                            Search the collection
+                            <IconSearch size={18} className="text-gold-300" />
+                        </button>
+                        <div className="divide-y divide-line border-y border-line">
+                            <Link to="/" className="flex min-h-14 items-center justify-between py-3 text-sm font-semibold text-cream">Shop all <IconArrowRight size={16} className="text-gold-400" /></Link>
+                            {categories.map((category) => (
+                                <Link key={category.id} to={`/category/${category.slug}`} className="flex min-h-14 items-center justify-between py-3 text-sm text-cream/75">
+                                    {category.name}<IconArrowRight size={16} className="text-gold-400" />
+                                </Link>
+                            ))}
+                            <Link to="/about" className="flex min-h-14 items-center justify-between py-3 text-sm text-cream/75">Our story <IconArrowRight size={16} className="text-gold-400" /></Link>
+                        </div>
+                        <div className="mt-6 grid grid-cols-2 gap-3">
+                            <Link to="/wishlist" className="button-secondary">Wishlist ({wishlistIds.length})</Link>
+                            <Link to={signedIn ? '/account' : '/auth'} className="button-primary">{signedIn ? 'My account' : 'Sign in'}</Link>
                         </div>
                     </nav>
                 )}

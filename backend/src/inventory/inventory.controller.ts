@@ -36,4 +36,9 @@ export class InventoryController {
   listLevels(): Promise<InventoryLevel[]> {
     return this.inventory.listLevels();
   }
+
+  @Get('warehouses')
+  listWarehouses(): Promise<Warehouse[]> {
+    return this.inventory.listWarehouses();
+  }
 }

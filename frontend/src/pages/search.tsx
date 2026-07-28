@@ -21,7 +21,6 @@ export const SearchPage = () => {
     const [selectedCategory, setSelectedCategory] = useState('');
     const [maxPrice, setMaxPrice] = useState<number>(500000); // 5000 in Rs
     const [sortBy, setSortBy] = useState<'featured' | 'price-asc' | 'price-desc' | 'name'>('featured');
-    const [inStockOnly, setInStockOnly] = useState(false);
 
     useEffect(() => {
         setLoading(true);
@@ -58,33 +57,33 @@ export const SearchPage = () => {
     }, [products, query, selectedCategory, maxPrice, sortBy]);
 
     return (
-        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between">
+        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
             <SEOHead title={`Search Results: ${query || 'Catalogue'} | Glockery`} />
             <Header />
-            <main className="flex-1 px-6 py-10 lg:px-10 max-w-7xl mx-auto w-full">
+            <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-10 sm:px-8 lg:px-12 lg:py-16">
                 {/* Search Bar Header */}
                 <div className="mb-8 border-b border-gold-500/20 pb-6">
-                    <span className="text-[10px] uppercase tracking-[0.28em] font-semibold text-gold-400">Catalogue Discovery</span>
-                    <h1 className="mt-1 font-display text-4xl text-cream">Search Collection</h1>
-                    <div className="mt-4 flex max-w-xl border border-gold-500/25 bg-carbon rounded-sm">
-                        <IconSearch className="m-3.5 text-gold-400" />
+                    <span className="eyebrow">Catalogue</span>
+                    <h1 className="mt-1 font-display text-5xl font-semibold text-cream">Find a piece</h1>
+                    <div className="mt-5 flex max-w-xl border border-line bg-carbon focus-within:border-gold-400">
+                        <IconSearch className="m-3.5 text-gold-400 shrink-0" />
                         <label htmlFor="catalogue-search" className="sr-only">Search products</label>
                         <input
                             id="catalogue-search"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder="Search by keywords, materials, or products…"
-                            className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70"
+                            className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none placeholder:text-cream/35 px-2"
                         />
                     </div>
                 </div>
 
                 <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
                     {/* Advanced Filters Sidebar */}
-                    <aside className="border border-gold-500/20 bg-carbon p-6 rounded-sm space-y-6 h-fit">
+                    <aside className="h-fit space-y-6 border border-line bg-carbon p-6">
                         <div className="flex items-center gap-2 border-b border-gold-500/15 pb-3">
                             <IconFilter size={18} className="text-gold-400" />
-                            <h3 className="font-display text-lg text-cream">Refine Results</h3>
+                            <h3 className="font-display text-2xl font-semibold text-cream">Refine results</h3>
                         </div>
 
                         {/* Category Filter */}
@@ -94,7 +93,7 @@ export const SearchPage = () => {
                                 id="search-category"
                                 value={selectedCategory}
                                 onChange={(e) => setSelectedCategory(e.target.value)}
-                                className="w-full border border-gold-500/25 bg-obsidian p-2.5 text-xs text-cream outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 rounded-sm"
+                                className="w-full border border-gold-500/25 bg-obsidian p-2.5 text-xs text-cream outline-none focus:border-gold-400 rounded-sm font-medium"
                             >
                                 <option value="">All Categories</option>
                                 {categories.map((c) => (
@@ -110,7 +109,7 @@ export const SearchPage = () => {
                                 id="search-sort"
                                 value={sortBy}
                                 onChange={(e) => setSortBy(e.target.value as any)}
-                                className="w-full border border-gold-500/25 bg-obsidian p-2.5 text-xs text-cream outline-none focus-visible:ring-2 focus-visible:ring-gold-400/70 rounded-sm"
+                                className="w-full border border-gold-500/25 bg-obsidian p-2.5 text-xs text-cream outline-none focus:border-gold-400 rounded-sm font-medium"
                             >
                                 <option value="featured">Featured / Relevant</option>
                                 <option value="price-asc">Price: Low to High</option>
@@ -121,8 +120,8 @@ export const SearchPage = () => {
 
                         {/* Price Range Filter */}
                         <div>
-                            <div className="flex justify-between text-xs text-cream/70 mb-2">
-                                <span className="font-bold uppercase text-[10px] text-gold-400">Max Price</span>
+                            <div className="flex justify-between text-xs text-cream/70 mb-2 font-mono">
+                                <span className="font-bold uppercase text-[10px] text-gold-400 font-sans">Max Price</span>
                                 <span>₹{(maxPrice / 100).toLocaleString('en-IN')}</span>
                             </div>
                             <input
@@ -152,8 +151,8 @@ export const SearchPage = () => {
                                 ))}
                             </div>
                         ) : (
-                            <div className="border border-gold-500/20 bg-carbon p-12 text-center rounded-sm">
-                                <h3 className="font-display text-2xl text-gold-300">No Matching Products</h3>
+                            <div className="border border-gold-500/20 bg-carbon p-12 text-center rounded-sm shadow-lg">
+                                <h3 className="font-display text-3xl font-semibold text-cream">No matching products</h3>
                                 <p className="mt-2 text-xs text-cream/50">Try broadening your search term or adjusting filters.</p>
                             </div>
                         )}
@@ -164,4 +163,5 @@ export const SearchPage = () => {
         </div>
     );
 };
+
 export default SearchPage;

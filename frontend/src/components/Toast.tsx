@@ -11,7 +11,7 @@ const Toast = () => {
     }, [toastMessage, clearToast]);
     if (!toastMessage) return null;
     return (
-        <div className="fixed bottom-5 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 border border-gold-400/40 bg-carbon px-5 py-4 text-sm text-cream shadow-2xl shadow-black" role="status">
+        <div className="fixed bottom-5 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 border border-line bg-carbon px-5 py-4 text-sm text-cream shadow-2xl shadow-black" role="status">
             <IconCheckCircle className="shrink-0 text-gold-400" color="currentColor" />
             <span className="flex-1">{toastMessage}</span>
             <button onClick={clearToast} aria-label="Close notification"><IconClose size={16} /></button>

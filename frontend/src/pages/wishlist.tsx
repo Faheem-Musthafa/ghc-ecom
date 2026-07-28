@@ -21,20 +21,35 @@ const WishlistPage = () => {
     }, [wishlistIds]);
 
     return (
-        <div className="min-h-screen bg-obsidian text-cream flex flex-col">
+        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
             <SEOHead title="Wishlist | Glockery" />
             <Header />
-            <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-6 py-12 sm:px-10 lg:px-12 lg:py-20">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-gold-400">Your considered edit</p>
-                <h1 className="mt-4 font-display text-5xl text-cream">Saved for later.</h1>
-                <p className="mt-4 max-w-xl text-sm leading-7 text-cream/50">Keep the pieces that caught your eye close by. Your wishlist is saved on this device.</p>
-                {loading ? <p className="mt-16 text-sm text-cream/40">Loading your edit…</p> : !products.length ? (
-                    <div className="mt-16 border border-gold-500/20 bg-carbon px-6 py-20 text-center">
-                        <h2 className="font-display text-3xl">Nothing saved yet.</h2>
-                        <p className="mt-3 text-sm text-cream/45">Start with a piece that makes the room feel different.</p>
-                        <Link to="/#collection" className="mt-7 inline-flex h-12 items-center bg-gold-400 px-6 text-xs font-bold uppercase tracking-[0.18em] text-obsidian">Explore collection</Link>
+            <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-16">
+                <header className="mb-12 border-y border-line py-9 sm:py-11">
+                    <span className="eyebrow">Your edit</span>
+                    <h1 className="mt-2 font-display text-5xl font-semibold text-cream sm:text-7xl">Saved for later.</h1>
+                    <p className="mt-3 max-w-xl text-xs sm:text-sm leading-relaxed text-cream/60">
+                        Keep the pieces that caught your eye close by. Your wishlist is stored securely on this device.
+                    </p>
+                </header>
+
+                {loading ? (
+                    <div className="text-center py-20 text-cream/40 font-mono text-xs">Loading your edit…</div>
+                ) : !products.length ? (
+                    <div className="border border-line bg-carbon py-20 text-center">
+                        <h2 className="font-display text-3xl font-semibold text-cream">Nothing saved yet.</h2>
+                        <p className="mt-3 text-xs text-cream/50">Start with a piece that makes the room feel different.</p>
+                        <Link to="/" className="button-primary mt-8">
+                            Explore collection
+                        </Link>
                     </div>
-                ) : <div className="mt-14 grid grid-cols-1 gap-x-6 gap-y-14 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{products.map((product) => <ProductCard key={product.id} product={product} />)}</div>}
+                ) : (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {products.map((product) => (
+                            <ProductCard key={product.id} product={product} />
+                        ))}
+                    </div>
+                )}
             </main>
             <StoreFooter />
         </div>
