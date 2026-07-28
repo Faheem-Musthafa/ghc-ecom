@@ -21,9 +21,9 @@ import {
     ShippingAddressInput,
     Warehouse,
 } from '../types';
+import { resolveApiBaseUrl } from './api-url';
 
-const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
-export const API_BASE_URL = (configuredApiUrl || '/api/v1').replace(/\/$/, '');
+export const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
 const CART_KEY = 'ghc_cart';
 const REQUEST_TIMEOUT_MS = 15_000;
 let currentSession: Session | null = null;

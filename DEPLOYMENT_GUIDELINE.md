@@ -291,6 +291,10 @@ Use the same-origin API proxy in production:
 VITE_API_URL=/api/v1
 ```
 
+In the Vercel environment-variable form, enter `VITE_API_URL` in the key field and
+only `/api/v1` in the value field. Do not paste the complete assignment into the
+value field.
+
 This is the only required frontend environment variable. Never put Supabase
 service-role keys, database URLs, Razorpay secrets, SMTP credentials, or
 `CSRF_SECRET` in Vercel.
