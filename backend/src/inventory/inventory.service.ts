@@ -13,8 +13,20 @@ export class InventoryService {
   ) {}
 
   async createWarehouse(actorId: string, input: CreateWarehouseDto): Promise<Warehouse> {
-    const warehouse = await this.prisma.warehouse.create({
-      data: { ...input, code: input.code.toUpperCase() },
+    const warehouse = await this.prisma.$transaction(async (transaction) => {
+      const created = await transaction.warehouse.create({
+        data: { ...input, code: input.code.toUpperCase() },
+      });
+      const variants = await transaction.productVariant.findMany({ select: { id: true } });
+      if (variants.length > 0) {
+        await transaction.inventoryLevel.createMany({
+          data: variants.map((variant) => ({
+            warehouseId: created.id,
+            variantId: variant.id,
+          })),
+        });
+      }
+      return created;
     });
     await this.audit.record({
       actorId,
@@ -95,5 +107,9 @@ export class InventoryService {
     return this.prisma.inventoryLevel.findMany({
       orderBy: [{ warehouseId: 'asc' }, { variantId: 'asc' }],
     });
+  }
+
+  listWarehouses(): Promise<Warehouse[]> {
+    return this.prisma.warehouse.findMany({ orderBy: { code: 'asc' } });
   }
 }

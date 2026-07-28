@@ -280,3 +280,93 @@ export const IconX: React.FC<IconProps> = ({ size = 18, color = 'currentColor', 
         <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
 );
+
+export const IconBell: React.FC<IconProps> = ({ size = 20, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+);
+
+export const IconCamera: React.FC<IconProps> = ({ size = 18, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+        <circle cx="12" cy="13" r="4" />
+    </svg>
+);
+
+export const IconMic: React.FC<IconProps> = ({ size = 18, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+);
+
+export const IconBadgeCheck: React.FC<IconProps> = ({ size = 16, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none" className={className} {...props}>
+        <path d="M12 2l2.4 1.8 3-0.5 0.5 3 2.8 1.4-1.2 2.8 1.8 2.5-2.5 1.8 0 3-3 0.5-1.8 2.4-2.5-1.8-2.5 1.8-1.8-2.4-3-0.5 0-3-2.5-1.8 1.8-2.5-1.2-2.8 2.8-1.4 0.5-3 3 0.5L12 2z" />
+        <path d="M9 12l2 2 4-4" stroke="#050505" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    </svg>
+);
+
+export const IconStore: React.FC<IconProps> = ({ size = 20, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+        <path d="M3 9h18" />
+        <path d="M9 22V12h6v10" />
+    </svg>
+);
+
+export const IconShirt: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H6v10a2 2 0 002 2h8a2 2 0 002-2V10h2.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z" />
+    </svg>
+);
+
+export const IconJacket: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M16 2l-4 4-4-4M3 6l4 2v14h10V8l4-2M12 6v16" />
+    </svg>
+);
+
+export const IconGlasswareCategory: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M8 22h8M12 15v7M7 3h10l-1 8a4 4 0 0 1-8 0L7 3z" />
+    </svg>
+);
+
+export const IconTeapot: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M19 10a7 7 0 0 1-14 0c0-3.87 3.13-7 7-7s7 3.13 7 7z" />
+        <path d="M12 3V1M5 10H1m18 0h4a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1M9 20h6" />
+    </svg>
+);
+
+export const IconPlate: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <circle cx="12" cy="12" r="9" />
+        <circle cx="12" cy="12" r="5" />
+    </svg>
+);
+
+export const IconBowl: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M2 11a10 10 0 0 0 20 0H2zM6 21h12" />
+    </svg>
+);
+
+export const IconWatch: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <circle cx="12" cy="12" r="6" />
+        <polyline points="12 9 12 12 14 14" />
+        <path d="M16.51 17.35l-.85 3.65a1 1 0 0 1-.98.77H9.32a1 1 0 0 1-.98-.77l-.85-3.65M7.49 6.65l.85-3.65A1 1 0 0 1 9.32 2.23h5.36a1 1 0 0 1 .98.77l.85 3.65" />
+    </svg>
+);
+
+export const IconCap: React.FC<IconProps> = ({ size = 22, color = 'currentColor', className, ...props }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+        <path d="M2 16c0-4 4-8 10-8s10 4 10 8v2H2v-2zM12 8V4M2 18h20" />
+    </svg>
+);

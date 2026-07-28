@@ -70,7 +70,7 @@ const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onClose }) 
                         type="text"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search luxury serveware, cutlery, tea sets..."
+                        placeholder="Search serveware, cutlery, tea sets..."
                         className="w-full bg-transparent text-cream placeholder-cream/40 outline-none text-base font-body"
                         autoFocus
                     />
@@ -91,7 +91,7 @@ const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onClose }) 
                         </div>
                     ) : query.trim() && results.length === 0 ? (
                         <div className="py-8 text-center">
-                            <p className="text-cream/60 text-sm">No luxury pieces match &quot;{query}&quot;.</p>
+                            <p className="text-sm text-cream/60">No pieces match &quot;{query}&quot;.</p>
                             <p className="text-xs text-gold-400/80 mt-1">Try searching for &quot;gold&quot;, &quot;cutlery&quot;, or &quot;jug&quot;</p>
                         </div>
                     ) : results.length > 0 ? (

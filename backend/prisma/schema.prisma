@@ -246,6 +246,8 @@ model Product {
   slug             String           @unique
   shortDescription String?          @map("short_description")
   description      String?
+  material         String?
+  dimensions       String?
   status           ProductStatus    @default(DRAFT)
   attributes       Json             @default("{}")
   seoTitle         String?          @map("seo_title")
@@ -256,6 +258,7 @@ model Product {
   category         Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variants         ProductVariant[]
   images           ProductImage[]
+  videos           ProductVideo[]
 
   @@index([categoryId])
   @@index([status, publishedAt])
@@ -312,6 +315,22 @@ model ProductImage {
 
   @@index([productId, sortOrder])
   @@map("product_images")
+}
+
+model ProductVideo {
+  id                 String   @id @default(uuid()) @db.Uuid
+  productId          String   @map("product_id") @db.Uuid
+  url                String
+  storagePath        String?  @unique @map("storage_path")
+  sourceFilename     String?  @map("source_filename")
+  sourceMimeType     String?  @map("source_mime_type")
+  altText            String   @map("alt_text")
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+  @@map("product_videos")
 }
 
 model Warehouse {

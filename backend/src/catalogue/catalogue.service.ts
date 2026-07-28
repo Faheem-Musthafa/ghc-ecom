@@ -14,12 +14,14 @@ import {
   ProductImage,
   ProductStatus,
   ProductVariant,
+  ProductVideo,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { ListProductsDto } from './dto/list-products.dto';
@@ -32,6 +34,7 @@ const productInclude = {
   category: true,
   variants: { orderBy: { createdAt: 'asc' as const } },
   images: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
+  videos: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
 } satisfies Prisma.ProductInclude;
 
 export type CatalogueProduct = Prisma.ProductGetPayload<{
@@ -263,9 +266,13 @@ export class CatalogueService {
   }
 
   async deleteProduct(actorId: string, productId: string, context: RequestContext): Promise<void> {
-    const images = await this.prisma.productImage.findMany({ where: { productId } });
+    const [images, videos] = await Promise.all([
+      this.prisma.productImage.findMany({ where: { productId } }),
+      this.prisma.productVideo.findMany({ where: { productId } }),
+    ]);
     await this.mutate(() => this.prisma.product.delete({ where: { id: productId } }), 'Product');
     await this.removeStoredImages(images);
+    await this.removeStoredVideos(videos);
     await this.auditMutation(actorId, 'catalogue.product.deleted', 'product', productId, context);
   }
 
@@ -277,13 +284,25 @@ export class CatalogueService {
   ): Promise<ProductVariant> {
     this.validateVariantPrices(input.pricePaise, input.compareAtPricePaise);
     const variant = await this.mutate(() =>
-      this.prisma.productVariant.create({
-        data: {
-          ...input,
-          sku: input.sku.toUpperCase(),
-          attributes: input.attributes as Prisma.InputJsonValue | undefined,
-          productId,
-        },
+      this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.productVariant.create({
+          data: {
+            ...input,
+            sku: input.sku.toUpperCase(),
+            attributes: input.attributes as Prisma.InputJsonValue | undefined,
+            productId,
+          },
+        });
+        const warehouses = await transaction.warehouse.findMany({ select: { id: true } });
+        if (warehouses.length > 0) {
+          await transaction.inventoryLevel.createMany({
+            data: warehouses.map((warehouse) => ({
+              warehouseId: warehouse.id,
+              variantId: created.id,
+            })),
+          });
+        }
+        return created;
       }),
     );
     await this.auditMutation(
@@ -432,6 +451,100 @@ export class CatalogueService {
     await this.auditMutation(actorId, 'catalogue.image.deleted', 'product_image', imageId, context);
   }
 
+  async addProductVideoUrl(
+    actorId: string,
+    productId: string,
+    input: CreateProductVideoDto,
+    context: RequestContext,
+  ): Promise<ProductVideo> {
+    await this.requireProduct(productId);
+    const video = await this.mutate(() =>
+      this.prisma.productVideo.create({
+        data: {
+          productId,
+          url: input.url,
+          altText: input.altText?.trim() || 'Product video',
+          sortOrder: input.sortOrder ?? 0,
+        },
+      }),
+    );
+    await this.auditMutation(
+      actorId,
+      'catalogue.video.created',
+      'product_video',
+      video.id,
+      context,
+      {
+        source: 'url',
+      },
+    );
+    return video;
+  }
+
+  async uploadProductVideo(
+    actorId: string,
+    productId: string,
+    file: Express.Multer.File,
+    metadata: ImageMetadataDto,
+    context: RequestContext,
+  ): Promise<ProductVideo> {
+    await this.requireProduct(productId);
+    const videoId = randomUUID();
+    const storagePath = `${productId}/${videoId}/source${this.videoExtension(file.mimetype)}`;
+    try {
+      await this.supabase.uploadProductVideo(storagePath, file.buffer, file.mimetype);
+    } catch {
+      throw new BadGatewayException('Product video storage failed');
+    }
+
+    try {
+      const video = await this.prisma.productVideo.create({
+        data: {
+          productId,
+          url: this.supabase.getProductVideoPublicUrl(storagePath),
+          storagePath,
+          sourceFilename: basename(file.originalname).slice(0, 255) || 'upload',
+          sourceMimeType: file.mimetype,
+          altText: metadata.altText,
+          sortOrder: metadata.sortOrder ?? 0,
+        },
+      });
+      await this.auditMutation(
+        actorId,
+        'catalogue.video.created',
+        'product_video',
+        video.id,
+        context,
+        {
+          source: 'upload',
+        },
+      );
+      return video;
+    } catch (error) {
+      await this.tryRemoveVideos([storagePath]);
+      throw error;
+    }
+  }
+
+  async deleteProductVideo(
+    actorId: string,
+    productId: string,
+    videoId: string,
+    context: RequestContext,
+  ): Promise<void> {
+    const video = await this.prisma.productVideo.findFirst({
+      where: { id: videoId, productId },
+    });
+    if (!video) {
+      throw new NotFoundException('Product video not found');
+    }
+    await this.prisma.productVideo.delete({ where: { id: video.id } });
+    if (video.storagePath) {
+      await this.removeStoredVideos([video]);
+    }
+    await this.auditMutation(actorId, 'catalogue.video.deleted', 'product_video', videoId, context);
+  }
+
   private productData(
     input: CreateProductDto | UpdateProductDto,
   ): Prisma.ProductUncheckedCreateInput {
@@ -440,6 +553,8 @@ export class CatalogueService {
       categoryId: input.categoryId as string,
       name: input.name as string,
       slug: input.slug?.toLowerCase() as string,
+      material: input.material === undefined ? undefined : input.material.trim() || null,
+      dimensions: input.dimensions === undefined ? undefined : input.dimensions.trim() || null,
       attributes: input.attributes as Prisma.InputJsonValue | undefined,
       publishedAt:
         input.status === ProductStatus.PUBLISHED ? new Date() : input.status ? null : undefined,
@@ -544,6 +659,18 @@ export class CatalogueService {
     await this.removeImages(images.flatMap((image) => this.imagePaths(image)));
   }
 
+  private async removeStoredVideos(videos: ProductVideo[]): Promise<void> {
+    const paths = videos.flatMap((video) => (video.storagePath ? [video.storagePath] : []));
+    if (paths.length === 0) {
+      return;
+    }
+    try {
+      await this.supabase.removeProductVideos(paths);
+    } catch {
+      throw new BadGatewayException('Product video cleanup failed');
+    }
+  }
+
   private async removeImages(paths: string[]): Promise<void> {
     try {
       await this.supabase.removeProductImages(paths);
@@ -558,6 +685,25 @@ export class CatalogueService {
     } catch {
       // Database references are removed or replaced first, so a cleanup failure
       // can leave an orphan but can never leave a broken public image reference.
+    }
+  }
+
+  private async tryRemoveVideos(paths: string[]): Promise<void> {
+    try {
+      await this.supabase.removeProductVideos(paths);
+    } catch {
+      // The video record was never created, so a failed cleanup can only leave an orphaned file.
+    }
+  }
+
+  private videoExtension(mimeType: string): string {
+    switch (mimeType) {
+      case 'video/webm':
+        return '.webm';
+      case 'video/quicktime':
+        return '.mov';
+      default:
+        return '.mp4';
     }
   }
 

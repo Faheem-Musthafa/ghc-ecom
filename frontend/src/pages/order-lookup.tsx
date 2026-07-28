@@ -1,112 +1,86 @@
 import React, { FormEvent, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Header from '../components/Header';
+import { IconArrowRight, IconSearch } from '../components/Icons';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import { IconSearch, IconTruck, IconPackage } from '../components/Icons';
+import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import { rupees, shortDate, titleCase } from '../lib/commerce';
 import { Order } from '../types';
 
 export const OrderLookupPage = () => {
+    const { signedIn } = useAuth();
     const [orderNumber, setOrderNumber] = useState('');
-    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<Order | null>(null);
     const [error, setError] = useState('');
 
-    const handleLookup = async (e: FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
+    const handleLookup = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
         setLoading(true);
         setError('');
         setResult(null);
-
         try {
             const orders = await api.orders();
-            const found = orders.find(
-                (o) =>
-                    o.orderNumber.toUpperCase() === orderNumber.trim().toUpperCase() ||
-                    o.id === orderNumber.trim()
-            );
-
-            if (!found) {
-                setError('No order matching that reference number was located.');
-            } else {
-                setResult(found);
-            }
+            const reference = orderNumber.trim().toUpperCase();
+            const found = orders.find((order) => order.orderNumber.toUpperCase() === reference || order.id === orderNumber.trim());
+            if (!found) setError('No order matching that reference was found in your account.');
+            else setResult(found);
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Lookup failed. Please check credentials.');
+            setError(caught instanceof Error ? caught.message : 'Order lookup failed.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between">
-            <SEOHead title="Guest Order Lookup | Glockery" />
+        <div className="flex min-h-screen flex-col justify-between bg-obsidian font-body text-cream">
+            <SEOHead title="Find an order | Glockery" />
             <Header />
-            <main className="flex-1 px-6 py-12 lg:px-10 lg:py-16 max-w-xl mx-auto w-full">
-                <div className="border border-gold-500/25 bg-carbon p-8 rounded-sm shadow-2xl">
-                    <div className="mb-6 border-b border-gold-500/20 pb-4">
-                        <span className="text-[10px] uppercase tracking-[0.25em] font-semibold text-gold-400">
-                            Client Support
-                        </span>
-                        <h1 className="mt-1 font-display text-3xl text-cream">Guest Order Lookup</h1>
-                        <p className="mt-1 text-xs text-cream/50">
-                            Track order status or view fulfilment details using your order reference.
-                        </p>
-                    </div>
+            <main id="main-content" className="mx-auto w-full max-w-xl flex-1 px-4 py-12 sm:px-8 lg:py-16">
+                <header className="mb-8 border-y border-line py-8">
+                    <p className="eyebrow">Order help</p>
+                    <h1 className="mt-2 font-display text-5xl font-semibold">Find an order</h1>
+                    <p className="mt-3 text-sm leading-6 text-cream/50">Search order history using the reference from your confirmation email.</p>
+                </header>
 
-                    <form onSubmit={handleLookup} className="space-y-4">
-                        {error && <p className="border border-red-500/30 bg-red-950/20 p-3 text-xs text-red-200">{error}</p>}
-                        <label className="block">
-                            <span className="mb-1.5 block text-xs text-cream/70">Order Reference Number</span>
-                            <input
-                                value={orderNumber}
-                                onChange={(e) => setOrderNumber(e.target.value)}
-                                placeholder="GLK-1002"
-                                className="h-12 w-full border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none focus:border-gold-400 rounded-sm"
-                                required
-                            />
-                        </label>
-                        <label className="block">
-                            <span className="mb-1.5 block text-xs text-cream/70">Contact Email Address</span>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="client@example.com"
-                                className="h-12 w-full border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none focus:border-gold-400 rounded-sm"
-                                required
-                            />
-                        </label>
-                        <button
-                            disabled={loading}
-                            className="flex h-12 w-full items-center justify-center gap-2 bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 disabled:opacity-50 rounded-sm shadow-md"
-                        >
-                            <IconSearch size={16} /> {loading ? 'Searching Record…' : 'Locate Order'}
-                        </button>
-                    </form>
+                {!signedIn ? (
+                    <section className="surface p-8 text-center sm:p-10">
+                        <h2 className="font-display text-3xl font-semibold">Sign in to continue</h2>
+                        <p className="mt-3 text-sm leading-6 text-cream/50">Order details are protected and only available to the account that placed the order.</p>
+                        <Link to="/auth" className="button-primary mt-7">Sign in</Link>
+                    </section>
+                ) : (
+                    <section className="surface p-7 sm:p-9">
+                        <form onSubmit={handleLookup} className="space-y-4">
+                            <label className="block" htmlFor="order-reference">
+                                <span className="mb-2 block text-xs font-semibold text-cream/70">Order reference</span>
+                                <input id="order-reference" value={orderNumber} onChange={(event) => setOrderNumber(event.target.value)} placeholder="e.g. GLK-1002" className="field h-12 w-full text-sm" required />
+                            </label>
+                            {error && <p className="border border-red-500/30 bg-red-950/20 p-3 text-xs text-red-200" role="alert">{error}</p>}
+                            <button disabled={loading} className="button-primary w-full gap-2 disabled:opacity-50"><IconSearch size={16} /> {loading ? 'Searching…' : 'Find order'}</button>
+                        </form>
 
-                    {/* Result */}
-                    {result && (
-                        <div className="mt-8 border-t border-gold-500/20 pt-6 animate-fadeIn">
-                            <div className="flex items-center justify-between">
-                                <span className="font-display text-2xl text-gold-300">{result.orderNumber}</span>
-                                <span className="rounded-full border border-gold-500/30 bg-gold-950/30 px-3 py-1 text-xs font-bold text-gold-300">
-                                    {titleCase(result.status)}
-                                </span>
+                        {result && (
+                            <div className="mt-8 border-t border-line pt-6" aria-live="polite">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div><p className="eyebrow">Order</p><h2 className="mt-1 font-display text-3xl font-semibold text-gold-200">{result.orderNumber}</h2></div>
+                                    <span className="border border-line px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-cream/65">{titleCase(result.status)}</span>
+                                </div>
+                                <dl className="mt-5 grid grid-cols-2 gap-4 text-xs">
+                                    <div><dt className="text-cream/40">Placed</dt><dd className="mt-1 text-cream">{shortDate(result.createdAt)}</dd></div>
+                                    <div><dt className="text-cream/40">Total</dt><dd className="mt-1 font-semibold text-cream">{rupees(result.totalPaise)}</dd></div>
+                                </dl>
+                                <Link to={`/account/orders/${result.id}`} className="button-secondary mt-6 w-full gap-2">View order <IconArrowRight size={15} /></Link>
                             </div>
-                            <div className="mt-4 space-y-1.5 text-xs text-cream/70">
-                                <p><strong>Date Placed:</strong> {shortDate(result.createdAt)}</p>
-                                <p><strong>Total Amount:</strong> {rupees(result.totalPaise)}</p>
-                                <p><strong>Items:</strong> {result.itemsSnapshot?.length || 0} line items</p>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </section>
+                )}
             </main>
             <StoreFooter />
         </div>
     );
 };
+
 export default OrderLookupPage;

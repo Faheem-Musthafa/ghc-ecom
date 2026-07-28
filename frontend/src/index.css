@@ -1,32 +1,41 @@
 @import "tailwindcss";
 
 @theme {
-  --color-obsidian: #050505;
-  --color-carbon: #0d0d0d;
-  --color-panel: #151515;
-  --color-line: #2a2a2a;
-  --color-gold-50: #fff9e8;
-  --color-gold-100: #faecc0;
-  --color-gold-200: #efd88e;
-  --color-gold-300: #e2c25a;
-  --color-gold-400: #d4af37;
-  --color-gold-500: #b9901d;
-  --color-gold-600: #967116;
-  --color-gold-700: #735310;
-  --color-cream: #f5f0e5;
-  --font-display: "Poiret One", sans-serif;
-  --font-body: "Didact Gothic", sans-serif;
+  --color-obsidian: #080807;
+  --color-carbon: #11110f;
+  --color-panel: #171714;
+  --color-panel-light: #1d1c18;
+  --color-line: #2b2924;
+  --color-line-gold: rgba(201, 163, 91, 0.24);
+  --color-gold-50: #faf4e8;
+  --color-gold-100: #f1e4c9;
+  --color-gold-200: #e5d09f;
+  --color-gold-300: #dbc184;
+  --color-gold-400: #c9a35b;
+  --color-gold-500: #ac8440;
+  --color-gold-600: #89652f;
+  --color-gold-700: #684a23;
+  --color-cream: #f1ede4;
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
 }
 
 html {
   min-width: 320px;
   scroll-behavior: smooth;
   overflow-x: hidden;
+  background-color: #080807;
+  color: #f1ede4;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 body {
   min-width: 320px;
   overflow-x: hidden;
+  background-color: #080807;
+  font-family: var(--font-body);
+  text-wrap: pretty;
+  line-height: 1.6;
 }
 
 button,
@@ -40,102 +49,152 @@ textarea {
 button,
 a {
   touch-action: manipulation;
+  cursor: pointer;
+  transition-duration: 180ms;
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+button:active,
+a.button-active:active {
+  transform: scale(0.98);
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #050505;
+  background: #080807;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 4px;
+  background: #35322c;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #d4af37;
+  background: #c9a35b;
 }
 
 /* Base accessibility focus rings */
 :focus-visible {
-  outline: 2px solid #d4af37;
-  outline-offset: 2px;
+  outline: 2px solid #dbc184;
+  outline-offset: 3px;
 }
 
-/* Custom Utilities for Glassmorphism & Micro-animations */
-@layer utilities {
-  .glass-panel {
-    background: rgba(13, 13, 13, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-  }
-
-  .glass-card {
-    background: linear-gradient(135deg, rgba(21, 21, 21, 0.8) 0%, rgba(13, 13, 13, 0.9) 100%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(212, 175, 55, 0.15);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .glass-card:hover {
-    border-color: rgba(212, 175, 55, 0.45);
-    box-shadow: 0 12px 32px -8px rgba(212, 175, 55, 0.12);
-  }
-
-  .gold-gradient-text {
-    background: linear-gradient(135deg, #fff9e8 0%, #d4af37 50%, #b9901d 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .gold-glow {
-    box-shadow: 0 0 20px rgba(212, 175, 55, 0.25);
-  }
-
-  .gold-glow-lg {
-    box-shadow: 0 0 35px rgba(212, 175, 55, 0.35);
-  }
-
-  .shimmer-gold {
-    background: linear-gradient(
-      90deg,
-      rgba(212, 175, 55, 0) 0%,
-      rgba(212, 175, 55, 0.25) 50%,
-      rgba(212, 175, 55, 0) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 2.5s infinite;
-  }
+::selection {
+  background: #c9a35b;
+  color: #080807;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
+/* Keep supporting copy readable even where older routes use low-opacity
+   utility classes. The shared floor is tuned for AA contrast on dark surfaces. */
+.text-cream\/25,
+.text-cream\/30,
+.text-cream\/35,
+.text-cream\/40,
+.text-cream\/45 {
+  color: rgba(241, 237, 228, 0.62);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(241, 237, 228, 0.5);
+  opacity: 1;
+}
+
+@layer components {
+  .surface {
+    border: 1px solid #2b2924;
+    background: #11110f;
   }
-  100% {
-    background-position: 200% 0;
+
+  .surface-raised {
+    border: 1px solid rgba(201, 163, 91, 0.28);
+    background: #171714;
+    box-shadow: 0 20px 55px rgba(0, 0, 0, 0.24);
+  }
+
+  .eyebrow {
+    color: #c9a35b;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+
+  .button-primary {
+    align-items: center;
+    background: #c9a35b;
+    color: #080807;
+    display: inline-flex;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    justify-content: center;
+    letter-spacing: 0.16em;
+    min-height: 48px;
+    padding: 0.75rem 1.5rem;
+    text-transform: uppercase;
+  }
+
+  .button-primary:hover {
+    background: #dbc184;
+  }
+
+  .button-secondary {
+    align-items: center;
+    border: 1px solid rgba(201, 163, 91, 0.55);
+    color: #dbc184;
+    display: inline-flex;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    justify-content: center;
+    letter-spacing: 0.16em;
+    min-height: 48px;
+    padding: 0.75rem 1.5rem;
+    text-transform: uppercase;
+  }
+
+  .button-secondary:hover {
+    background: rgba(201, 163, 91, 0.08);
+    border-color: #c9a35b;
+  }
+
+  .field {
+    background: #080807;
+    border: 1px solid #35322c;
+    color: #f1ede4;
+    min-height: 48px;
+    padding: 0.75rem 1rem;
+  }
+
+  .field:focus {
+    border-color: #c9a35b;
+    outline: none;
   }
 }
 
 @media (max-width: 479px) {
   .text-7xl,
   .text-6xl {
-    font-size: 3rem;
-    line-height: 1;
+    font-size: 2.75rem;
+    line-height: 1.05;
   }
 
   .text-5xl {
-    font-size: 2.5rem;
-    line-height: 1.08;
+    font-size: 2.25rem;
+    line-height: 1.1;
   }
 
   .text-4xl {
-    font-size: 2rem;
-    line-height: 1.12;
+    font-size: 1.85rem;
+    line-height: 1.15;
+  }
+}
+
+@media (hover: none) {
+  .group-hover\:opacity-100 {
+    opacity: 1;
   }
 }
 

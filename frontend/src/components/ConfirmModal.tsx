@@ -26,7 +26,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+            <div className="w-full max-w-md border border-line bg-carbon p-6 shadow-2xl">
                 <div className="flex items-center justify-between border-b border-gold-500/20 pb-4">
                     <div className="flex items-center gap-2">
                         <span className={isDanger ? 'text-red-400' : 'text-gold-400'}>

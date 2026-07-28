@@ -26,6 +26,14 @@ export interface ProductImage {
     sortOrder: number;
 }
 
+export interface ProductVideo {
+    id: string;
+    url: string;
+    altText: string;
+    sortOrder: number;
+    sourceMimeType?: string | null;
+}
+
 export interface Product {
     id: string;
     categoryId: string;
@@ -33,11 +41,14 @@ export interface Product {
     slug: string;
     shortDescription?: string | null;
     description?: string | null;
+    material?: string | null;
+    dimensions?: string | null;
     status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
     attributes?: Record<string, unknown>;
     category: Category;
     variants: ProductVariant[];
     images: ProductImage[];
+    videos: ProductVideo[];
     createdAt?: string;
 }
 
@@ -156,6 +167,33 @@ export interface Order {
     invoice?: { id: string } | null;
 }
 
+export interface TrackingEvent {
+    id: string;
+    shipmentId: string;
+    providerEventId: string;
+    status: string;
+    message?: string | null;
+    location?: string | null;
+    occurredAt: string;
+    createdAt: string;
+}
+
+export interface Shipment {
+    id: string;
+    orderId: string;
+    provider: string;
+    providerShipmentId?: string | null;
+    trackingNumber?: string | null;
+    carrier?: string | null;
+    status: string;
+    shippedAt?: string | null;
+    deliveredAt?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    events: TrackingEvent[];
+    items: Array<{ id: string; sku: string; quantity: number; variantId?: string | null }>;
+}
+
 export interface InventoryLevel {
     id: string;
     warehouseId: string;
@@ -221,6 +259,5 @@ export interface Warehouse {
     id: string;
     code: string;
     name: string;
-    isPrimary: boolean;
     isActive: boolean;
 }

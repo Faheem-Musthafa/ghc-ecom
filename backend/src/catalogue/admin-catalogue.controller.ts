@@ -18,7 +18,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { AppRole, Category, ProductImage, ProductVariant } from '@prisma/client';
+import { AppRole, Category, ProductImage, ProductVariant, ProductVideo } from '@prisma/client';
 import { Request } from 'express';
 import { memoryStorage } from 'multer';
 import { AuthenticatedUser } from '../auth/authenticated-user';
@@ -29,6 +29,7 @@ import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { CatalogueProduct, CatalogueService } from './catalogue.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -44,8 +45,21 @@ const imageInterceptor = FileInterceptor('file', {
 });
 
 const imagePipe = new ParseFilePipeBuilder()
-  .addFileTypeValidator({ fileType: /(jpeg|png|webp)$/ })
+  .addFileTypeValidator({ fileType: /(jpeg|png|webp|gif)$/ })
   .addMaxSizeValidator({ maxSize: 8 * 1024 * 1024 })
+  .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST });
+
+const videoInterceptor = FileInterceptor('file', {
+  storage: memoryStorage(),
+  limits: {
+    files: 1,
+    fileSize: 25 * 1024 * 1024,
+  },
+});
+
+const videoPipe = new ParseFilePipeBuilder()
+  .addFileTypeValidator({ fileType: /video\/(mp4|webm|quicktime)$/ })
+  .addMaxSizeValidator({ maxSize: 25 * 1024 * 1024 })
   .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST });
 
 @Controller('admin/catalogue')
@@ -188,6 +202,51 @@ export class AdminCatalogueController {
     @Req() request: Request,
   ): Promise<void> {
     return this.catalogue.deleteVariant(actor.id, variantId, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Post('products/:productId/videos/url')
+  addVideoUrl(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() input: CreateProductVideoDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<ProductVideo> {
+    return this.catalogue.addProductVideoUrl(actor.id, productId, input, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Post('products/:productId/videos/upload')
+  @UseInterceptors(videoInterceptor)
+  uploadVideo(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @UploadedFile(videoPipe) file: Express.Multer.File,
+    @Body() metadata: ImageMetadataDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<ProductVideo> {
+    return this.catalogue.uploadProductVideo(actor.id, productId, file, metadata, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Delete('products/:productId/videos/:videoId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteVideo(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('videoId', ParseUUIDPipe) videoId: string,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<void> {
+    return this.catalogue.deleteProductVideo(actor.id, productId, videoId, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

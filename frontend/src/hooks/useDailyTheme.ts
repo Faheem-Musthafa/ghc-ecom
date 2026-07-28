@@ -11,7 +11,7 @@
  * calendar day, and it automatically advances at midnight local time.
  */
 
-// ── AI-enhanced product photography imports ──────────────────────────────
+// Product photography for the daily editorial rotation.
 import heroCutleryGold from '../img/hero-cutlery-gold.png';
 import heroJugSet from '../img/hero-jug-set.png';
 import heroCupSaucer from '../img/hero-cup-saucer.png';

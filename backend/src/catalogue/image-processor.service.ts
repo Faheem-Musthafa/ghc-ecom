@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import sharp, { Sharp } from 'sharp';
 
 const MAX_INPUT_PIXELS = 40_000_000;
-const ACCEPTED_FORMATS = new Set(['jpeg', 'png', 'webp']);
+const ACCEPTED_FORMATS = new Set(['jpeg', 'png', 'webp', 'gif']);
 const DERIVATIVES = [
   { name: 'thumbnail', maxDimension: 400 },
   { name: 'medium', maxDimension: 800 },
@@ -26,8 +26,8 @@ export interface ProcessedProductImage {
 @Injectable()
 export class ImageProcessorService {
   async process(file: Express.Multer.File): Promise<ProcessedProductImage> {
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
-      throw new BadRequestException('Only JPEG, PNG, and WebP images are accepted');
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype)) {
+      throw new BadRequestException('Only JPEG, PNG, WebP, and GIF images are accepted');
     }
 
     try {
@@ -40,8 +40,8 @@ export class ImageProcessorService {
       ) {
         throw new BadRequestException('The uploaded file is not a supported image');
       }
-      if ((metadata.pages ?? 1) > 1) {
-        throw new BadRequestException('Animated and multi-page images are not supported');
+      if ((metadata.pages ?? 1) > 1 && metadata.format !== 'gif') {
+        throw new BadRequestException('Only animated GIF images are supported');
       }
 
       const derivatives = await Promise.all(
@@ -85,7 +85,7 @@ export class ImageProcessorService {
       failOn: 'warning',
       limitInputPixels: MAX_INPUT_PIXELS,
       limitInputChannels: 4,
-      pages: 1,
+      animated: true,
     });
   }
 }

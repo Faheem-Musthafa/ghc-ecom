@@ -22,10 +22,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
-import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product } from '../types';
+import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product, Warehouse } from '../types';
 
-const box = 'border border-gold-500/20 bg-carbon rounded-sm shadow-lg shadow-black/40 backdrop-blur-sm';
-const inputStyle = 'h-11 w-full border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none focus:border-gold-400 focus:ring-1 focus:ring-gold-400/50 transition-all rounded-sm';
+const box = 'border border-line bg-carbon';
+const inputStyle = 'field h-12 w-full text-sm';
 
 const NotificationToast = ({ message, type = 'info', onClose }: { message: string; type?: 'info' | 'success' | 'error'; onClose: () => void }) => {
     if (!message) return null;
@@ -41,17 +41,23 @@ const NotificationToast = ({ message, type = 'info', onClose }: { message: strin
 // ----------------------------------------------------
 // 1. OVERVIEW / DASHBOARD ANALYTICS
 // ----------------------------------------------------
-const RevenueChart = () => {
-    const points = [
-        { day: 'Mon', rev: 45000 },
-        { day: 'Tue', rev: 82000 },
-        { day: 'Wed', rev: 68000 },
-        { day: 'Thu', rev: 115000 },
-        { day: 'Fri', rev: 94000 },
-        { day: 'Sat', rev: 142000 },
-        { day: 'Sun', rev: 165000 },
-    ];
-    const max = 200000;
+const RevenueChart = ({ orders }: { orders: Order[] }) => {
+    const points = Array.from({ length: 7 }, (_, offset) => {
+        const date = new Date();
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() - (6 - offset));
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        const rev = orders
+            .filter((order) => {
+                const createdAt = new Date(order.createdAt);
+                return createdAt >= date && createdAt < nextDate;
+            })
+            .reduce((sum, order) => sum + order.totalPaise, 0);
+        return { day: date.toLocaleDateString('en-IN', { weekday: 'short' }), rev };
+    });
+    const max = Math.max(...points.map((point) => point.rev), 1);
+    const weeklyRevenue = points.reduce((sum, point) => sum + point.rev, 0);
     const height = 140;
     const width = 500;
     const pathD = points.map((p, i) => {
@@ -64,33 +70,33 @@ const RevenueChart = () => {
         <div className={`${box} p-6`}>
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gold-500/15 pb-4">
                 <div>
-                    <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-gold-400">Weekly Performance</span>
-                    <h3 className="font-display text-2xl text-cream">Revenue Trend & Sales Velocity</h3>
+                    <span className="eyebrow">Weekly performance</span>
+                    <h3 className="font-display text-2xl text-cream">Revenue by day</h3>
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-gold-500/20 bg-gold-400/10 px-3 py-1 text-xs text-gold-300">
+                <div className="flex items-center gap-2 border border-line px-3 py-1 text-xs text-cream/55">
                     <IconTrendingUp size={14} />
-                    <span>+18.4% vs last week</span>
+                    <span>Last 7 days</span>
                 </div>
             </div>
             <div className="mt-6">
-                <svg viewBox={`0 0 ${width} ${height}`} className="w-full overflow-visible">
+                <svg viewBox={`0 0 ${width} ${height}`} className="w-full overflow-visible" role="img" aria-label={`Revenue over the last seven days. Total ${rupees(weeklyRevenue)}.`}>
                     <defs>
                         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.25" />
-                            <stop offset="100%" stopColor="#F59E0B" stopOpacity="0.0" />
+                            <stop offset="0%" stopColor="#c9a35b" stopOpacity="0.2" />
+                            <stop offset="100%" stopColor="#c9a35b" stopOpacity="0" />
                         </linearGradient>
                     </defs>
                     {/* Fill */}
                     <path d={`${pathD} L ${width} ${height} L 0 ${height} Z`} fill="url(#chartGradient)" />
                     {/* Line */}
-                    <path d={pathD} fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" />
+                    <path d={pathD} fill="none" stroke="#c9a35b" strokeWidth="2.5" strokeLinecap="round" />
                     {/* Data Points */}
                     {points.map((p, i) => {
                         const x = (i / (points.length - 1)) * width;
                         const y = height - (p.rev / max) * height;
                         return (
                             <g key={p.day} className="group cursor-pointer">
-                                <circle cx={x} cy={y} r="4" fill="#121212" stroke="#F59E0B" strokeWidth="2" className="transition-all group-hover:r-6" />
+                                <circle cx={x} cy={y} r="4" fill="#11110f" stroke="#c9a35b" strokeWidth="2" />
                                 <text x={x} y={height + 20} textAnchor="middle" fill="#9CA3AF" fontSize="10">{p.day}</text>
                             </g>
                         );
@@ -121,20 +127,19 @@ const Overview = () => {
         <AdminShell title="Operations Overview" description="Live analytics across revenue, fulfilment states, stock alerts, and infrastructure health.">
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
 
-            {/* Quick Action Banner */}
-            <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-sm border border-gold-500/25 bg-gradient-to-r from-carbon via-obsidian to-carbon p-6 shadow-xl">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border border-line bg-panel p-6">
                 <div>
-                    <h3 className="font-display text-xl text-gold-300">Executive Quick Console</h3>
-                    <p className="mt-1 text-xs text-cream/50">Manage inventory, launch promotions, or inspect system signals instantly.</p>
+                    <h3 className="font-display text-xl text-cream">Common actions</h3>
+                    <p className="mt-1 text-xs text-cream/50">Add products, reconcile stock, or create a promotion.</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                    <a href="/admin/catalogue" className="flex items-center gap-2 rounded-sm bg-gold-400 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-obsidian shadow-md hover:bg-gold-300">
+                    <a href="/admin/catalogue" className="button-primary gap-2">
                         <IconPlus size={16} /> Add Product
                     </a>
-                    <a href="/admin/inventory" className="flex items-center gap-2 rounded-sm border border-gold-500/30 bg-carbon px-4 py-2.5 text-xs font-semibold text-cream hover:border-gold-400">
+                    <a href="/admin/inventory" className="button-secondary gap-2">
                         <IconRefresh size={16} /> Adjust Stock
                     </a>
-                    <a href="/admin/promotions" className="flex items-center gap-2 rounded-sm border border-gold-500/30 bg-carbon px-4 py-2.5 text-xs font-semibold text-cream hover:border-gold-400">
+                    <a href="/admin/promotions" className="button-secondary gap-2">
                         <IconTag size={16} /> Create Coupon
                     </a>
                 </div>
@@ -143,15 +148,15 @@ const Overview = () => {
             {/* Top Metrics Cards */}
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {[
-                    { label: 'Gross Sales Revenue', value: rupees(totalRevenue), badge: '+12.5%', isAlert: false },
-                    { label: 'Active Orders', value: String(orders.length), badge: 'Live queue', isAlert: false },
+                    { label: 'Loaded order value', value: rupees(totalRevenue), badge: 'Current result set', isAlert: false },
+                    { label: 'Orders loaded', value: String(orders.length), badge: 'Current result set', isAlert: false },
                     { label: 'Low Stock SKUs', value: String(ops?.lowStockSkus ?? '0'), badge: ops?.lowStockSkus ? 'Action Needed' : 'Healthy', isAlert: Boolean(ops?.lowStockSkus) },
                     { label: 'Payment Mismatches', value: String(ops?.paymentMismatches ?? '0'), badge: ops?.paymentMismatches ? 'Alert' : 'Clean', isAlert: Boolean(ops?.paymentMismatches) },
                 ].map((item) => (
                     <article key={item.label} className={`${box} p-6 transition-all hover:border-gold-500/40`}>
                         <div className="flex items-center justify-between">
                             <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-cream/40">{item.label}</p>
-                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${item.isAlert ? 'border-red-500/30 bg-red-950/30 text-red-300' : 'border-gold-500/20 bg-gold-400/10 text-gold-300'}`}>
+                            <span className={`border px-2.5 py-0.5 text-[10px] font-bold ${item.isAlert ? 'border-red-500/30 bg-red-950/30 text-red-300' : 'border-line text-cream/50'}`}>
                                 {item.badge}
                             </span>
                         </div>
@@ -163,7 +168,7 @@ const Overview = () => {
             {/* Analytics Visual Chart & Recent Activity */}
             <div className="mt-8 grid gap-8 xl:grid-cols-3">
                 <div className="xl:col-span-2">
-                    <RevenueChart />
+                    <RevenueChart orders={orders} />
                 </div>
                 <div className={`${box} p-6`}>
                     <h3 className="font-display text-2xl text-cream">System Signals</h3>
@@ -171,8 +176,8 @@ const Overview = () => {
                     <div className="mt-6 space-y-4">
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
                             <span className="text-xs text-cream/70">Database Engine</span>
-                            <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                                <IconCheckCircle size={14} color="#10B981" /> Healthy
+                            <span className={`flex items-center gap-1.5 text-xs font-medium ${ops?.databaseHealthy ? 'text-emerald-400' : 'text-amber-300'}`}>
+                                <IconCheckCircle size={14} color={ops?.databaseHealthy ? '#10B981' : '#f59e0b'} /> {ops ? (ops.databaseHealthy ? 'Healthy' : 'Needs attention') : 'Unavailable'}
                             </span>
                         </div>
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
@@ -181,7 +186,7 @@ const Overview = () => {
                         </div>
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
                             <span className="text-xs text-cream/70">Webhook Processing</span>
-                            <span className="text-xs text-emerald-400 font-medium">{ops?.failedWebhooks ? `${ops.failedWebhooks} failed` : 'All processed'}</span>
+                            <span className="text-xs text-cream/80 font-medium">{ops ? (ops.failedWebhooks ? `${ops.failedWebhooks} failed` : 'All processed') : '—'}</span>
                         </div>
                         <div className="flex items-center justify-between">
                             <span className="text-xs text-cream/70">Expired Payments Cleaned</span>
@@ -195,7 +200,7 @@ const Overview = () => {
             <div className="mt-10">
                 <div className="mb-4 flex items-center justify-between">
                     <h2 className="font-display text-3xl">Recent Orders</h2>
-                    <a href="/admin/orders" className="text-xs uppercase tracking-wider text-gold-400 hover:underline">View All Orders →</a>
+                    <a href="/admin/orders" className="text-xs uppercase tracking-wider text-gold-400 hover:text-gold-200">View all orders</a>
                 </div>
                 <OrdersTable orders={orders.slice(0, 5)} />
             </div>
@@ -481,50 +486,63 @@ const CatalogueAdmin = () => {
         const form = new FormData(event.currentTarget);
 
         try {
+            let productId: string;
+            let productName: string;
             if (editingProduct) {
-                // Edit existing product
-                await api.updateProduct(editingProduct.id, {
+                const product = await api.updateProduct(editingProduct.id, {
                     name: String(form.get('name')),
                     slug: String(form.get('slug')),
                     categoryId: String(form.get('categoryId')),
                     description: String(form.get('description')),
+                    shortDescription: String(form.get('description')),
+                    material: String(form.get('material')),
+                    dimensions: String(form.get('dimensions')),
                     status: String(form.get('status')),
                 });
-                const file = form.get('file');
-                if (file instanceof File && file.size) {
-                    const imageForm = new FormData();
-                    imageForm.set('file', file);
-                    imageForm.set('altText', String(form.get('name')));
-                    imageForm.set('sortOrder', '0');
-                    await api.uploadProductImage(editingProduct.id, imageForm);
-                }
-                setSuccessMessage('Product updated successfully.');
+                productId = product.id;
+                productName = product.name;
             } else {
-                // Create product
                 const product = await api.createProduct({
                     categoryId: String(form.get('categoryId')),
                     name: String(form.get('name')),
                     slug: String(form.get('slug')),
                     shortDescription: String(form.get('description')),
                     description: String(form.get('description')),
+                    material: String(form.get('material')),
+                    dimensions: String(form.get('dimensions')),
                     status: String(form.get('status')),
                 });
                 await api.createVariant(product.id, {
-                    sku: String(form.get('sku')).toUpperCase(),
+                    sku: String(form.get('barcode')).trim().toUpperCase(),
                     name: String(form.get('variantName')),
                     pricePaise: Number(form.get('pricePaise')),
                     isActive: true,
                 });
-                const file = form.get('file');
-                if (file instanceof File && file.size) {
+                productId = product.id;
+                productName = product.name;
+            }
+
+            const imageFiles = form.getAll('images').filter((file): file is File => file instanceof File && file.size > 0);
+            for (const [index, file] of imageFiles.entries()) {
                     const imageForm = new FormData();
                     imageForm.set('file', file);
-                    imageForm.set('altText', product.name);
-                    imageForm.set('sortOrder', '0');
-                    await api.uploadProductImage(product.id, imageForm);
-                }
-                setSuccessMessage('New product created successfully.');
+                imageForm.set('altText', productName);
+                imageForm.set('sortOrder', String(index));
+                await api.uploadProductImage(productId, imageForm);
             }
+
+            const videoUrl = String(form.get('videoUrl') || '').trim();
+            if (videoUrl) {
+                await api.addProductVideoUrl(productId, { url: videoUrl, altText: productName });
+            }
+            const videoFile = form.get('videoFile');
+            if (videoFile instanceof File && videoFile.size > 0) {
+                const videoForm = new FormData();
+                videoForm.set('file', videoFile);
+                videoForm.set('altText', productName);
+                await api.uploadProductVideo(productId, videoForm);
+            }
+            setSuccessMessage(editingProduct ? 'Product updated successfully.' : 'New product created successfully.');
             setOpenProductModal(false);
             setEditingProduct(null);
             await load();
@@ -592,7 +610,7 @@ const CatalogueAdmin = () => {
     return (
         <AdminShell
             title="Catalogue Command"
-            description="Manage live luxury products, variants, media processing, and taxonomy categories."
+            description="Manage products, variants, media, publishing state, and catalogue categories."
             action={
                 <div className="flex gap-3">
                     <button
@@ -829,8 +847,8 @@ const CatalogueAdmin = () => {
                             {!editingProduct && (
                                 <>
                                     <label>
-                                        <span className="mb-1.5 block text-xs text-cream/60 font-medium">SKU</span>
-                                        <input name="sku" placeholder="GLK-PRODUCT-01" className={inputStyle} required />
+                                        <span className="mb-1.5 block text-xs text-cream/60 font-medium">Barcode Number</span>
+                                        <input name="barcode" placeholder="8901234567890" className={inputStyle} required />
                                     </label>
                                     <label>
                                         <span className="mb-1.5 block text-xs text-cream/60 font-medium">Variant Name</span>
@@ -843,14 +861,36 @@ const CatalogueAdmin = () => {
                                 </>
                             )}
 
+                            <label>
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Material</span>
+                                <input name="material" defaultValue={editingProduct?.material || ''} placeholder="e.g. Stainless steel" className={inputStyle} />
+                            </label>
+                            <label>
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Dimensions (L × W × H)</span>
+                                <input name="dimensions" defaultValue={editingProduct?.dimensions || ''} placeholder="30 × 20 × 10 cm" className={inputStyle} />
+                            </label>
+
                             <label className="sm:col-span-2">
-                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Description</span>
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Description (shown on storefront)</span>
                                 <textarea name="description" defaultValue={editingProduct?.description || ''} rows={4} className="w-full border border-gold-500/25 bg-obsidian p-4 text-sm text-cream outline-none focus:border-gold-400 rounded-sm" />
                             </label>
 
                             <label className="sm:col-span-2">
-                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">{editingProduct ? 'Upload / Replace Main Image' : 'Product Image'}</span>
-                                <input name="file" type="file" accept="image/jpeg,image/png,image/webp" className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer" />
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Images & GIFs</span>
+                                <input name="images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer" />
+                                <span className="mt-1 block text-[10px] text-cream/40">Choose multiple JPEG, PNG, WebP, or GIF files. GIFs remain animated.</span>
+                            </label>
+
+                            <label className="sm:col-span-2">
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Video URL</span>
+                                <input name="videoUrl" type="url" placeholder="https://cdn.example.com/product-video.mp4" className={inputStyle} />
+                                <span className="mt-1 block text-[10px] text-cream/40">Use a direct HTTPS MP4, WebM, or MOV URL.</span>
+                            </label>
+
+                            <label className="sm:col-span-2">
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Upload Product Video</span>
+                                <input name="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime" className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer" />
+                                <span className="mt-1 block text-[10px] text-cream/40">MP4, WebM, or MOV; up to 25 MB.</span>
                             </label>
                         </div>
 
@@ -903,19 +943,22 @@ const CatalogueAdmin = () => {
 const InventoryAdmin = () => {
     const [levels, setLevels] = useState<InventoryLevel[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
+    const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [lowStockOnly, setLowStockOnly] = useState(false);
 
     const [editingLevel, setEditingLevel] = useState<InventoryLevel | null>(null);
+    const [openWarehouseModal, setOpenWarehouseModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
     const load = () =>
-        Promise.all([api.inventory(), api.adminProducts()])
-            .then(([rows, items]) => {
+        Promise.all([api.inventory(), api.adminProducts(), api.warehouses()])
+            .then(([rows, items, warehouseRows]) => {
                 setLevels(rows);
                 setProducts(items);
+                setWarehouses(warehouseRows);
             })
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load inventory.'));
 
@@ -930,6 +973,31 @@ const InventoryAdmin = () => {
         }
         return map;
     }, [products]);
+
+    const warehousesMap = useMemo(
+        () => new Map(warehouses.map((warehouse) => [warehouse.id, warehouse])),
+        [warehouses],
+    );
+
+    const handleCreateWarehouse = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setSaving(true);
+        setError('');
+        const form = new FormData(event.currentTarget);
+        try {
+            const warehouse = await api.createWarehouse({
+                code: String(form.get('code')).trim().toUpperCase(),
+                name: String(form.get('name')).trim(),
+            });
+            setOpenWarehouseModal(false);
+            setSuccessMsg(`${warehouse.name} created. Every catalogue variant is ready to stock.`);
+            await load();
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Failed to create warehouse.');
+        } finally {
+            setSaving(false);
+        }
+    };
 
     const handleSaveStock = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -967,7 +1035,18 @@ const InventoryAdmin = () => {
     }, [levels, variantsMap, searchQuery, lowStockOnly]);
 
     return (
-        <AdminShell title="Inventory Control" description="Live warehouse stock levels, reservations, available SKUs, and low-stock alert thresholds.">
+        <AdminShell
+            title="Inventory Control"
+            description="Live warehouse stock levels, reservations, available SKUs, and low-stock alert thresholds. New catalogue variants are added automatically at zero stock."
+            action={
+                <button
+                    onClick={() => setOpenWarehouseModal(true)}
+                    className="flex h-11 items-center gap-2 bg-gold-400 px-4 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                >
+                    <IconPlus size={16} /> Add Warehouse
+                </button>
+            }
+        >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
 
@@ -993,12 +1072,26 @@ const InventoryAdmin = () => {
                 </button>
             </div>
 
+            {!warehouses.length && (
+                <div className="mb-6 border border-amber-500/30 bg-amber-950/20 p-5 rounded-sm">
+                    <h2 className="text-sm font-bold text-amber-300">Set up your first warehouse</h2>
+                    <p className="mt-1 text-xs text-cream/65">Inventory is tracked per warehouse. Creating one automatically adds every catalogue variant at zero stock, ready for you to set its on-hand quantity.</p>
+                    <button
+                        onClick={() => setOpenWarehouseModal(true)}
+                        className="mt-4 flex h-10 items-center gap-2 border border-amber-400/40 px-3 text-xs font-semibold text-amber-200 hover:bg-amber-400/10 rounded-sm"
+                    >
+                        <IconPlus size={14} /> Create First Warehouse
+                    </button>
+                </div>
+            )}
+
             {/* Inventory Table */}
             <div className={`${box} overflow-x-auto`}>
-                <table className="w-full min-w-[750px] text-left text-sm">
+                <table className="w-full min-w-[860px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
-                            <th className="p-4">SKU / Item</th>
+                            <th className="p-4">Barcode / Item</th>
+                            <th className="p-4">Warehouse</th>
                             <th className="p-4 text-center">On Hand</th>
                             <th className="p-4 text-center">Reserved</th>
                             <th className="p-4 text-center">Available</th>
@@ -1017,6 +1110,10 @@ const InventoryAdmin = () => {
                                 <tr key={level.id} className="transition-colors hover:bg-gold-400/[.03]">
                                     <td className="p-4 font-medium text-cream">
                                         {info ? info.label : level.variantId}
+                                    </td>
+                                    <td className="p-4 text-xs text-cream/60">
+                                        {warehousesMap.get(level.warehouseId)?.name || level.warehouseId}
+                                        {warehousesMap.get(level.warehouseId) && <span className="ml-2 text-[10px] text-gold-400">{warehousesMap.get(level.warehouseId)?.code}</span>}
                                     </td>
                                     <td className="p-4 text-center font-display text-base text-cream">{level.onHand}</td>
                                     <td className="p-4 text-center text-cream/50">{level.reserved}</td>
@@ -1046,6 +1143,34 @@ const InventoryAdmin = () => {
                 </table>
                 {!filteredLevels.length && <p className="p-10 text-center text-sm text-cream/40">No inventory level records found.</p>}
             </div>
+
+            {openWarehouseModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
+                    <form onSubmit={handleCreateWarehouse} className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+                        <div className="flex justify-between border-b border-gold-500/20 pb-4">
+                            <div>
+                                <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-gold-400">Inventory Setup</span>
+                                <h3 className="font-display text-2xl text-cream">Add Warehouse</h3>
+                            </div>
+                            <button type="button" onClick={() => setOpenWarehouseModal(false)} className="text-xs text-cream/40 hover:text-cream">Close</button>
+                        </div>
+                        <p className="mt-4 text-xs leading-relaxed text-cream/60">All catalogue variants will be added to this warehouse with zero stock.</p>
+                        <div className="mt-5 space-y-4">
+                            <label className="block">
+                                <span className="mb-1.5 block text-xs text-cream/70">Warehouse Name</span>
+                                <input name="name" placeholder="Main Warehouse" className={inputStyle} required />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1.5 block text-xs text-cream/70">Warehouse Code</span>
+                                <input name="code" placeholder="MAIN" pattern="[A-Za-z0-9_-]+" className={inputStyle} required />
+                            </label>
+                        </div>
+                        <button disabled={saving} className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 disabled:opacity-50 rounded-sm">
+                            {saving ? 'Creating Warehouse…' : 'Create Warehouse'}
+                        </button>
+                    </form>
+                </div>
+            )}
 
             {/* Adjust Stock Modal */}
             {editingLevel && (

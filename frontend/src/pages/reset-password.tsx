@@ -60,11 +60,11 @@ export const ResetPasswordPage = () => {
         <div className="flex min-h-screen flex-col justify-between bg-obsidian text-cream">
             <SEOHead title="Set New Password | Glockery" />
             <Header />
-            <main className="flex flex-1 items-center justify-center px-6 py-20">
-                <div className="w-full max-w-md rounded-sm border border-gold-500/25 bg-carbon p-8 shadow-2xl">
+            <main id="main-content" className="flex flex-1 items-center justify-center px-6 py-20">
+                <div className="w-full max-w-md border border-line bg-carbon p-8">
                     <div className="mb-6 border-b border-gold-500/20 pb-4">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-gold-400">Security credentials</span>
-                        <h1 className="mt-1 font-display text-3xl text-cream">Create New Password</h1>
+                        <span className="eyebrow">Account security</span>
+                        <h1 className="mt-1 font-display text-4xl font-semibold text-cream">Create a new password</h1>
                     </div>
 
                     {success ? (
@@ -84,13 +84,13 @@ export const ResetPasswordPage = () => {
                             {error && <p className="rounded-sm border border-red-500/30 bg-red-950/20 p-3 text-xs text-red-200" role="alert">{error}</p>}
                             <label className="block">
                                 <span className="mb-2 block text-xs text-cream/60">New password</span>
-                                <input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-12 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none focus:border-gold-400" required minLength={12} maxLength={128} />
+                                <input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} className="field h-12 w-full text-sm" required minLength={12} maxLength={128} />
                             </label>
                             <label className="block">
                                 <span className="mb-2 block text-xs text-cream/60">Confirm new password</span>
-                                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="h-12 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-sm text-cream outline-none focus:border-gold-400" required minLength={12} maxLength={128} />
+                                <input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="field h-12 w-full text-sm" required minLength={12} maxLength={128} />
                             </label>
-                            <button disabled={loading || !recovery.accessToken || !recovery.refreshToken} className="h-13 w-full rounded-sm bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian shadow-md hover:bg-gold-300 disabled:opacity-50">
+                            <button disabled={loading || !recovery.accessToken || !recovery.refreshToken} className="button-primary w-full disabled:opacity-50">
                                 {loading ? 'Updating password…' : 'Set new password'}
                             </button>
                         </form>

@@ -90,4 +90,72 @@ describe('CatalogueService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.productVariant.create).not.toHaveBeenCalled();
   });
+
+  it('creates zero-stock inventory levels for a new variant in every warehouse', async () => {
+    const variant = { id: 'variant-id', sku: 'SKU-1' };
+    const transaction = {
+      productVariant: { create: jest.fn().mockResolvedValue(variant) },
+      warehouse: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'warehouse-a' }, { id: 'warehouse-b' }]),
+      },
+      inventoryLevel: { createMany: jest.fn().mockResolvedValue({ count: 2 }) },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback) => callback(transaction)),
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.createVariant(
+        'actor-id',
+        'product-id',
+        { sku: 'sku-1', name: 'Standard', pricePaise: 10_000 },
+        {},
+      ),
+    ).resolves.toEqual(variant);
+
+    expect(transaction.inventoryLevel.createMany).toHaveBeenCalledWith({
+      data: [
+        { warehouseId: 'warehouse-a', variantId: 'variant-id' },
+        { warehouseId: 'warehouse-b', variantId: 'variant-id' },
+      ],
+    });
+  });
+
+  it('adds a direct HTTPS product video to the product gallery', async () => {
+    const video = { id: 'video-id', url: 'https://cdn.example.com/product.mp4' };
+    const prisma = {
+      product: { findUnique: jest.fn().mockResolvedValue({ id: 'product-id' }) },
+      productVideo: { create: jest.fn().mockResolvedValue(video) },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.addProductVideoUrl(
+        'actor-id',
+        'product-id',
+        { url: 'https://cdn.example.com/product.mp4', altText: 'Product walkthrough' },
+        {},
+      ),
+    ).resolves.toEqual(video);
+
+    expect(prisma.productVideo.create).toHaveBeenCalledWith({
+      data: {
+        productId: 'product-id',
+        url: 'https://cdn.example.com/product.mp4',
+        altText: 'Product walkthrough',
+        sortOrder: 0,
+      },
+    });
+  });
 });

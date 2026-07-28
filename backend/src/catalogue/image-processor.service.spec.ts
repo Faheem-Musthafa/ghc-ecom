@@ -55,6 +55,26 @@ describe('ImageProcessorService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('accepts GIF images and produces WebP gallery derivatives', async () => {
+    const input = await sharp({
+      create: {
+        width: 320,
+        height: 160,
+        channels: 3,
+        background: '#ccaa33',
+      },
+    })
+      .gif()
+      .toBuffer();
+
+    const result = await service.process(file(input, 'image/gif'));
+
+    expect(result).toMatchObject({ sourceWidth: 320, sourceHeight: 160 });
+    await expect(sharp(result.derivatives[0].buffer).metadata()).resolves.toMatchObject({
+      format: 'webp',
+    });
+  });
+
   it('rejects malformed image bytes even when the MIME type is spoofed', async () => {
     await expect(service.process(file(Buffer.from('not-an-image')))).rejects.toBeInstanceOf(
       BadRequestException,
