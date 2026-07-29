@@ -24,10 +24,59 @@ const product: Product = {
     description: 'Gold-finished tableware for memorable evenings.',
     status: 'PUBLISHED',
     attributes: { material: 'Stainless steel' },
-    category: { id: '11111111-1111-4111-8111-111111111111', name: 'Serveware', slug: 'serveware', isPublished: true, sortOrder: 0 },
-    variants: [{ id: '33333333-3333-4333-8333-333333333333', sku: 'GHC-NOIR-1', name: 'Gold', pricePaise: 249900, isActive: true }],
-    images: [{ id: '44444444-4444-4444-8444-444444444444', thumbnailUrl: '/product.webp', mediumUrl: '/product.webp', largeUrl: '/product.webp', altText: 'Noir Gold Serving Set', sortOrder: 0 }],
-    videos: [{ id: '55555555-5555-4555-8555-555555555556', url: 'https://cdn.example.com/noir-gold.mp4', altText: 'Noir Gold Serving Set video', sortOrder: 1 }],
+    category: {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Serveware',
+        slug: 'serveware',
+        isPublished: true,
+        sortOrder: 0,
+    },
+    variants: [
+        {
+            id: '33333333-3333-4333-8333-333333333333',
+            sku: 'GHC-NOIR-GOLD',
+            name: 'Gold',
+            pricePaise: 249900,
+            attributes: { color: 'Gold', colorHex: '#C5A059' },
+            isActive: true,
+        },
+        {
+            id: '33333333-3333-4333-8333-333333333334',
+            sku: 'GHC-NOIR-SAGE',
+            name: 'Sage Green',
+            pricePaise: 259900,
+            attributes: { color: 'Sage Green', colorHex: '#9CAF88' },
+            isActive: true,
+        },
+    ],
+    images: [
+        {
+            id: '44444444-4444-4444-8444-444444444444',
+            variantId: '33333333-3333-4333-8333-333333333333',
+            thumbnailUrl: '/product.webp',
+            mediumUrl: '/product.webp',
+            largeUrl: '/product.webp',
+            altText: 'Noir Gold Serving Set in Gold',
+            sortOrder: 0,
+        },
+        {
+            id: '44444444-4444-4444-8444-444444444445',
+            variantId: '33333333-3333-4333-8333-333333333334',
+            thumbnailUrl: '/sage.webp',
+            mediumUrl: '/sage.webp',
+            largeUrl: '/sage.webp',
+            altText: 'Noir Gold Serving Set in Sage Green',
+            sortOrder: 0,
+        },
+    ],
+    videos: [
+        {
+            id: '55555555-5555-4555-8555-555555555556',
+            url: 'https://cdn.example.com/noir-gold.mp4',
+            altText: 'Noir Gold Serving Set video',
+            sortOrder: 1,
+        },
+    ],
 };
 
 const emptyCart = {
@@ -38,7 +87,11 @@ const emptyCart = {
     subtotalPaise: 0,
 };
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+    });
 let mockAuthenticated = false;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -46,13 +99,35 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     if (url.endsWith('/auth/csrf')) return json({ csrfToken: 'test-csrf-token' });
     if (url.endsWith('/auth/session')) {
         return mockAuthenticated
-            ? json({ authenticated: true, user: { id: 'user-1', email: 'admin@example.com' } })
+            ? json({
+                  authenticated: true,
+                  user: { id: 'user-1', email: 'admin@example.com' },
+              })
             : json({ authenticated: false, user: null });
     }
     if (url.endsWith('/auth/refresh')) return json({ message: 'Session refresh is unavailable' }, 401);
     if (url.endsWith('/carts') && init?.method === 'POST') return json({ cart: emptyCart, guestToken: 'guest-token' });
     if (url.includes(`/carts/${emptyCart.id}/items`) && init?.method === 'PUT') {
-        return json({ ...emptyCart, items: [{ id: 'line-1', variantId: product.variants[0].id, sku: product.variants[0].sku, productName: product.name, variantName: 'Gold', imageUrl: '/product.webp', quantity: 1, unitPricePaise: 249900, lineTotalPaise: 249900 }], subtotalPaise: 249900 });
+        const body = JSON.parse(String(init.body)) as { variantId: string };
+        const variant = product.variants.find((item) => item.id === body.variantId) || product.variants[0];
+        const image = product.images.find((item) => item.variantId === variant.id);
+        return json({
+            ...emptyCart,
+            items: [
+                {
+                    id: 'line-1',
+                    variantId: variant.id,
+                    sku: variant.sku,
+                    productName: product.name,
+                    variantName: variant.name,
+                    imageUrl: image?.thumbnailUrl,
+                    quantity: 1,
+                    unitPricePaise: variant.pricePaise,
+                    lineTotalPaise: variant.pricePaise,
+                },
+            ],
+            subtotalPaise: variant.pricePaise,
+        });
     }
     if (url.endsWith('/categories')) return json([product.category]);
     if (url.includes('/products?')) return json({ items: [product], total: 1, page: 1, limit: 48 });
@@ -67,7 +142,11 @@ const render = async (node: React.ReactNode, path = '/') => {
     document.body.appendChild(container);
     await act(async () => {
         ReactDOM.render(
-            <AuthProvider><CartProvider><MemoryRouter initialEntries={[path]}>{node}</MemoryRouter></CartProvider></AuthProvider>,
+            <AuthProvider>
+                <CartProvider>
+                    <MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>
+                </CartProvider>
+            </AuthProvider>,
             container,
         );
         await Promise.resolve();
@@ -92,23 +171,49 @@ describe('black and gold commerce UI', () => {
         vi.unstubAllGlobals();
     });
 
-    it('renders the black-and-gold storefront from the catalogue API', async () => {
+    it('renders the Vengara storefront from the catalogue API', async () => {
         const container = await render(<HomePage />);
-        expect(container.textContent).toContain('Objects with presence.');
+        expect(container.textContent).toContain('Crockery and kitchenware for every home.');
         expect(container.textContent).toContain('Noir Gold Serving Set');
+        expect(container.textContent).toContain('See what’s new in store');
+        expect(container.textContent).toContain('Chat with Glockery on WhatsApp');
+        expect(container.querySelectorAll('iframe[src*="instagram.com/reel/"]')).toHaveLength(5);
         expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/products?'), expect.anything());
         expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), expect.anything());
     });
 
-    it('loads a product by slug and writes its variant to the backend cart', async () => {
-        const container = await render(<Route path="/product/:productId"><ProductDetailPage /></Route>, `/product/${product.slug}`);
+    it('switches colour images and writes the selected variant to the backend cart', async () => {
+        const container = await render(
+            <Route path="/product/:productId">
+                <ProductDetailPage />
+            </Route>,
+            `/product/${product.slug}`,
+        );
         expect(container.textContent).toContain('₹2,499');
+        const sageOption = container.querySelector<HTMLInputElement>(`input[value="${product.variants[1].id}"]`);
+        await act(async () => {
+            sageOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(container.querySelector<HTMLImageElement>('section img')?.getAttribute('src')).toBe('/sage.webp');
+        expect(container.textContent).toContain('SKU GHC-NOIR-SAGE');
+        expect(container.textContent).toContain('₹2,599');
         const videoThumbnail = container.querySelector<HTMLButtonElement>('button[aria-label="View video 2"]');
-        await act(async () => { videoThumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+        await act(async () => {
+            videoThumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
         expect(container.querySelector('video')).not.toBeNull();
         const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add to bag'));
-        await act(async () => { add?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve(); });
-        expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/carts/${emptyCart.id}/items`), expect.objectContaining({ method: 'PUT' }));
+        await act(async () => {
+            add?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            await Promise.resolve();
+        });
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringContaining(`/carts/${emptyCart.id}/items`),
+            expect.objectContaining({
+                method: 'PUT',
+                body: expect.stringContaining(product.variants[1].id),
+            }),
+        );
         expect(container.textContent).toContain('The bag');
     });
 
@@ -121,13 +226,25 @@ describe('black and gold commerce UI', () => {
     it('switches between sign-in and account registration', async () => {
         const container = await render(<AuthPage />, '/auth');
         const register = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create account');
-        await act(async () => { register?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+        await act(async () => {
+            register?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
         expect(container.textContent).toContain('Begin your collection.');
         expect(container.querySelector('input[name="name"]')).not.toBeNull();
     });
 
     it('protects customer account routes', async () => {
-        const container = await render(<><Route path="/account"><AccountPage /></Route><Route path="/auth"><span>Authentication required</span></Route></>, '/account/orders');
+        const container = await render(
+            <>
+                <Route path="/account">
+                    <AccountPage />
+                </Route>
+                <Route path="/auth">
+                    <span>Authentication required</span>
+                </Route>
+            </>,
+            '/account/orders',
+        );
         expect(container.textContent).toContain('Authentication required');
     });
 
@@ -139,7 +256,9 @@ describe('black and gold commerce UI', () => {
     });
 
     it('escapes script-closing characters in product JSON-LD', () => {
-        const serialized = serializeJsonLd({ name: '</script><script>alert(1)</script>' });
+        const serialized = serializeJsonLd({
+            name: '</script><script>alert(1)</script>',
+        });
         expect(serialized).not.toContain('</script>');
         expect(serialized).toContain('\\u003c/script\\u003e');
     });

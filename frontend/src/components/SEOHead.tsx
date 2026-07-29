@@ -15,15 +15,21 @@ interface SEOHeadProps {
     canonical?: string;
     product?: Product;
     structuredData?: Record<string, unknown>;
+    noIndex?: boolean;
 }
 
 const SEOHead = ({
-    title = 'Glockery Home Centre | Black & Gold Tableware',
-    description = 'Distinctive premium tableware, handcrafted serveware, and gold home accents for modern Indian homes.',
+    title = 'Glockery Home Centre Vengara | Crockery & Kitchenware',
+    description = 'Shop premium crockery, dinner sets, tea sets, serving dishes, canisters and kitchenware from Glockery Home Centre in Vengara, Malappuram.',
     canonical,
     product,
     structuredData,
+    noIndex = false,
 }: SEOHeadProps) => {
+    const canonicalHref = canonical || (typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : undefined);
+
     useEffect(() => {
         document.title = title;
 
@@ -54,19 +60,41 @@ const SEOHead = ({
         }
         ogDesc.content = description;
 
+        let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+        if (!robots) {
+            robots = document.createElement('meta');
+            robots.name = 'robots';
+            document.head.appendChild(robots);
+        }
+        robots.content = noIndex ? 'noindex, nofollow' : 'index, follow';
+
         // Canonical URL
-        if (canonical) {
+        if (canonicalHref) {
             let linkCanonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
             if (!linkCanonical) {
                 linkCanonical = document.createElement('link');
                 linkCanonical.rel = 'canonical';
                 document.head.appendChild(linkCanonical);
             }
-            linkCanonical.href = canonical;
+            linkCanonical.href = canonicalHref;
         }
-    }, [title, description, canonical]);
+    }, [title, description, canonicalHref, noIndex]);
 
     // Product JSON-LD Schema
+    const prices = product?.variants.map((variant) => variant.pricePaise / 100) ?? [];
+    const offers = product && prices.length === 1 ? {
+        '@type': 'Offer',
+        priceCurrency: 'INR',
+        price: prices[0].toFixed(2),
+        url: canonicalHref,
+    } : product && prices.length > 1 ? {
+        '@type': 'AggregateOffer',
+        priceCurrency: 'INR',
+        lowPrice: Math.min(...prices).toFixed(2),
+        highPrice: Math.max(...prices).toFixed(2),
+        offerCount: prices.length,
+        url: canonicalHref,
+    } : undefined;
     const productSchema = product ? {
         '@context': 'https://schema.org',
         '@type': 'Product',
@@ -75,12 +103,8 @@ const SEOHead = ({
         description: product.description || product.shortDescription,
         sku: product.variants[0]?.sku,
         brand: { '@type': 'Brand', name: 'Glockery Home Centre' },
-        offers: product.variants[0] ? {
-            '@type': 'Offer',
-            priceCurrency: 'INR',
-            price: (product.variants[0].pricePaise / 100).toFixed(2),
-            availability: 'https://schema.org/InStock',
-        } : undefined,
+        url: canonicalHref,
+        offers,
     } : null;
 
     const schemaToRender = structuredData || productSchema;

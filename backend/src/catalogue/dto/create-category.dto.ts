@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
@@ -7,10 +8,13 @@ import {
   Matches,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value))
+  @MinLength(2)
   @MaxLength(120)
   name!: string;
 
@@ -20,6 +24,8 @@ export class CreateCategoryDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @MaxLength(1000)
   description?: string;
 
   @IsOptional()

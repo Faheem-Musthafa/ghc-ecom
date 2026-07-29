@@ -57,7 +57,7 @@ describe('PaymentsService', () => {
     order: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
     payment: { findUnique: jest.Mock; upsert: jest.Mock };
   };
-  let carts: { requireAccessibleCart: jest.Mock };
+  let carts: { requireAccessibleCart: jest.Mock; requireOwnedCart: jest.Mock };
   let razorpay: {
     publicKey: jest.Mock;
     createOrder: jest.Mock;
@@ -99,7 +99,10 @@ describe('PaymentsService', () => {
       ),
       $executeRaw: jest.fn().mockResolvedValue(1),
     };
-    carts = { requireAccessibleCart: jest.fn().mockResolvedValue({ id: quote.cartId }) };
+    carts = {
+      requireAccessibleCart: jest.fn().mockResolvedValue({ id: quote.cartId }),
+      requireOwnedCart: jest.fn().mockResolvedValue({ id: quote.cartId }),
+    };
     razorpay = {
       publicKey: jest.fn().mockReturnValue('rzp_test_public'),
       createOrder: jest.fn().mockResolvedValue({
@@ -164,6 +167,31 @@ describe('PaymentsService', () => {
     );
     expect(razorpay.fetchPayment).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(carts.requireOwnedCart).toHaveBeenCalledWith(quote.cartId, undefined, undefined);
+  });
+
+  it('recovers a captured payment from Razorpay when browser verification was interrupted', async () => {
+    const order = { ...pendingOrder, razorpayOrderId: 'order_provider_1' };
+    prisma.order.findUnique
+      .mockResolvedValueOnce(order)
+      .mockResolvedValueOnce({ ...order, status: OrderStatus.CONFIRMED });
+    razorpay.fetchOrder.mockResolvedValue({ status: 'paid' });
+    razorpay.fetchPaymentsForOrder.mockResolvedValue([
+      {
+        id: 'pay_1',
+        entity: 'payment',
+        amount: quote.totalPaise,
+        currency: 'INR',
+        status: 'captured',
+        order_id: 'order_provider_1',
+      },
+    ]);
+
+    await expect(
+      service.resolveCheckoutStatus('order_provider_1', undefined, 'guest-token'),
+    ).resolves.toMatchObject({ status: OrderStatus.CONFIRMED });
+    expect(carts.requireOwnedCart).toHaveBeenCalledWith(quote.cartId, undefined, 'guest-token');
+    expect(transaction.payment.upsert).toHaveBeenCalledTimes(1);
   });
 
   it('stores a trusted captured payment and invokes atomic confirmation', async () => {

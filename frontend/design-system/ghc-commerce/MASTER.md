@@ -54,6 +54,11 @@ Gold is an accent, not a fill for entire sections. Semantic red, amber, blue, an
 
 ## Content principles
 
+- Business name: Glockery Home Centre.
+- Store location: Home Centre, near ICICI Bank, Vengara, Malappuram, Kerala 676304.
+- Core offer: premium crockery and kitchenware, including dinner sets, tea sets, cups, serving dishes, canisters, trays, oil and vinegar sets, and cutlery.
+- Public contact details: call `8138 003 232`; WhatsApp `6282 000 289`.
+- The business advertises free delivery across India. Ask customers to confirm product availability and delivery details when ordering.
 - Describe materials and policies only when supported by product or backend data.
 - Never invent reviews, store names, stock counts, delivery events, timers, or performance trends.
 - Use direct labels: “Shopping bag”, “Customer care”, “Orders”, “Inventory”.

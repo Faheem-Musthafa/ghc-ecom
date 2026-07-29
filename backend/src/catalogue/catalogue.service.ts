@@ -25,8 +25,10 @@ import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { ListProductsDto } from './dto/list-products.dto';
+import { ProductImageMetadataDto } from './dto/product-image-metadata.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ImageDerivative, ImageProcessorService } from './image-processor.service';
 
@@ -168,10 +170,13 @@ export class CatalogueService {
     input: CreateCategoryDto,
     context: RequestContext,
   ): Promise<Category> {
+    const name = this.normalizedCategoryName(input.name);
+    this.assertPublishableCategory(name, input.isPublished);
     const category = await this.mutate(() =>
       this.prisma.category.create({
         data: {
           ...input,
+          name,
           slug: input.slug.toLowerCase(),
         },
       }),
@@ -195,12 +200,23 @@ export class CatalogueService {
     if (input.parentId === categoryId) {
       throw new BadRequestException('A category cannot be its own parent');
     }
+    let name = input.name ? this.normalizedCategoryName(input.name) : undefined;
+    if (input.isPublished && !name) {
+      const existing = await this.prisma.category.findUnique({
+        where: { id: categoryId },
+        select: { name: true },
+      });
+      if (!existing) throw new NotFoundException('Category not found');
+      name = existing.name;
+    }
+    this.assertPublishableCategory(name, input.isPublished);
     const category = await this.mutate(
       () =>
         this.prisma.category.update({
           where: { id: categoryId },
           data: {
             ...input,
+            name,
             slug: input.slug?.toLowerCase(),
           },
         }),
@@ -285,11 +301,12 @@ export class CatalogueService {
     this.validateVariantPrices(input.pricePaise, input.compareAtPricePaise);
     const variant = await this.mutate(() =>
       this.prisma.$transaction(async (transaction) => {
+        const { color, colorHex, attributes, ...variantInput } = input;
         const created = await transaction.productVariant.create({
           data: {
-            ...input,
+            ...variantInput,
             sku: input.sku.toUpperCase(),
-            attributes: input.attributes as Prisma.InputJsonValue | undefined,
+            attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
         });
@@ -331,16 +348,17 @@ export class CatalogueService {
         ? (existing.compareAtPricePaise ?? undefined)
         : input.compareAtPricePaise,
     );
-    const variant = await this.mutate(() =>
-      this.prisma.productVariant.update({
+    const variant = await this.mutate(() => {
+      const { color, colorHex, attributes, ...variantInput } = input;
+      return this.prisma.productVariant.update({
         where: { id: variantId },
         data: {
-          ...input,
+          ...variantInput,
           sku: input.sku?.toUpperCase(),
-          attributes: input.attributes as Prisma.InputJsonValue | undefined,
+          attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
-      }),
-    );
+      });
+    });
     await this.auditMutation(
       actorId,
       'catalogue.variant.updated',
@@ -369,10 +387,11 @@ export class CatalogueService {
     actorId: string,
     productId: string,
     file: Express.Multer.File,
-    metadata: ImageMetadataDto,
+    metadata: ProductImageMetadataDto,
     context: RequestContext,
   ): Promise<ProductImage> {
     await this.requireProduct(productId);
+    await this.requireVariantForProduct(productId, metadata.variantId);
     const image = await this.processAndStoreImage(productId, file);
     try {
       const record = await this.prisma.productImage.create({
@@ -397,7 +416,7 @@ export class CatalogueService {
     productId: string,
     imageId: string,
     file: Express.Multer.File,
-    metadata: ImageMetadataDto,
+    metadata: ProductImageMetadataDto,
     context: RequestContext,
   ): Promise<ProductImage> {
     const previous = await this.prisma.productImage.findFirst({
@@ -406,13 +425,19 @@ export class CatalogueService {
     if (!previous) {
       throw new NotFoundException('Product image not found');
     }
+    await this.requireVariantForProduct(productId, metadata.variantId);
 
     const image = await this.processAndStoreImage(productId, file);
     let replacement: ProductImage;
     try {
       replacement = await this.prisma.$transaction(async (transaction) => {
         const created = await transaction.productImage.create({
-          data: this.imageData(productId, file, metadata, image),
+          data: this.imageData(
+            productId,
+            file,
+            { ...metadata, variantId: metadata.variantId ?? previous.variantId ?? undefined },
+            image,
+          ),
         });
         await transaction.productImage.delete({ where: { id: previous.id } });
         return created;
@@ -432,6 +457,28 @@ export class CatalogueService {
       { replacedImageId: previous.id },
     );
     return replacement;
+  }
+
+  async updateProductImage(
+    actorId: string,
+    productId: string,
+    imageId: string,
+    input: UpdateProductImageDto,
+    context: RequestContext,
+  ): Promise<ProductImage> {
+    const image = await this.prisma.productImage.findFirst({
+      where: { id: imageId, productId },
+    });
+    if (!image) {
+      throw new NotFoundException('Product image not found');
+    }
+    await this.requireVariantForProduct(productId, input.variantId ?? undefined);
+    const updated = await this.prisma.productImage.update({
+      where: { id: imageId },
+      data: input,
+    });
+    await this.auditMutation(actorId, 'catalogue.image.updated', 'product_image', imageId, context);
+    return updated;
   }
 
   async deleteProductImage(
@@ -567,12 +614,33 @@ export class CatalogueService {
     }
   }
 
+  private normalizedCategoryName(name: string): string {
+    return name.trim().replace(/\s+/g, ' ');
+  }
+
+  private assertPublishableCategory(name?: string, isPublished?: boolean): void {
+    if (isPublished && name && /^(test(?:ing)?|demo|sample|untitled)$/i.test(name)) {
+      throw new BadRequestException('Placeholder categories cannot be published');
+    }
+  }
+
   private async requireProduct(productId: string): Promise<Product> {
     const product = await this.prisma.product.findUnique({ where: { id: productId } });
     if (!product) {
       throw new NotFoundException('Product not found');
     }
     return product;
+  }
+
+  private async requireVariantForProduct(productId: string, variantId?: string): Promise<void> {
+    if (!variantId) return;
+    const variant = await this.prisma.productVariant.findFirst({
+      where: { id: variantId, productId },
+      select: { id: true },
+    });
+    if (!variant) {
+      throw new BadRequestException('Image variant does not belong to this product');
+    }
   }
 
   private async processAndStoreImage(
@@ -607,7 +675,7 @@ export class CatalogueService {
   private imageData(
     productId: string,
     file: Express.Multer.File,
-    metadata: ImageMetadataDto,
+    metadata: ProductImageMetadataDto,
     image: StoredProductImage,
   ): Prisma.ProductImageUncheckedCreateInput {
     const derivatives = image.derivatives;
@@ -616,6 +684,7 @@ export class CatalogueService {
     const large = this.derivative(derivatives, 'large');
     return {
       productId,
+      variantId: metadata.variantId,
       altText: metadata.altText,
       sortOrder: metadata.sortOrder ?? 0,
       sourceFilename: basename(file.originalname).slice(0, 255) || 'upload',
@@ -638,6 +707,20 @@ export class CatalogueService {
       largeHeight: large.height,
       largeBytes: large.bytes,
     };
+  }
+
+  private variantAttributes(
+    input: Record<string, unknown> | undefined,
+    color: string | undefined,
+    colorHex: string | undefined,
+    existing?: Prisma.JsonValue,
+  ): Prisma.InputJsonValue {
+    const base =
+      existing && typeof existing === 'object' && !Array.isArray(existing) ? { ...existing } : {};
+    const attributes = { ...base, ...(input ?? {}) } as Record<string, Prisma.JsonValue>;
+    if (color !== undefined) attributes.color = color.trim();
+    if (colorHex !== undefined) attributes.colorHex = colorHex.toUpperCase();
+    return attributes as Prisma.InputJsonValue;
   }
 
   private derivative(

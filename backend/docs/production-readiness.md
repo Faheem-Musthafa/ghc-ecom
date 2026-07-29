@@ -55,8 +55,10 @@
   courier, notification, and alert credentials one provider at a time.
 - Deploy code accepting old and new webhook secrets during the short transition when
   the provider supports it; verify delivery, then revoke the old value.
-- Run `npm audit --audit-level=high`, `npm run scan:secrets`, and the CI secret scanner
-  on every change. Triage findings; do not silently suppress them.
+- Run `npm run security:audit`, `npm run scan:secrets`, and the CI secret scanner on
+  every change. The blocking audit covers packages shipped in the production image.
+  Also review a full `npm audit` report during dependency maintenance; document and
+  track development-tool findings that cannot be upgraded safely yet.
 - Run an authenticated penetration test before launch and after material auth,
   checkout, upload, or administration changes. Track remediation and retest evidence.
 
@@ -88,6 +90,8 @@ penetration testing still requires explicit staging authorization.
 ## Razorpay test-to-live launch
 
 1. Replace placeholder test secrets and register the HTTPS webhook endpoint.
+   Production rejects `rzp_test_*` keys unless the isolated staging environment sets
+   `ALLOW_TEST_PAYMENTS_IN_PRODUCTION=true`; never set that override in the live environment.
 2. Subscribe to `payment.captured`, `payment.failed`, `order.paid`,
    `refund.created`, `refund.processed`, and `refund.failed`.
 3. In test mode verify success, failure, cancellation, duplicate delivery,

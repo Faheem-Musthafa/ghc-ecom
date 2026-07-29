@@ -32,8 +32,10 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
+import { ProductImageMetadataDto } from './dto/product-image-metadata.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 
 const imageInterceptor = FileInterceptor('file', {
@@ -258,7 +260,7 @@ export class AdminCatalogueController {
     @CurrentUser() actor: AuthenticatedUser,
     @Param('productId', ParseUUIDPipe) productId: string,
     @UploadedFile(imagePipe) file: Express.Multer.File,
-    @Body() metadata: ImageMetadataDto,
+    @Body() metadata: ProductImageMetadataDto,
     @Ip() ipAddress: string,
     @Req() request: Request,
   ): Promise<ProductImage> {
@@ -275,11 +277,26 @@ export class AdminCatalogueController {
     @Param('productId', ParseUUIDPipe) productId: string,
     @Param('imageId', ParseUUIDPipe) imageId: string,
     @UploadedFile(imagePipe) file: Express.Multer.File,
-    @Body() metadata: ImageMetadataDto,
+    @Body() metadata: ProductImageMetadataDto,
     @Ip() ipAddress: string,
     @Req() request: Request,
   ): Promise<ProductImage> {
     return this.catalogue.replaceProductImage(actor.id, productId, imageId, file, metadata, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Patch('products/:productId/images/:imageId')
+  updateImage(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('imageId', ParseUUIDPipe) imageId: string,
+    @Body() input: UpdateProductImageDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<ProductImage> {
+    return this.catalogue.updateProductImage(actor.id, productId, imageId, input, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

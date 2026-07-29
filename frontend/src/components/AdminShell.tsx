@@ -1,6 +1,7 @@
 import React, { ReactNode, useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import {
     IconArrowRight,
@@ -29,6 +30,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, chi
     const [mobileOpen, setMobileOpen] = useState(false);
     const [lowStockCount, setLowStockCount] = useState<number | null>(null);
     const [connection, setConnection] = useState<'checking' | 'connected' | 'unavailable'>('checking');
+    const mobileNavRef = useDialog<HTMLDivElement>(mobileOpen, () => setMobileOpen(false));
 
     useEffect(() => {
         document.title = `${title} | Glockery Admin`;
@@ -108,7 +110,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, chi
             {mobileOpen && (
                 <div className="fixed inset-0 z-50 lg:hidden">
                     <button className="absolute inset-0 bg-black/70" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" />
-                    <div className="absolute inset-y-0 left-0 w-[min(86vw,300px)]">{sidebar}</div>
+                    <div ref={mobileNavRef} tabIndex={-1} className="absolute inset-y-0 left-0 w-[min(86vw,300px)] outline-none" role="dialog" aria-modal="true" aria-label="Admin navigation">{sidebar}</div>
                 </div>
             )}
 

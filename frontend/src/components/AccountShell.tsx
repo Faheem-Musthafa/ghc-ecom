@@ -1,8 +1,8 @@
 import React, { ReactNode, useEffect, useRef } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useWishlist } from '../contexts/WishlistContext';
-import { IconArrowRight, IconHeart, IconLogOut, IconMapPin, IconPackage, IconUser } from './Icons';
+import { IconHeart, IconLogOut, IconMapPin, IconPackage, IconUser } from './Icons';
 import Header from './Header';
 import StoreFooter from './StoreFooter';
 
@@ -22,26 +22,12 @@ const AccountShell = ({ title, intro, children }: { title: string; intro: string
         ['/account/wishlist', `Wishlist (${wishlistIds.length})`, <IconHeart size={18} key="heart" />],
     ];
 
-    const userName = session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Member';
     const userEmail = session?.user?.email || '';
-    const initials = userName.slice(0, 2).toUpperCase();
 
     return (
         <div className="flex min-h-screen flex-col justify-between bg-obsidian font-body text-cream">
             <Header />
             <div className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-14">
-                <header className="mb-10 flex flex-col gap-7 border-b border-line pb-8 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-5">
-                        <span className="grid size-14 shrink-0 place-items-center bg-gold-400 text-sm font-bold text-obsidian">{initials}</span>
-                        <div>
-                            <p className="eyebrow">Your account</p>
-                            <h1 className="mt-1 font-display text-3xl font-semibold text-cream sm:text-4xl">Welcome, {userName}</h1>
-                            <p className="mt-1 text-xs text-cream/40">{userEmail}</p>
-                        </div>
-                    </div>
-                    <Link to="/search" className="button-secondary gap-2">Continue shopping <IconArrowRight size={15} /></Link>
-                </header>
-
                 <div className="grid gap-9 lg:grid-cols-[230px_minmax(0,1fr)]">
                     <aside>
                         <nav ref={tabsRef} className="flex gap-2 overflow-x-auto border-b border-line pb-4 lg:flex-col lg:overflow-visible lg:border-b-0 lg:pb-0" aria-label="Account navigation">
@@ -55,10 +41,10 @@ const AccountShell = ({ title, intro, children }: { title: string; intro: string
                     </aside>
 
                     <main id="main-content" className="min-w-0">
-                        <header className="mb-7">
-                            <p className="eyebrow">Account</p>
-                            <h2 className="mt-2 font-display text-4xl font-semibold text-cream sm:text-5xl">{title}</h2>
-                            <p className="mt-3 max-w-2xl text-sm leading-6 text-cream/50">{intro}</p>
+                        <header className="mb-8 border-b border-line pb-7">
+                            <p className="text-sm text-cream/60">{userEmail}</p>
+                            <h1 className="mt-2 font-display text-4xl font-semibold tracking-[-0.02em] text-cream sm:text-5xl">{title}</h1>
+                            <p className="mt-3 max-w-2xl text-sm leading-6 text-cream/65">{intro}</p>
                         </header>
                         {children}
                     </main>

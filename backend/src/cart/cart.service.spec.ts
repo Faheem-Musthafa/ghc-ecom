@@ -26,6 +26,7 @@ describe('CartService', () => {
             sku: 'SKU-1',
             name: 'Default',
             pricePaise: 12_500,
+            images: [{ thumbnailUrl: 'https://images.test/variant-thumbnail.webp' }],
             product: {
               name: 'Stored Product',
               images: [{ thumbnailUrl: 'https://images.test/thumbnail.webp' }],
@@ -41,9 +42,40 @@ describe('CartService', () => {
         {
           unitPricePaise: 12_500,
           lineTotalPaise: 37_500,
+          imageUrl: 'https://images.test/variant-thumbnail.webp',
         },
       ],
     });
+  });
+
+  it('uses a shared product image when the selected variant has no image', () => {
+    const service = new CartService({} as never, {} as never);
+    const cart = {
+      id: 'cart-id',
+      status: CartStatus.ACTIVE,
+      expiresAt: new Date(),
+      items: [
+        {
+          id: 'item-id',
+          variantId: 'variant-id',
+          quantity: 1,
+          variant: {
+            sku: 'SKU-1',
+            name: 'Sage Green',
+            pricePaise: 12_500,
+            images: [],
+            product: {
+              name: 'Stored Product',
+              images: [{ thumbnailUrl: 'https://images.test/shared-thumbnail.webp' }],
+            },
+          },
+        },
+      ],
+    };
+
+    expect(service.view(cart as never).items[0].imageUrl).toBe(
+      'https://images.test/shared-thumbnail.webp',
+    );
   });
 
   it('rejects a cart request without querying an invalid UUID sentinel', async () => {

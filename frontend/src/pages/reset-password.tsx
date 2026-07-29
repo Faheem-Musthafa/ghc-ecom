@@ -58,7 +58,7 @@ export const ResetPasswordPage = () => {
 
     return (
         <div className="flex min-h-screen flex-col justify-between bg-obsidian text-cream">
-            <SEOHead title="Set New Password | Glockery" />
+            <SEOHead title="Set New Password | Glockery" noIndex />
             <Header />
             <main id="main-content" className="flex flex-1 items-center justify-center px-6 py-20">
                 <div className="w-full max-w-md border border-line bg-carbon p-8">

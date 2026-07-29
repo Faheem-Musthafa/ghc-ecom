@@ -5,8 +5,8 @@ const TrustBadges = () => (
     <section className="border-y border-line bg-obsidian" aria-label="Shopping assurances">
         <div className="mx-auto grid max-w-[1440px] divide-y divide-line px-4 sm:grid-cols-3 sm:divide-x sm:divide-y-0 sm:px-8 lg:px-12">
             {[
-                [<IconAward size={20} className="shrink-0 text-gold-400" />, 'Considered selection', 'Chosen for material, proportion, and daily use'],
-                [<IconTruck size={20} className="shrink-0 text-gold-400" />, 'Careful delivery', 'Protected packing and tracked shipping across India'],
+                [<IconAward size={20} className="shrink-0 text-gold-400" />, 'Crockery & kitchenware', 'Dinner sets, tea sets, canisters, serving dishes and more'],
+                [<IconTruck size={20} className="shrink-0 text-gold-400" />, 'Free delivery', 'Available for orders across India'],
                 [<IconShieldCheck size={20} className="shrink-0 text-gold-400" />, 'Secure checkout', 'Server-verified payments powered by Razorpay'],
             ].map(([icon, title, copy]) => (
                 <article key={String(title)} className="flex min-h-32 items-start gap-4 py-7 sm:px-7">

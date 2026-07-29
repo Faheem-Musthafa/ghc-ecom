@@ -3,6 +3,7 @@ import { Link, Redirect, useParams } from 'react-router-dom';
 import AccountShell from '../components/AccountShell';
 import { IconCheckCircle, IconDownload, IconMapPin } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
@@ -15,6 +16,7 @@ const OrderDetailPage = () => {
     const [error, setError] = useState('');
     const [returnOpen, setReturnOpen] = useState(false);
     const [notice, setNotice] = useState('');
+    const returnDialogRef = useDialog<HTMLFormElement>(returnOpen, () => setReturnOpen(false));
 
     useEffect(() => {
         if (signedIn) {
@@ -135,9 +137,9 @@ const OrderDetailPage = () => {
 
             {returnOpen && (
                 <div className="fixed inset-0 z-50 grid place-items-center bg-black/85 p-5 backdrop-blur-md">
-                    <form onSubmit={returnOrder} className="w-full max-w-lg rounded-sm border border-gold-500/30 bg-carbon p-8 shadow-2xl">
-                        <h2 className="font-display text-3xl font-bold text-cream">Request a Return</h2>
-                        <p className="mt-2 text-xs text-cream/50">Describe the reason for returning this item (minimum 10 characters).</p>
+                    <form ref={returnDialogRef} tabIndex={-1} onSubmit={returnOrder} className="w-full max-w-lg rounded-sm border border-gold-500/30 bg-carbon p-8 shadow-2xl outline-none" role="dialog" aria-modal="true" aria-labelledby="return-dialog-title" aria-describedby="return-dialog-description">
+                        <h2 id="return-dialog-title" className="font-display text-3xl font-bold text-cream">Request a Return</h2>
+                        <p id="return-dialog-description" className="mt-2 text-xs text-cream/50">Describe the reason for returning this item (minimum 10 characters).</p>
                         <textarea
                             name="reason"
                             minLength={10}

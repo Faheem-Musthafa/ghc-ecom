@@ -50,7 +50,7 @@ button,
 a {
   touch-action: manipulation;
   cursor: pointer;
-  transition-duration: 180ms;
+  transition-duration: 160ms;
   transition-property: color, background-color, border-color, opacity, box-shadow, transform;
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -60,7 +60,6 @@ a.button-active:active {
   transform: scale(0.98);
 }
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -75,6 +74,14 @@ a.button-active:active {
   background: #c9a35b;
 }
 
+.reel-track {
+  scrollbar-width: none;
+}
+
+.reel-track::-webkit-scrollbar {
+  display: none;
+}
+
 /* Base accessibility focus rings */
 :focus-visible {
   outline: 2px solid #dbc184;
@@ -84,6 +91,34 @@ a.button-active:active {
 ::selection {
   background: #c9a35b;
   color: #080807;
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in,
+.animate-fadeIn {
+  animation: overlay-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-left {
+  animation: drawer-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slideUp {
+  animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Keep supporting copy readable even where older routes use low-opacity
@@ -116,9 +151,9 @@ textarea::placeholder {
 
   .eyebrow {
     color: #c9a35b;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    letter-spacing: 0.22em;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     line-height: 1.4;
     text-transform: uppercase;
   }
@@ -128,13 +163,12 @@ textarea::placeholder {
     background: #c9a35b;
     color: #080807;
     display: inline-flex;
-    font-size: 0.6875rem;
-    font-weight: 700;
+    font-size: 0.875rem;
+    font-weight: 600;
     justify-content: center;
-    letter-spacing: 0.16em;
+    letter-spacing: 0;
     min-height: 48px;
     padding: 0.75rem 1.5rem;
-    text-transform: uppercase;
   }
 
   .button-primary:hover {
@@ -146,13 +180,12 @@ textarea::placeholder {
     border: 1px solid rgba(201, 163, 91, 0.55);
     color: #dbc184;
     display: inline-flex;
-    font-size: 0.6875rem;
-    font-weight: 700;
+    font-size: 0.875rem;
+    font-weight: 600;
     justify-content: center;
-    letter-spacing: 0.16em;
+    letter-spacing: 0;
     min-height: 48px;
     padding: 0.75rem 1.5rem;
-    text-transform: uppercase;
   }
 
   .button-secondary:hover {
@@ -171,6 +204,22 @@ textarea::placeholder {
   .field:focus {
     border-color: #c9a35b;
     outline: none;
+  }
+
+  .count-badge {
+    align-items: center;
+    background: #c9a35b;
+    color: #080807;
+    display: flex;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    justify-content: center;
+    min-height: 1rem;
+    min-width: 1rem;
+    padding-inline: 0.2rem;
+    position: absolute;
+    right: 0;
+    top: 0;
   }
 }
 
