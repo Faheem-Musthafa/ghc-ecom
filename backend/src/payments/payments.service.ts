@@ -107,13 +107,18 @@ export class PaymentsService {
     return this.intentView(order);
   }
 
-  async verifyCheckout(input: VerifyRazorpayPaymentDto): Promise<Order> {
+  async verifyCheckout(
+    input: VerifyRazorpayPaymentDto,
+    authorization?: string,
+    guestToken?: string,
+  ): Promise<Order> {
     const order = await this.prisma.order.findUnique({
       where: { razorpayOrderId: input.razorpayOrderId },
     });
     if (!order) {
       throw new NotFoundException('Order not found');
     }
+    await this.carts.requireOwnedCart(order.cartId, authorization, guestToken);
     if (
       !this.razorpay.verifyCheckoutSignature(
         order.razorpayOrderId!,
@@ -125,6 +130,34 @@ export class PaymentsService {
     }
     const payment = await this.razorpay.fetchPayment(input.razorpayPaymentId);
     await this.applyCapturedPayment(order, payment, true);
+    return (await this.prisma.order.findUnique({ where: { id: order.id } })) ?? order;
+  }
+
+  async resolveCheckoutStatus(
+    razorpayOrderId: string,
+    authorization?: string,
+    guestToken?: string,
+  ): Promise<Order> {
+    const order = await this.prisma.order.findUnique({ where: { razorpayOrderId } });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    await this.carts.requireOwnedCart(order.cartId, authorization, guestToken);
+    if (order.status !== OrderStatus.PAYMENT_PENDING) {
+      return order;
+    }
+
+    const providerOrder = await this.razorpay.fetchOrder(razorpayOrderId);
+    if (providerOrder.status === 'paid') {
+      const payments = await this.razorpay.fetchPaymentsForOrder(razorpayOrderId);
+      const captured = payments.find((payment) => payment.status === 'captured');
+      if (captured) {
+        await this.applyCapturedPayment(order, captured);
+      }
+    } else if (order.paymentExpiresAt <= new Date()) {
+      await this.prisma.$executeRaw`select public.fail_pending_order(${order.id}::uuid)`;
+    }
+
     return (await this.prisma.order.findUnique({ where: { id: order.id } })) ?? order;
   }
 

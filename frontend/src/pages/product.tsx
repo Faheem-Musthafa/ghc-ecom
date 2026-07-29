@@ -2,19 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import CartDrawer from '../components/CartDrawer';
 import Header from '../components/Header';
-import {
-    IconArrowRight,
-    IconAward,
-    IconCheckCircle,
-    IconHeart,
-    IconMinus,
-    IconPlus,
-    IconPlay,
-    IconShieldCheck,
-    IconShoppingBag,
-    IconTruck,
-} from '../components/Icons';
-import ProductCard from '../components/ProductCard';
+import { IconHeart, IconMinus, IconPlay, IconPlus } from '../components/Icons';
+import ProductVariantSelector from '../components/ProductVariantSelector';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
 import Toast from '../components/Toast';
@@ -22,33 +11,29 @@ import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import { api } from '../lib/api';
 import { fallbackImage, rupees } from '../lib/commerce';
+import { productImagesForVariant, variantOptionName } from '../lib/product-options';
 import { Product } from '../types';
 
 export const ProductDetailPage = () => {
     const { productId } = useParams<{ productId: string }>();
-    const { addVariant, openCart } = useCart();
+    const { addVariant } = useCart();
     const { isInWishlist, toggleWishlist } = useWishlist();
-
     const [product, setProduct] = useState<Product | null>(null);
-    const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
-    const [selected, setSelected] = useState(0);
+    const [selectedVariantId, setSelectedVariantId] = useState('');
     const [activeImage, setActiveImage] = useState(0);
     const [quantity, setQuantity] = useState(1);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [adding, setAdding] = useState(false);
-    const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'shipping'>('details');
+    const [addError, setAddError] = useState('');
 
     useEffect(() => {
         setLoading(true);
         api.product(productId)
-            .then((res) => {
-                setProduct(res);
+            .then((result) => {
+                setProduct(result);
+                setSelectedVariantId(result.variants[0]?.id || '');
                 setActiveImage(0);
-                // Fetch related products from category
-                api.products(new URLSearchParams({ page: '1', limit: '4', category: res.category.slug }))
-                    .then((relRes) => setRelatedProducts(relRes.items.filter((p) => p.id !== res.id)))
-                    .catch(() => setRelatedProducts([]));
             })
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Product not found.'))
             .finally(() => setLoading(false));
@@ -56,13 +41,11 @@ export const ProductDetailPage = () => {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-obsidian text-cream font-body">
+            <div className="min-h-screen bg-obsidian text-cream">
                 <Header />
-                <main className="mx-auto max-w-[1440px] px-6 py-20">
-                    <div className="grid animate-pulse gap-10 lg:grid-cols-2">
-                        <div className="aspect-square bg-carbon rounded-sm border border-gold-500/20" />
-                        <div className="h-96 bg-carbon rounded-sm border border-gold-500/20" />
-                    </div>
+                <main className="mx-auto grid max-w-[1440px] gap-10 px-4 py-10 sm:px-8 lg:grid-cols-2 lg:px-12 lg:py-16">
+                    <div className="aspect-square animate-pulse bg-panel" />
+                    <div className="h-96 animate-pulse bg-carbon" />
                 </main>
             </div>
         );
@@ -70,32 +53,42 @@ export const ProductDetailPage = () => {
 
     if (!product || error) {
         return (
-            <div className="min-h-screen bg-obsidian text-cream font-body flex flex-col justify-between">
+            <div className="flex min-h-screen flex-col bg-obsidian text-cream">
                 <Header />
-                <main className="grid min-h-[65vh] place-content-center px-6 text-center">
-                    <div className="mx-auto max-w-lg border border-line bg-carbon p-12">
-                        <h1 className="font-display text-4xl font-bold text-cream">This piece is unavailable.</h1>
-                        <p className="mt-3 text-xs text-cream/50 leading-relaxed">{error}</p>
-                        <Link className="mt-8 inline-flex items-center gap-2 bg-gold-400 px-6 py-3 text-xs font-bold uppercase tracking-wider text-obsidian rounded-sm hover:bg-gold-300 transition" to="/">
-                            Return to Collection <IconArrowRight size={15} />
-                        </Link>
-                    </div>
+                <main className="grid flex-1 place-content-center px-6 text-center">
+                    <h1 className="font-display text-4xl font-semibold">This product is unavailable.</h1>
+                    <p className="mt-3 text-sm text-cream/65">{error}</p>
+                    <Link className="button-primary mx-auto mt-7" to="/">
+                        Return to shop
+                    </Link>
                 </main>
                 <StoreFooter />
             </div>
         );
     }
 
-    const variant = product.variants[selected];
-    const media = [
-        ...product.images.map((image) => ({
-            id: image.id,
+    const variant = product.variants.find((item) => item.id === selectedVariantId) || product.variants[0];
+    const productImages = productImagesForVariant(product, variant);
+    const imageMedia = productImages.map((image) => ({
+        id: image.id,
+        type: 'image' as const,
+        sortOrder: image.sortOrder,
+        altText: image.altText,
+        url: image.largeUrl,
+        thumbnailUrl: image.thumbnailUrl,
+    }));
+    if (imageMedia.length === 0) {
+        imageMedia.push({
+            id: `fallback-${variant?.id || product.id}`,
             type: 'image' as const,
-            sortOrder: image.sortOrder,
-            altText: image.altText,
-            url: image.largeUrl,
-            thumbnailUrl: image.thumbnailUrl,
-        })),
+            sortOrder: 0,
+            altText: `${product.name}${variant ? ` — ${variantOptionName(variant)}` : ''}`,
+            url: fallbackImage,
+            thumbnailUrl: fallbackImage,
+        });
+    }
+    const gallery = [
+        ...imageMedia,
         ...product.videos.map((video) => ({
             id: video.id,
             type: 'video' as const,
@@ -103,50 +96,51 @@ export const ProductDetailPage = () => {
             altText: video.altText,
             url: video.url,
         })),
-    ].sort((left, right) => left.sortOrder - right.sortOrder);
-    const gallery = media.length
-        ? media
-        : [{ id: 'fallback', type: 'image' as const, sortOrder: 0, altText: product.name, url: fallbackImage, thumbnailUrl: fallbackImage }];
+    ];
     const activeMedia = gallery[activeImage] || gallery[0];
     const isWishlisted = isInWishlist(product.id);
 
     const add = async () => {
         if (!variant) return;
         setAdding(true);
+        setAddError('');
         try {
             await addVariant(variant, quantity);
+        } catch (caught) {
+            setAddError(caught instanceof Error ? caught.message : 'This item could not be added.');
         } finally {
             setAdding(false);
         }
     };
 
-    const handleBuyNow = async () => {
-        if (!variant) return;
-        await add();
-        openCart();
-    };
-
     return (
-        <div className="min-h-screen bg-obsidian text-cream font-body flex flex-col justify-between">
+        <div className="flex min-h-screen flex-col bg-obsidian font-body text-cream">
             <SEOHead title={`${product.name} | Glockery Home Centre`} product={product} />
             <Header />
 
-            <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-16">
-                {/* Breadcrumbs */}
-                <nav className="mb-8 text-[11px] uppercase tracking-[0.22em] text-cream/45 font-medium">
-                    <Link to="/" className="hover:text-gold-300 transition">Home</Link>
-                    <span className="mx-2.5 text-gold-500/40">/</span>
-                    <Link to={`/category/${product.category.slug}`} className="hover:text-gold-300 transition">{product.category.name}</Link>
-                    <span className="mx-2.5 text-gold-500/40">/</span>
-                    <span className="text-gold-300 font-bold">{product.name}</span>
+            <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-14">
+                <nav className="mb-7 text-sm text-cream/60">
+                    <Link to="/" className="hover:text-cream">
+                        Shop
+                    </Link>
+                    <span className="mx-2" aria-hidden="true">
+                        /
+                    </span>
+                    <Link to={`/category/${product.category.slug}`} className="hover:text-cream">
+                        {product.category.name}
+                    </Link>
                 </nav>
 
-                <section className="grid gap-10 lg:grid-cols-12 lg:gap-14">
-                    {/* Left Showcase Media Gallery */}
-                    <div className="lg:col-span-7">
-                        <div className="group relative aspect-square overflow-hidden border border-line bg-carbon">
+                <section className="grid gap-9 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+                    <div>
+                        <div className="relative aspect-square overflow-hidden bg-panel">
                             {activeMedia.type === 'video' ? (
-                                <video controls preload="metadata" className="h-full w-full bg-black object-contain" aria-label={activeMedia.altText || product.name}>
+                                <video
+                                    controls
+                                    preload="metadata"
+                                    className="h-full w-full bg-black object-contain"
+                                    aria-label={activeMedia.altText || product.name}
+                                >
                                     <source src={activeMedia.url} />
                                     Your browser does not support this product video.
                                 </video>
@@ -154,36 +148,27 @@ export const ProductDetailPage = () => {
                                 <img
                                     src={activeMedia.url || fallbackImage}
                                     alt={activeMedia.altText || product.name}
-                                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                                    onError={(e) => { e.currentTarget.src = fallbackImage; }}
+                                    className="h-full w-full object-cover"
+                                    onError={(event) => {
+                                        event.currentTarget.src = fallbackImage;
+                                    }}
                                 />
                             )}
-                            {/* Floating Wishlist Heart */}
-                            <button
-                                onClick={() => toggleWishlist(product.id)}
-                                className={`absolute right-4 top-4 z-10 grid size-11 place-items-center border ${
-                                    isWishlisted ? 'border-gold-400 bg-gold-400 text-obsidian' : 'border-line bg-obsidian/90 text-cream/80 hover:border-gold-400 hover:text-gold-300'
-                                }`}
-                                aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
-                                aria-pressed={isWishlisted}
-                            >
-                                <IconHeart size={20} />
-                            </button>
-
                         </div>
 
-                        {/* Thumbnail Strip */}
                         {gallery.length > 1 && (
-                            <div className="mt-4 grid grid-cols-5 gap-3">
+                            <div className="mt-3 flex gap-3 overflow-x-auto">
                                 {gallery.map((item, index) => (
                                     <button
                                         key={item.id}
                                         onClick={() => setActiveImage(index)}
                                         aria-label={`View ${item.type === 'video' ? 'video' : 'image'} ${index + 1}`}
-                                        className={`aspect-square overflow-hidden rounded-sm border transition ${activeImage === index ? 'border-gold-400 ring-2 ring-gold-400/30' : 'border-gold-500/20 opacity-60 hover:opacity-100'}`}
+                                        className={`size-20 shrink-0 overflow-hidden border ${activeImage === index ? 'border-gold-400' : 'border-line opacity-65 hover:opacity-100'}`}
                                     >
                                         {item.type === 'video' ? (
-                                            <span className="flex h-full w-full items-center justify-center bg-carbon text-gold-300"><IconPlay size={24} /></span>
+                                            <span className="grid h-full place-items-center bg-carbon text-cream">
+                                                <IconPlay size={22} />
+                                            </span>
                                         ) : (
                                             <img src={item.thumbnailUrl} alt="" className="h-full w-full object-cover" />
                                         )}
@@ -193,147 +178,100 @@ export const ProductDetailPage = () => {
                         )}
                     </div>
 
-                    {/* Right Product Details & Action Panel */}
-                    <div className="lg:col-span-5 lg:sticky lg:top-28 lg:self-start space-y-6">
-                        <div>
-                            <div className="flex items-center justify-between">
-                                <span className="eyebrow">{product.category.name}</span>
-                                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                                    <IconCheckCircle size={12} color="#10B981" /> In stock
-                                </span>
-                            </div>
-
-                            <h1 className="mt-3 font-display text-5xl font-semibold leading-[1.02] text-cream sm:text-6xl">{product.name}</h1>
-                            <p className="mt-4 text-sm leading-7 text-cream/60">{product.description || product.shortDescription}</p>
-                            {(product.material || product.dimensions) && (
-                                <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-gold-500/15 pt-4 text-xs">
-                                    {product.material && <div><dt className="uppercase tracking-wider text-cream/40">Material</dt><dd className="mt-1 text-cream/85">{product.material}</dd></div>}
-                                    {product.dimensions && <div><dt className="uppercase tracking-wider text-cream/40">Dimensions</dt><dd className="mt-1 text-cream/85">{product.dimensions}</dd></div>}
-                                </dl>
-                            )}
-                        </div>
-
-                        {/* Variant Finish Picker */}
-                        {product.variants.length > 1 && (
-                            <div className="border-t border-gold-500/15 pt-5">
-                                <p className="mb-2.5 text-[10px] uppercase tracking-[0.22em] text-cream/50 font-semibold">Select Finish / Variant</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {product.variants.map((item, index) => (
-                                        <button
-                                            key={item.id}
-                                            onClick={() => setSelected(index)}
-                                            className={`rounded-sm border px-4 py-2.5 text-xs transition-all ${index === selected ? 'border-gold-400 bg-gold-400 text-obsidian font-bold shadow-md' : 'border-gold-500/25 bg-carbon text-cream/70 hover:border-gold-400 hover:text-gold-300'}`}
-                                        >
-                                            {item.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Pricing Banner */}
-                        <div className="flex items-baseline gap-3 border-y border-gold-500/20 py-5">
-                            <strong className="font-display text-4xl font-bold text-gold-300 tracking-tight">
-                                {variant ? rupees(variant.pricePaise) : 'Unavailable'}
-                            </strong>
-                            {variant?.compareAtPricePaise && variant.compareAtPricePaise > variant.pricePaise && (
-                                <s className="text-sm text-cream/35">{rupees(variant.compareAtPricePaise)}</s>
-                            )}
-                        </div>
-
-                        {/* Quantity Counter & CTA Buttons */}
-                        <div className="space-y-3">
-                            <div className="flex gap-3">
-                                <div className="flex h-12 border border-gold-500/30 bg-carbon rounded-sm">
-                                    <button className="grid w-11 place-items-center text-cream/60 hover:text-gold-300 transition" onClick={() => setQuantity(Math.max(1, quantity - 1))} aria-label="Decrease quantity">
-                                        <IconMinus size={14} />
-                                    </button>
-                                    <span className="grid w-10 place-items-center font-bold text-xs text-cream font-mono">{quantity}</span>
-                                    <button className="grid w-11 place-items-center text-cream/60 hover:text-gold-300 transition" onClick={() => setQuantity(Math.min(99, quantity + 1))} aria-label="Increase quantity">
-                                        <IconPlus size={14} />
-                                    </button>
-                                </div>
-
-                                <button
-                                    disabled={!variant || adding}
-                                    onClick={add}
-                                    className="button-primary h-12 flex-1 gap-2 disabled:opacity-40"
-                                >
-                                    <IconShoppingBag size={16} />
-                                    {adding ? 'Adding…' : 'Add to bag'}
-                                </button>
-                            </div>
-
+                    <div className="lg:sticky lg:top-28 lg:self-start">
+                        <p className="text-sm text-cream/60">{product.category.name}</p>
+                        <div className="mt-2 flex items-start justify-between gap-4">
+                            <h1 className="font-display text-5xl font-semibold leading-[1.02] tracking-[-0.025em] sm:text-6xl">{product.name}</h1>
                             <button
-                                disabled={!variant || adding}
-                                onClick={handleBuyNow}
-                                className="button-secondary h-12 w-full"
+                                onClick={() => toggleWishlist(product.id)}
+                                className={`grid size-11 shrink-0 place-items-center ${isWishlisted ? 'text-gold-300' : 'text-cream/60 hover:text-cream'}`}
+                                aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+                                aria-pressed={isWishlisted}
                             >
-                                Buy now
+                                <IconHeart size={21} />
                             </button>
                         </div>
+                        <p className="mt-5 max-w-xl text-sm leading-7 text-cream/70">{product.description || product.shortDescription}</p>
 
-                        {/* Accordion Specification Tabs */}
-                        <div className="border-t border-gold-500/20 pt-6">
-                            <div className="flex border-b border-gold-500/15">
-                                {[
-                                    ['details', 'Craft & Material'],
-                                    ['specs', 'Care & Specs'],
-                                    ['shipping', 'Shipping & Returns'],
-                                ].map(([tabId, label]) => (
-                                    <button
-                                        key={tabId}
-                                        onClick={() => setActiveTab(tabId as 'details' | 'specs' | 'shipping')}
-                                        className={`py-2.5 px-4 text-xs font-bold uppercase tracking-wider transition ${activeTab === tabId ? 'border-b-2 border-gold-400 text-gold-300 font-bold' : 'text-cream/50 hover:text-cream'}`}
-                                    >
-                                        {label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="py-4 text-xs text-cream/70 leading-relaxed">
-                                {activeTab === 'details' && (
-                                    <div className="space-y-3">
-                                        <p>{product.description || product.shortDescription || 'Product details will be added soon.'}</p>
-                                        {product.material && <p><span className="font-semibold text-gold-300">Material:</span> {product.material}</p>}
-                                    </div>
-                                )}
-                                {activeTab === 'specs' && (
-                                    <ul className="space-y-1.5 list-disc list-inside text-cream/70">
-                                        {product.dimensions && <li><span className="font-semibold text-gold-300">Dimensions:</span> {product.dimensions}</li>}
-                                        <li>Hand wash recommended with mild soap</li>
-                                        <li>Avoid abrasive steel scrubbers</li>
-                                        <li>Refer to the product label for material-specific care</li>
-                                    </ul>
-                                )}
-                                {activeTab === 'shipping' && (
-                                    <p>Shipped in protective packaging with tracking across India. Returns are accepted within 30 days of delivery, subject to the returns policy.</p>
-                                )}
-                            </div>
+                        <div className="mt-7 flex items-baseline gap-3 border-y border-line py-5">
+                            <strong className="font-display text-3xl font-semibold text-cream">{variant ? rupees(variant.pricePaise) : 'Unavailable'}</strong>
+                            {variant?.compareAtPricePaise && variant.compareAtPricePaise > variant.pricePaise && (
+                                <s className="text-sm text-cream/60">{rupees(variant.compareAtPricePaise)}</s>
+                            )}
                         </div>
 
-                        {/* Trust Highlights */}
-                        <div className="grid gap-3 text-[11px] text-cream/55 sm:grid-cols-3 pt-2">
-                            <span className="flex items-center gap-1.5"><IconTruck size={16} className="text-gold-400 shrink-0" /> Insured Shipping</span>
-                            <span className="flex items-center gap-1.5"><IconShieldCheck size={16} className="text-gold-400 shrink-0" /> Secure checkout</span>
-                            <span className="flex items-center gap-1.5"><IconAward size={16} className="text-gold-400 shrink-0" /> Considered selection</span>
+                        <ProductVariantSelector
+                            product={product}
+                            selectedVariantId={variant?.id || ''}
+                            onSelect={(variantId) => {
+                                setSelectedVariantId(variantId);
+                                setActiveImage(0);
+                                setAddError('');
+                            }}
+                        />
+
+                        {variant && (
+                            <p className="mt-3 text-xs text-cream/55" aria-live="polite">
+                                Selected: {variantOptionName(variant)} · SKU {variant.sku}
+                            </p>
+                        )}
+
+                        <div className="mt-7 flex gap-3">
+                            <div className="flex h-12 border border-line">
+                                <button
+                                    className="grid w-11 place-items-center text-cream/70 hover:text-cream"
+                                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                    aria-label="Decrease quantity"
+                                >
+                                    <IconMinus size={14} />
+                                </button>
+                                <span className="grid w-8 place-items-center text-sm tabular-nums">{quantity}</span>
+                                <button
+                                    className="grid w-11 place-items-center text-cream/70 hover:text-cream"
+                                    onClick={() => setQuantity(Math.min(99, quantity + 1))}
+                                    aria-label="Increase quantity"
+                                >
+                                    <IconPlus size={14} />
+                                </button>
+                            </div>
+                            <button disabled={!variant || adding} onClick={add} className="button-primary flex-1 disabled:opacity-40">
+                                {adding ? 'Adding…' : 'Add to bag'}
+                            </button>
                         </div>
+                        {addError && (
+                            <p className="mt-3 text-xs text-red-200" role="alert">
+                                {addError} Please try again.
+                            </p>
+                        )}
+
+                        <dl className="mt-8 divide-y divide-line border-y border-line text-sm">
+                            {product.material && (
+                                <div className="flex justify-between gap-6 py-4">
+                                    <dt className="text-cream/60">Material</dt>
+                                    <dd className="text-right text-cream">{product.material}</dd>
+                                </div>
+                            )}
+                            {product.dimensions && (
+                                <div className="flex justify-between gap-6 py-4">
+                                    <dt className="text-cream/60">Dimensions</dt>
+                                    <dd className="text-right text-cream">{product.dimensions}</dd>
+                                </div>
+                            )}
+                            <div className="flex justify-between gap-6 py-4">
+                                <dt className="text-cream/60">Delivery</dt>
+                                <dd className="text-right text-cream">Free delivery across India</dd>
+                            </div>
+                            <div className="flex justify-between gap-6 py-4">
+                                <dt className="text-cream/60">Questions?</dt>
+                                <dd className="text-right">
+                                    <a href="https://wa.me/916282000289" target="_blank" rel="noreferrer" className="text-gold-300 hover:text-gold-100">
+                                        Ask on WhatsApp
+                                    </a>
+                                </dd>
+                            </div>
+                        </dl>
                     </div>
                 </section>
-
-                {/* Related Products Grid ("Pairs Beautifully With") */}
-                {relatedProducts.length > 0 && (
-                    <section className="mt-20 border-t border-gold-500/20 pt-12">
-                        <div className="mb-8">
-                            <h2 className="font-display text-3xl font-bold text-cream">Pairs Beautifully With</h2>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            {relatedProducts.map((relProd) => (
-                                <ProductCard key={relProd.id} product={relProd} />
-                            ))}
-                        </div>
-                    </section>
-                )}
-
             </main>
 
             <StoreFooter />

@@ -16,6 +16,7 @@ import {
 } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
 import { useWishlist } from '../contexts/WishlistContext';
+import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
@@ -60,7 +61,7 @@ const OrdersView = () => {
                         <IconPackage size={24} />
                     </div>
                     <h3 className="font-display text-2xl font-bold text-cream">No Orders Placed Yet</h3>
-                    <p className="mx-auto mt-2 max-w-sm text-xs text-cream/50">Explore tableware, serveware, and home accents selected for daily use.</p>
+                    <p className="mx-auto mt-2 max-w-sm text-xs text-cream/60">Explore crockery and kitchenware from our Vengara store.</p>
                     <Link to="/" className="mt-6 inline-flex items-center gap-2 rounded-sm bg-gold-400 px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-obsidian shadow-md hover:bg-gold-300 transition">
                         Explore Collection <IconArrowRight size={15} />
                     </Link>
@@ -118,6 +119,7 @@ const AddressesView = () => {
     const [addresses, setAddresses] = useState<Address[]>([]);
     const [open, setOpen] = useState(false);
     const [error, setError] = useState('');
+    const addressDialogRef = useDialog<HTMLFormElement>(open, () => setOpen(false));
 
     const load = () =>
         api.addresses()
@@ -179,8 +181,12 @@ const AddressesView = () => {
                             <button
                                 onClick={async () => {
                                     if (window.confirm('Remove this saved address?')) {
-                                        await api.deleteAddress(address.id);
-                                        await load();
+                                        try {
+                                            await api.deleteAddress(address.id);
+                                            await load();
+                                        } catch (caught) {
+                                            setError(caught instanceof Error ? caught.message : 'Unable to remove address.');
+                                        }
                                     }
                                 }}
                                 className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition"
@@ -201,9 +207,9 @@ const AddressesView = () => {
 
             {open && (
                 <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/85 p-5 backdrop-blur-md">
-                    <form onSubmit={submit} className="my-8 w-full max-w-xl border border-gold-500/30 bg-carbon p-8 rounded-sm shadow-2xl">
+                    <form ref={addressDialogRef} tabIndex={-1} onSubmit={submit} className="my-8 w-full max-w-xl border border-gold-500/30 bg-carbon p-8 rounded-sm shadow-2xl outline-none" role="dialog" aria-modal="true" aria-labelledby="address-dialog-title">
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
-                            <h3 className="font-display text-2xl text-cream font-bold">Add Saved Address</h3>
+                            <h3 id="address-dialog-title" className="font-display text-2xl text-cream font-bold">Add Saved Address</h3>
                             <button type="button" onClick={() => setOpen(false)} className="text-xs text-cream/40 hover:text-gold-300">Close</button>
                         </div>
                         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -240,19 +246,39 @@ const WishlistView = () => {
     const { wishlistIds, toggleWishlist } = useWishlist();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
 
     useEffect(() => {
-        api.products(new URLSearchParams({ limit: '100' }))
-            .then((res) => {
-                setProducts(res.items.filter((p) => wishlistIds.includes(p.id)));
-            })
-            .catch(() => {})
-            .finally(() => setLoading(false));
+        let cancelled = false;
+        const loadWishlist = async () => {
+            try {
+                const collected: Product[] = [];
+                let page = 1;
+                let total = 0;
+                do {
+                    const result = await api.products(new URLSearchParams({ page: String(page), limit: '100' }));
+                    collected.push(...result.items);
+                    total = result.total;
+                    page += 1;
+                } while (collected.length < total && page <= 20);
+                if (!cancelled) setProducts(collected.filter((product) => wishlistIds.includes(product.id)));
+            } catch (caught) {
+                if (!cancelled) setError(caught instanceof Error ? caught.message : 'Unable to load wishlist.');
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
+        setLoading(true);
+        setError('');
+        void loadWishlist();
+        return () => { cancelled = true; };
     }, [wishlistIds]);
 
     return (
         <AccountShell title="Saved wishlist" intro="Pieces you have saved for another look.">
-            {loading ? (
+            {error ? (
+                <p className="border border-red-500/30 p-4 text-xs text-red-200" role="alert">{error} Please try again.</p>
+            ) : loading ? (
                 <p className="text-sm text-cream/40">Loading saved wishlist items…</p>
             ) : !products.length ? (
                 <div className={`${panel} py-16 text-center`}>

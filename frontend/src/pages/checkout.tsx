@@ -4,28 +4,55 @@ import { IconAlert, IconArrowRight, IconCheckCircle, IconRefresh, IconShieldChec
 import SEOHead from '../components/SEOHead';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
+import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import { fallbackImage, rupees } from '../lib/commerce';
 import { formatRazorpayContact, resolveCheckoutEmail } from '../lib/razorpay';
-import { Address, CheckoutQuote, Order, ShippingAddressInput } from '../types';
+import { Address, CheckoutQuote, Order, PaymentIntent, ShippingAddressInput } from '../types';
+
+type RazorpaySuccess = {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    razorpay_signature: string;
+};
+
+type RazorpayFailure = {
+    error?: { description?: string; reason?: string };
+};
+
+type PaymentStage = 'idle' | 'preparing' | 'gateway' | 'verifying' | 'checking';
 
 declare global {
     interface Window {
-        Razorpay: new (options: Record<string, unknown>) => { open: () => void };
+        Razorpay: new (options: Record<string, unknown>) => {
+            open: () => void;
+            on: (event: 'payment.failed', callback: (response: RazorpayFailure) => void) => void;
+        };
     }
 }
 
-const loadRazorpay = () => new Promise<void>((resolve, reject) => {
-    if (window.Razorpay) return resolve();
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.crossOrigin = 'anonymous';
-    script.referrerPolicy = 'strict-origin-when-cross-origin';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Razorpay Checkout could not be loaded.'));
-    document.head.appendChild(script);
-});
+let razorpayScriptPromise: Promise<void> | null = null;
+
+const loadRazorpay = () => {
+    if (window.Razorpay) return Promise.resolve();
+    if (razorpayScriptPromise) return razorpayScriptPromise;
+    razorpayScriptPromise = new Promise<void>((resolve, reject) => {
+        const existing = document.querySelector<HTMLScriptElement>('script[data-razorpay-checkout]');
+        const script = existing ?? document.createElement('script');
+        script.dataset.razorpayCheckout = 'true';
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.referrerPolicy = 'strict-origin-when-cross-origin';
+        script.onload = () => resolve();
+        script.onerror = () => {
+            razorpayScriptPromise = null;
+            reject(new Error('Razorpay Checkout could not be loaded. Please check your connection.'));
+        };
+        if (!existing) document.head.appendChild(script);
+    });
+    return razorpayScriptPromise;
+};
 
 const CheckoutPage = () => {
     const history = useHistory();
@@ -36,9 +63,12 @@ const CheckoutPage = () => {
     const [deliveryMethod, setDeliveryMethod] = useState<'standard' | 'express'>('standard');
     const [quote, setQuote] = useState<CheckoutQuote | null>(null);
     const [loading, setLoading] = useState(false);
-    const [processingPayment, setProcessingPayment] = useState(false);
+    const [paymentStage, setPaymentStage] = useState<PaymentStage>('idle');
+    const [pendingIntent, setPendingIntent] = useState<PaymentIntent | null>(null);
     const [paymentFailed, setPaymentFailed] = useState(false);
     const [error, setError] = useState('');
+    const paymentBlocking = paymentStage !== 'idle' && paymentStage !== 'gateway' && !paymentFailed;
+    const paymentDialogRef = useDialog<HTMLDivElement>(paymentBlocking, () => undefined, { focusInitial: false });
 
     useEffect(() => {
         if (!signedIn) return;
@@ -56,7 +86,8 @@ const CheckoutPage = () => {
         event.preventDefault();
         if (!cart) return;
         setLoading(true);
-        setProcessingPayment(true);
+        setPaymentStage('preparing');
+        setPendingIntent(null);
         setPaymentFailed(false);
         setError('');
 
@@ -94,10 +125,17 @@ const CheckoutPage = () => {
 
             setQuote(createdQuote);
             const intent = await api.paymentIntent(createdQuote.id);
+            setPendingIntent(intent);
             await loadRazorpay();
             const checkoutAddress = intent.checkout.shippingAddress;
 
             await new Promise<void>((resolve, reject) => {
+                let settled = false;
+                const settle = (callback: () => void) => {
+                    if (settled) return;
+                    settled = true;
+                    callback();
+                };
                 const checkout = new window.Razorpay({
                     key: intent.keyId,
                     amount: intent.amount,
@@ -111,34 +149,78 @@ const CheckoutPage = () => {
                         contact: formatRazorpayContact(checkoutAddress.phone, checkoutAddress.country),
                         name: checkoutAddress.recipientName,
                     },
-                    handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+                    retry: { enabled: true, max_count: 2 },
+                    handler: async (response: RazorpaySuccess) => {
+                        setPaymentStage('verifying');
                         try {
-                            const verified = await api.verifyPayment({
-                                razorpayPaymentId: response.razorpay_payment_id,
-                                razorpayOrderId: response.razorpay_order_id,
-                                razorpaySignature: response.razorpay_signature,
-                            });
+                            let verified: Order;
+                            try {
+                                verified = await api.verifyPayment({
+                                    razorpayPaymentId: response.razorpay_payment_id,
+                                    razorpayOrderId: response.razorpay_order_id,
+                                    razorpaySignature: response.razorpay_signature,
+                                });
+                            } catch {
+                                verified = await api.paymentStatus(response.razorpay_order_id);
+                            }
+                            if (verified.status === 'PAYMENT_PENDING') {
+                                throw new Error('Payment was received and is still being confirmed. Check its status in a moment.');
+                            }
+                            if (verified.status === 'PAYMENT_FAILED' || verified.status === 'CANCELLED') {
+                                throw new Error('Razorpay did not confirm this payment. Your cart has not been charged.');
+                            }
                             resetCart();
                             history.push(`/order-confirmation/${verified.id}`);
-                            resolve();
+                            settle(resolve);
                         } catch (caught) {
-                            reject(caught);
+                            settle(() => reject(caught));
                         }
                     },
                     modal: {
+                        confirm_close: true,
                         ondismiss: () => {
                             setPaymentFailed(true);
-                            reject(new Error('Payment window closed before completion.'));
+                            settle(() => reject(new Error('Payment window closed before completion. No order was placed.')));
                         },
                     },
                 });
+                checkout.on('payment.failed', (response) => {
+                    setPaymentFailed(true);
+                    const message = response.error?.description || response.error?.reason || 'Razorpay could not complete the payment.';
+                    settle(() => reject(new Error(message)));
+                });
+                setPaymentStage('gateway');
                 checkout.open();
             });
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Checkout could not be completed.');
         } finally {
             setLoading(false);
-            setProcessingPayment(false);
+            setPaymentStage('idle');
+        }
+    };
+
+    const checkPaymentStatus = async () => {
+        if (!pendingIntent) return;
+        setPaymentStage('checking');
+        setError('');
+        try {
+            const order = await api.paymentStatus(pendingIntent.razorpayOrderId);
+            if (order.status === 'PAYMENT_PENDING') {
+                setError('Payment confirmation is still pending. Please wait a moment and check again.');
+                return;
+            }
+            if (order.status === 'PAYMENT_FAILED' || order.status === 'CANCELLED') {
+                setPaymentFailed(true);
+                setError('This payment was not completed. You can safely retry checkout.');
+                return;
+            }
+            resetCart();
+            history.push(`/order-confirmation/${order.id}`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Payment status could not be checked.');
+        } finally {
+            setPaymentStage('idle');
         }
     };
 
@@ -146,7 +228,7 @@ const CheckoutPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian text-cream">
-            <SEOHead title="Secure Checkout | Glockery" />
+            <SEOHead title="Secure Checkout | Glockery" noIndex />
             <header className="flex h-20 items-center justify-between gap-4 border-b border-line px-4 sm:px-10">
                 <Link to="/" className="shrink-0 text-base font-bold tracking-[0.22em] text-cream sm:text-lg">GLOCKERY</Link>
                 <span className="flex items-center gap-2 text-right text-[9px] uppercase tracking-[0.12em] text-cream/35 sm:text-[10px] sm:tracking-[0.18em]">
@@ -162,14 +244,16 @@ const CheckoutPage = () => {
             </nav>
 
             {/* Payment Processing Overlay */}
-            {processingPayment && !paymentFailed && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6 backdrop-blur-md" role="dialog" aria-modal="true" aria-busy="true" aria-label="Payment processing">
-                    <div className="w-full max-w-sm text-center border border-gold-500/30 bg-carbon p-8 rounded-sm shadow-2xl">
+            {paymentBlocking && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6 backdrop-blur-md">
+                    <div ref={paymentDialogRef} tabIndex={-1} className="w-full max-w-sm text-center border border-gold-500/30 bg-carbon p-8 rounded-sm shadow-2xl outline-none" role="dialog" aria-modal="true" aria-busy="true" aria-label="Payment processing">
                         <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-gold-400/10 text-gold-300">
                             <IconRefresh size={28} className="animate-spin" />
                         </div>
-                        <h3 className="mt-4 font-display text-2xl text-cream">Processing Payment</h3>
-                        <p className="mt-2 text-xs text-cream/60">Connecting with Razorpay gateway. Please do not close or refresh this page.</p>
+                        <h3 className="mt-4 font-display text-2xl text-cream">
+                            {paymentStage === 'preparing' ? 'Preparing secure payment' : 'Confirming your payment'}
+                        </h3>
+                        <p className="mt-2 text-xs text-cream/60">Please do not close or refresh this page.</p>
                     </div>
                 </div>
             )}
@@ -183,8 +267,8 @@ const CheckoutPage = () => {
                         <div className="mt-6 border border-amber-500/30 bg-amber-950/20 p-5 rounded-sm flex items-start gap-4">
                             <IconAlert size={24} className="text-amber-400 shrink-0" />
                             <div>
-                                <h4 className="font-bold text-amber-300 text-sm">Payment Window Cancelled</h4>
-                                <p className="mt-1 text-xs text-cream/70">Your cart items and delivery details remain saved. Click below to retry payment.</p>
+                                <h4 className="font-bold text-amber-300 text-sm">Payment not completed</h4>
+                                <p className="mt-1 text-xs text-cream/70">Your cart and delivery details are still here. Retry when you are ready.</p>
                             </div>
                         </div>
                     )}
@@ -245,7 +329,7 @@ const CheckoutPage = () => {
                         <legend className="mb-3 text-xs font-bold uppercase tracking-wider text-gold-400">Select Delivery Method</legend>
                         <div className="grid gap-3 sm:grid-cols-2">
                             <label
-                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-all focus-within:ring-2 focus-within:ring-gold-400/70 ${
+                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-colors focus-within:ring-2 focus-within:ring-gold-400/70 ${
                                     deliveryMethod === 'standard' ? 'border-gold-400 bg-gold-400/10' : 'border-gold-500/20 bg-carbon'
                                 }`}
                             >
@@ -261,7 +345,7 @@ const CheckoutPage = () => {
                             </label>
 
                             <label
-                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-all focus-within:ring-2 focus-within:ring-gold-400/70 ${
+                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-colors focus-within:ring-2 focus-within:ring-gold-400/70 ${
                                     deliveryMethod === 'express' ? 'border-gold-400 bg-gold-400/10' : 'border-gold-500/20 bg-carbon'
                                 }`}
                             >
@@ -286,10 +370,19 @@ const CheckoutPage = () => {
                         </label>
                     </section>
 
-                    {error && <p className="mt-5 border border-red-500/30 bg-red-950/20 p-4 text-xs text-red-200" role="alert">{error}</p>}
+                    {error && (
+                        <div className="mt-5 border border-red-500/30 bg-red-950/20 p-4 text-xs text-red-200" role="alert">
+                            <p>{error}</p>
+                            {pendingIntent && (
+                                <button type="button" className="mt-3 font-bold text-gold-300 underline underline-offset-4" onClick={checkPaymentStatus}>
+                                    Check payment status
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                     <button
-                        disabled={loading}
+                        disabled={loading || paymentStage !== 'idle'}
                         className="button-primary mt-8 h-14 w-full gap-3 disabled:opacity-50"
                     >
                         {loading ? 'Preparing Razorpay Gateway…' : <>Pay Securely with Razorpay <IconArrowRight size={16} /></>}

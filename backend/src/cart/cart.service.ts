@@ -11,9 +11,14 @@ const cartInclude = {
     include: {
       variant: {
         include: {
+          images: {
+            orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
+            take: 1,
+          },
           product: {
             include: {
               images: {
+                where: { variantId: null },
                 orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
                 take: 1,
               },
@@ -161,6 +166,15 @@ export class CartService {
     authorization?: string,
     guestToken?: string,
   ): Promise<CartWithItems> {
+    return this.requireOwnedCart(cartId, authorization, guestToken, true);
+  }
+
+  async requireOwnedCart(
+    cartId: string,
+    authorization?: string,
+    guestToken?: string,
+    requireActive = false,
+  ): Promise<CartWithItems> {
     const userId = await this.optionalUserId(authorization);
     let ownerWhere: Prisma.CartWhereInput;
     if (userId) {
@@ -172,8 +186,7 @@ export class CartService {
     const cart = await this.prisma.cart.findFirst({
       where: {
         id: cartId,
-        status: CartStatus.ACTIVE,
-        expiresAt: { gt: new Date() },
+        ...(requireActive ? { status: CartStatus.ACTIVE, expiresAt: { gt: new Date() } } : {}),
         ...ownerWhere,
       },
       include: cartInclude,
@@ -191,7 +204,10 @@ export class CartService {
       sku: item.variant.sku,
       productName: item.variant.product.name,
       variantName: item.variant.name,
-      imageUrl: item.variant.product.images[0]?.thumbnailUrl ?? null,
+      imageUrl:
+        item.variant.images[0]?.thumbnailUrl ??
+        item.variant.product.images[0]?.thumbnailUrl ??
+        null,
       quantity: item.quantity,
       unitPricePaise: item.variant.pricePaise,
       lineTotalPaise: item.variant.pricePaise * item.quantity,

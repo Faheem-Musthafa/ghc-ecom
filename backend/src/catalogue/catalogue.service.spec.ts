@@ -66,6 +66,45 @@ describe('CatalogueService', () => {
     );
   });
 
+  it('normalizes category names before saving them', async () => {
+    const category = { id: 'category-id', name: 'Tea Sets', slug: 'tea-sets' };
+    const prisma = {
+      category: { create: jest.fn().mockResolvedValue(category) },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.createCategory(
+        'actor-id',
+        { name: '  Tea   Sets  ', slug: 'tea-sets', isPublished: true },
+        {},
+      ),
+    ).resolves.toEqual(category);
+    expect(prisma.category.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ name: 'Tea Sets', slug: 'tea-sets' }),
+    });
+  });
+
+  it('rejects placeholder categories from the public catalogue', async () => {
+    const prisma = { category: { create: jest.fn() } };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.createCategory('actor-id', { name: 'Test', slug: 'test', isPublished: true }, {}),
+    ).rejects.toThrow('Placeholder categories cannot be published');
+    expect(prisma.category.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a compare-at price lower than the selling price', async () => {
     const prisma = { productVariant: { create: jest.fn() } };
     const service = new CatalogueService(
@@ -157,5 +196,66 @@ describe('CatalogueService', () => {
         sortOrder: 0,
       },
     });
+  });
+
+  it('assigns a product image only to a variant owned by that product', async () => {
+    const image = { id: 'image-id', productId: 'product-id', variantId: null };
+    const updated = { ...image, variantId: 'variant-id' };
+    const prisma = {
+      productImage: {
+        findFirst: jest.fn().mockResolvedValue(image),
+        update: jest.fn().mockResolvedValue(updated),
+      },
+      productVariant: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'variant-id' }),
+      },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.updateProductImage(
+        'actor-id',
+        'product-id',
+        'image-id',
+        { variantId: 'variant-id' },
+        {},
+      ),
+    ).resolves.toEqual(updated);
+    expect(prisma.productVariant.findFirst).toHaveBeenCalledWith({
+      where: { id: 'variant-id', productId: 'product-id' },
+      select: { id: true },
+    });
+  });
+
+  it('rejects an image assignment to another product variant', async () => {
+    const prisma = {
+      productImage: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'image-id', productId: 'product-id' }),
+        update: jest.fn(),
+      },
+      productVariant: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.updateProductImage(
+        'actor-id',
+        'product-id',
+        'image-id',
+        { variantId: 'other-variant-id' },
+        {},
+      ),
+    ).rejects.toThrow('Image variant does not belong to this product');
+    expect(prisma.productImage.update).not.toHaveBeenCalled();
   });
 });

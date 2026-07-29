@@ -74,4 +74,21 @@ describe('validateEnvironment', () => {
       }),
     ).toThrow('must use a public HTTPS origin in production');
   });
+
+  it('rejects Razorpay test keys in production unless staging explicitly opts in', () => {
+    const production = {
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      FRONTEND_ORIGIN: 'https://shop.example.com',
+      API_PUBLIC_URL: 'https://api.example.com',
+      CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+    };
+
+    expect(() => validateEnvironment(production)).toThrow(
+      'test keys require ALLOW_TEST_PAYMENTS_IN_PRODUCTION=true',
+    );
+    expect(
+      validateEnvironment({ ...production, ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true' }),
+    ).toMatchObject({ ALLOW_TEST_PAYMENTS_IN_PRODUCTION: true });
+  });
 });

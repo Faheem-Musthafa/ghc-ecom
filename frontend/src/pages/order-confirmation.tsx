@@ -35,7 +35,7 @@ export const OrderConfirmationPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
-            <SEOHead title="Order Confirmed | Glockery" />
+            <SEOHead title="Order Confirmed | Glockery" noIndex />
             <Header />
             <main id="main-content" className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:px-8 lg:py-16">
                 {loading ? (

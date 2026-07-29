@@ -45,7 +45,7 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
 
     return (
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between">
-            <SEOHead title={`${code} - ${errorDetails.title} | Glockery`} />
+            <SEOHead title={`${code} - ${errorDetails.title} | Glockery`} noIndex />
             <Header />
             <main id="main-content" className="flex flex-1 items-center justify-center px-6 py-20">
                 <div className="w-full max-w-lg border border-line bg-carbon p-8 text-center sm:p-10">

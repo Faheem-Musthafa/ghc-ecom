@@ -19,6 +19,7 @@ export interface ProductVariant {
 
 export interface ProductImage {
     id: string;
+    variantId?: string | null;
     thumbnailUrl: string;
     mediumUrl: string;
     largeUrl: string;
@@ -191,7 +192,12 @@ export interface Shipment {
     createdAt: string;
     updatedAt: string;
     events: TrackingEvent[];
-    items: Array<{ id: string; sku: string; quantity: number; variantId?: string | null }>;
+    items: Array<{
+        id: string;
+        sku: string;
+        quantity: number;
+        variantId?: string | null;
+    }>;
 }
 
 export interface InventoryLevel {

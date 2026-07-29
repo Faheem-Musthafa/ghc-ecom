@@ -32,7 +32,11 @@ let currentSession: Session | null = null;
 let csrfToken: string | null = null;
 
 export class ApiError extends Error {
-    constructor(message: string, public status: number, public details?: unknown) {
+    constructor(
+        message: string,
+        public status: number,
+        public details?: unknown,
+    ) {
         super(message);
         this.name = 'ApiError';
     }
@@ -58,7 +62,7 @@ export interface CartIdentity {
 export const getCartIdentity = (): CartIdentity | null => {
     try {
         const raw = localStorage.getItem(CART_KEY);
-        return raw ? JSON.parse(raw) as CartIdentity : null;
+        return raw ? (JSON.parse(raw) as CartIdentity) : null;
     } catch {
         return null;
     }
@@ -106,9 +110,13 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
 
     if (response.status === 401 && options.auth && session && options.retry !== false) {
         try {
-            const refreshed = await request<AuthResult>('/auth/refresh', {
-                method: 'POST',
-            }, { retry: false });
+            const refreshed = await request<AuthResult>(
+                '/auth/refresh',
+                {
+                    method: 'POST',
+                },
+                { retry: false },
+            );
             const next = normalizeAuth(refreshed);
             saveSession(next);
             if (next) return request<T>(path, init, { ...options, retry: false });
@@ -121,9 +129,10 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     const json = response.headers.get('content-type')?.includes('application/json');
     const payload = json ? await response.json() : await response.text();
     if (!response.ok) {
-        const rawMessage = typeof payload === 'object' && payload && 'message' in payload
-            ? (payload as { message: string | string[] }).message
-            : `Request failed (${response.status})`;
+        const rawMessage =
+            typeof payload === 'object' && payload && 'message' in payload
+                ? (payload as { message: string | string[] }).message
+                : `Request failed (${response.status})`;
         throw new ApiError(Array.isArray(rawMessage) ? rawMessage.join('. ') : String(rawMessage), response.status, payload);
     }
     if (!json) {
@@ -133,7 +142,10 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
 }
 
 const authenticated = () => Boolean(getSession());
-const cartOptions = (): RequestOptions => ({ auth: authenticated(), cart: true });
+const cartOptions = (): RequestOptions => ({
+    auth: authenticated(),
+    cart: true,
+});
 
 export const api = {
     async initializeSession() {
@@ -150,13 +162,19 @@ export const api = {
         }
     },
     async login(email: string, password: string) {
-        const result = await request<AuthResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        const result = await request<AuthResult>('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+        });
         const session = normalizeAuth(result);
         saveSession(session);
         return session;
     },
     async register(fullName: string, email: string, password: string) {
-        const result = await request<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify({ fullName, email, password }) });
+        const result = await request<AuthResult>('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({ fullName, email, password }),
+        });
         const session = normalizeAuth(result);
         saveSession(session);
         return session;
@@ -171,30 +189,51 @@ export const api = {
             window.dispatchEvent(new Event('ghc:cart-reset'));
         }
     },
-    forgotPassword: (email: string) => request<void>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+    forgotPassword: (email: string) =>
+        request<void>('/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        }),
     resetPassword: (recoveryAccessToken: string, recoveryRefreshToken: string, password: string) =>
         request<void>('/auth/reset-password', {
             method: 'POST',
-            body: JSON.stringify({ recoveryAccessToken, recoveryRefreshToken, password }),
+            body: JSON.stringify({
+                recoveryAccessToken,
+                recoveryRefreshToken,
+                password,
+            }),
         }),
 
     categories: () => request<Category[]>('/categories'),
-    products: (params = new URLSearchParams({ page: '1', limit: '48' })) => request<PaginatedProducts>(`/products?${params}`),
+    products: (params = new URLSearchParams({ page: '1', limit: '48' }), signal?: AbortSignal) => request<PaginatedProducts>(`/products?${params}`, { signal }),
     product: (slug: string) => request<Product>(`/products/${encodeURIComponent(slug)}`),
 
     createCart: () => request<CreatedCart>('/carts', { method: 'POST' }, { auth: authenticated() }),
     getCart: (cartId: string) => request<Cart>(`/carts/${cartId}`, {}, cartOptions()),
     setCartItem: (cartId: string, variantId: string, quantity: number) =>
         request<Cart>(`/carts/${cartId}/items`, { method: 'PUT', body: JSON.stringify({ variantId, quantity }) }, cartOptions()),
-    removeCartItem: (cartId: string, variantId: string) =>
-        request<Cart>(`/carts/${cartId}/items/${variantId}`, { method: 'DELETE' }, cartOptions()),
+    removeCartItem: (cartId: string, variantId: string) => request<Cart>(`/carts/${cartId}/items/${variantId}`, { method: 'DELETE' }, cartOptions()),
 
-    quote: (input: { cartId: string; contactEmail: string; couponCode?: string; addressId?: string; shippingAddress?: ShippingAddressInput; deliveryMethod?: 'standard' | 'express' }) =>
-        request<CheckoutQuote>('/checkout/quote', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
-    paymentIntent: (quoteId: string) =>
-        request<PaymentIntent>('/checkout/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
+    quote: (input: {
+        cartId: string;
+        contactEmail: string;
+        couponCode?: string;
+        addressId?: string;
+        shippingAddress?: ShippingAddressInput;
+        deliveryMethod?: 'standard' | 'express';
+    }) => request<CheckoutQuote>('/checkout/quote', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
+    paymentIntent: (quoteId: string) => request<PaymentIntent>('/checkout/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
     verifyPayment: (input: { razorpayPaymentId: string; razorpayOrderId: string; razorpaySignature: string }) =>
-        request<Order>('/payments/razorpay/verify', { method: 'POST', body: JSON.stringify(input) }),
+        request<Order>('/payments/razorpay/verify', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
+    paymentStatus: (razorpayOrderId: string) =>
+        request<Order>(
+            '/payments/razorpay/status',
+            {
+                method: 'POST',
+                body: JSON.stringify({ razorpayOrderId }),
+            },
+            cartOptions(),
+        ),
 
     profile: () => request<Profile>('/me/profile', {}, { auth: true }),
     updateProfile: (input: Partial<Pick<Profile, 'fullName' | 'phone'>>) =>
@@ -216,7 +255,8 @@ export const api = {
     adminProducts: () => request<Product[]>('/admin/catalogue/products', {}, { auth: true }),
     adminCategories: () => request<Category[]>('/admin/catalogue/categories', {}, { auth: true }),
     createProduct: (input: unknown) => request<Product>('/admin/catalogue/products', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
-    updateProduct: (id: string, input: unknown) => request<Product>(`/admin/catalogue/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
+    updateProduct: (id: string, input: unknown) =>
+        request<Product>(`/admin/catalogue/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteProduct: (id: string) => request<void>(`/admin/catalogue/products/${id}`, { method: 'DELETE' }, { auth: true }),
     createCategory: (input: { name: string; slug: string; description?: string; isPublished?: boolean }) =>
         request<Category>('/admin/catalogue/categories', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
@@ -227,10 +267,11 @@ export const api = {
         request<ProductVariant>(`/admin/catalogue/products/${productId}/variants`, { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
     updateVariant: (variantId: string, input: unknown) =>
         request<ProductVariant>(`/admin/catalogue/variants/${variantId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
-    deleteVariant: (variantId: string) =>
-        request<void>(`/admin/catalogue/variants/${variantId}`, { method: 'DELETE' }, { auth: true }),
+    deleteVariant: (variantId: string) => request<void>(`/admin/catalogue/variants/${variantId}`, { method: 'DELETE' }, { auth: true }),
     uploadProductImage: (productId: string, form: FormData) =>
         request<ProductImage>(`/admin/catalogue/products/${productId}/images`, { method: 'POST', body: form }, { auth: true }),
+    updateProductImage: (productId: string, imageId: string, input: { variantId: string | null; altText?: string; sortOrder?: number }) =>
+        request<ProductImage>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteProductImage: (productId: string, imageId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }, { auth: true }),
     addProductVideoUrl: (productId: string, input: { url: string; altText?: string; sortOrder?: number }) =>

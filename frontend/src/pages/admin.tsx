@@ -19,21 +19,29 @@ import {
     IconClose,
 } from '../components/Icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
-import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product, Warehouse } from '../types';
+import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product, ProductVariant, Warehouse } from '../types';
 
 const box = 'border border-line bg-carbon';
 const inputStyle = 'field h-12 w-full text-sm';
 
 const NotificationToast = ({ message, type = 'info', onClose }: { message: string; type?: 'info' | 'success' | 'error'; onClose: () => void }) => {
     if (!message) return null;
-    const bg = type === 'error' ? 'bg-red-950/80 border-red-500/40 text-red-200' : type === 'success' ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-200' : 'bg-gold-950/80 border-gold-500/40 text-gold-200';
+    const bg =
+        type === 'error'
+            ? 'bg-red-950/80 border-red-500/40 text-red-200'
+            : type === 'success'
+              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-200'
+              : 'bg-gold-950/80 border-gold-500/40 text-gold-200';
     return (
         <div className={`mb-6 flex items-center justify-between border p-4 text-sm ${bg} rounded-sm shadow-md animate-fadeIn`} role="status" aria-live="polite">
             <span>{message}</span>
-            <button aria-label="Close notification" onClick={onClose} className="ml-4 opacity-70 hover:opacity-100"><IconClose size={16} /></button>
+            <button aria-label="Close notification" onClick={onClose} className="ml-4 opacity-70 hover:opacity-100">
+                <IconClose size={16} />
+            </button>
         </div>
     );
 };
@@ -60,11 +68,13 @@ const RevenueChart = ({ orders }: { orders: Order[] }) => {
     const weeklyRevenue = points.reduce((sum, point) => sum + point.rev, 0);
     const height = 140;
     const width = 500;
-    const pathD = points.map((p, i) => {
-        const x = (i / (points.length - 1)) * width;
-        const y = height - (p.rev / max) * height;
-        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-    }).join(' ');
+    const pathD = points
+        .map((p, i) => {
+            const x = (i / (points.length - 1)) * width;
+            const y = height - (p.rev / max) * height;
+            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        })
+        .join(' ');
 
     return (
         <div className={`${box} p-6`}>
@@ -79,7 +89,12 @@ const RevenueChart = ({ orders }: { orders: Order[] }) => {
                 </div>
             </div>
             <div className="mt-6">
-                <svg viewBox={`0 0 ${width} ${height}`} className="w-full overflow-visible" role="img" aria-label={`Revenue over the last seven days. Total ${rupees(weeklyRevenue)}.`}>
+                <svg
+                    viewBox={`0 0 ${width} ${height}`}
+                    className="w-full overflow-visible"
+                    role="img"
+                    aria-label={`Revenue over the last seven days. Total ${rupees(weeklyRevenue)}.`}
+                >
                     <defs>
                         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#c9a35b" stopOpacity="0.2" />
@@ -97,7 +112,9 @@ const RevenueChart = ({ orders }: { orders: Order[] }) => {
                         return (
                             <g key={p.day} className="group cursor-pointer">
                                 <circle cx={x} cy={y} r="4" fill="#11110f" stroke="#c9a35b" strokeWidth="2" />
-                                <text x={x} y={height + 20} textAnchor="middle" fill="#9CA3AF" fontSize="10">{p.day}</text>
+                                <text x={x} y={height + 20} textAnchor="middle" fill="#9CA3AF" fontSize="10">
+                                    {p.day}
+                                </text>
                             </g>
                         );
                     })}
@@ -148,15 +165,37 @@ const Overview = () => {
             {/* Top Metrics Cards */}
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
                 {[
-                    { label: 'Loaded order value', value: rupees(totalRevenue), badge: 'Current result set', isAlert: false },
-                    { label: 'Orders loaded', value: String(orders.length), badge: 'Current result set', isAlert: false },
-                    { label: 'Low Stock SKUs', value: String(ops?.lowStockSkus ?? '0'), badge: ops?.lowStockSkus ? 'Action Needed' : 'Healthy', isAlert: Boolean(ops?.lowStockSkus) },
-                    { label: 'Payment Mismatches', value: String(ops?.paymentMismatches ?? '0'), badge: ops?.paymentMismatches ? 'Alert' : 'Clean', isAlert: Boolean(ops?.paymentMismatches) },
+                    {
+                        label: 'Loaded order value',
+                        value: rupees(totalRevenue),
+                        badge: 'Current result set',
+                        isAlert: false,
+                    },
+                    {
+                        label: 'Orders loaded',
+                        value: String(orders.length),
+                        badge: 'Current result set',
+                        isAlert: false,
+                    },
+                    {
+                        label: 'Low Stock SKUs',
+                        value: String(ops?.lowStockSkus ?? '0'),
+                        badge: ops?.lowStockSkus ? 'Action Needed' : 'Healthy',
+                        isAlert: Boolean(ops?.lowStockSkus),
+                    },
+                    {
+                        label: 'Payment Mismatches',
+                        value: String(ops?.paymentMismatches ?? '0'),
+                        badge: ops?.paymentMismatches ? 'Alert' : 'Clean',
+                        isAlert: Boolean(ops?.paymentMismatches),
+                    },
                 ].map((item) => (
-                    <article key={item.label} className={`${box} p-6 transition-all hover:border-gold-500/40`}>
+                    <article key={item.label} className={`${box} p-6 transition-colors hover:border-gold-500/40`}>
                         <div className="flex items-center justify-between">
                             <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-cream/40">{item.label}</p>
-                            <span className={`border px-2.5 py-0.5 text-[10px] font-bold ${item.isAlert ? 'border-red-500/30 bg-red-950/30 text-red-300' : 'border-line text-cream/50'}`}>
+                            <span
+                                className={`border px-2.5 py-0.5 text-[10px] font-bold ${item.isAlert ? 'border-red-500/30 bg-red-950/30 text-red-300' : 'border-line text-cream/50'}`}
+                            >
                                 {item.badge}
                             </span>
                         </div>
@@ -177,7 +216,8 @@ const Overview = () => {
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
                             <span className="text-xs text-cream/70">Database Engine</span>
                             <span className={`flex items-center gap-1.5 text-xs font-medium ${ops?.databaseHealthy ? 'text-emerald-400' : 'text-amber-300'}`}>
-                                <IconCheckCircle size={14} color={ops?.databaseHealthy ? '#10B981' : '#f59e0b'} /> {ops ? (ops.databaseHealthy ? 'Healthy' : 'Needs attention') : 'Unavailable'}
+                                <IconCheckCircle size={14} color={ops?.databaseHealthy ? '#10B981' : '#f59e0b'} />{' '}
+                                {ops ? (ops.databaseHealthy ? 'Healthy' : 'Needs attention') : 'Unavailable'}
                             </span>
                         </div>
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
@@ -186,7 +226,9 @@ const Overview = () => {
                         </div>
                         <div className="flex items-center justify-between border-b border-gold-500/10 pb-3">
                             <span className="text-xs text-cream/70">Webhook Processing</span>
-                            <span className="text-xs text-cream/80 font-medium">{ops ? (ops.failedWebhooks ? `${ops.failedWebhooks} failed` : 'All processed') : '—'}</span>
+                            <span className="text-xs text-cream/80 font-medium">
+                                {ops ? (ops.failedWebhooks ? `${ops.failedWebhooks} failed` : 'All processed') : '—'}
+                            </span>
                         </div>
                         <div className="flex items-center justify-between">
                             <span className="text-xs text-cream/70">Expired Payments Cleaned</span>
@@ -200,7 +242,9 @@ const Overview = () => {
             <div className="mt-10">
                 <div className="mb-4 flex items-center justify-between">
                     <h2 className="font-display text-3xl">Recent Orders</h2>
-                    <a href="/admin/orders" className="text-xs uppercase tracking-wider text-gold-400 hover:text-gold-200">View all orders</a>
+                    <a href="/admin/orders" className="text-xs uppercase tracking-wider text-gold-400 hover:text-gold-200">
+                        View all orders
+                    </a>
                 </div>
                 <OrdersTable orders={orders.slice(0, 5)} />
             </div>
@@ -238,10 +282,10 @@ const OrdersTable = ({
                         order.status === 'DELIVERED'
                             ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20'
                             : order.status === 'CANCELLED' || order.status === 'PAYMENT_FAILED'
-                            ? 'text-red-300 border-red-500/30 bg-red-950/20'
-                            : order.status === 'SHIPPED' || order.status === 'PROCESSING'
-                            ? 'text-blue-300 border-blue-500/30 bg-blue-950/20'
-                            : 'text-amber-300 border-amber-500/30 bg-amber-950/20';
+                              ? 'text-red-300 border-red-500/30 bg-red-950/20'
+                              : order.status === 'SHIPPED' || order.status === 'PROCESSING'
+                                ? 'text-blue-300 border-blue-500/30 bg-blue-950/20'
+                                : 'text-amber-300 border-amber-500/30 bg-amber-950/20';
 
                     return (
                         <tr key={order.id} className="transition-colors hover:bg-gold-400/[.03]">
@@ -274,7 +318,9 @@ const OrdersTable = ({
                                         >
                                             <option value="">Status…</option>
                                             {['CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((st) => (
-                                                <option key={st} value={st}>{titleCase(st)}</option>
+                                                <option key={st} value={st}>
+                                                    {titleCase(st)}
+                                                </option>
                                             ))}
                                         </select>
                                     )}
@@ -295,13 +341,22 @@ const OrdersAdmin = () => {
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [inspectingOrder, setInspectingOrder] = useState<Order | null>(null);
     const [error, setError] = useState('');
+    const orderDialogRef = useDialog<HTMLDivElement>(Boolean(inspectingOrder), () => setInspectingOrder(null));
 
     const load = (search = '') =>
-        api.adminOrders(new URLSearchParams({ limit: '100', ...(search ? { search } : {}) }).toString())
+        api
+            .adminOrders(
+                new URLSearchParams({
+                    limit: '100',
+                    ...(search ? { search } : {}),
+                }).toString(),
+            )
             .then(setOrders)
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load orders.'));
 
-    useEffect(() => { void load(); }, []);
+    useEffect(() => {
+        void load();
+    }, []);
 
     const transition = async (order: Order, status: string) => {
         if (!window.confirm(`Move ${order.orderNumber} to ${titleCase(status)}?`)) return;
@@ -309,7 +364,7 @@ const OrdersAdmin = () => {
             await api.transitionOrder(order.id, status);
             await load(query);
             if (inspectingOrder?.id === order.id) {
-                setInspectingOrder((prev) => prev ? { ...prev, status } : null);
+                setInspectingOrder((prev) => (prev ? { ...prev, status } : null));
             }
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Status change failed.');
@@ -335,7 +390,13 @@ const OrdersAdmin = () => {
 
             {/* Filter Tabs & Search Bar */}
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-                <form onSubmit={(e) => { e.preventDefault(); void load(query); }} className="flex w-full max-w-md border border-gold-500/25 bg-carbon rounded-sm">
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        void load(query);
+                    }}
+                    className="flex w-full max-w-md border border-gold-500/25 bg-carbon rounded-sm"
+                >
                     <IconSearch className="m-3 text-gold-400" />
                     <input
                         value={query}
@@ -343,9 +404,7 @@ const OrdersAdmin = () => {
                         className="min-w-0 flex-1 bg-transparent text-sm outline-none text-cream"
                         placeholder="Search order number or customer email…"
                     />
-                    <button className="bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300">
-                        Search
-                    </button>
+                    <button className="bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300">Search</button>
                 </form>
 
                 <div className="flex flex-wrap gap-2">
@@ -353,7 +412,7 @@ const OrdersAdmin = () => {
                         <button
                             key={st}
                             onClick={() => setStatusFilter(st)}
-                            className={`rounded-sm border px-3 py-1.5 text-xs font-medium transition-all ${
+                            className={`rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 statusFilter === st
                                     ? 'border-gold-400 bg-gold-400/20 text-gold-300'
                                     : 'border-gold-500/20 bg-carbon text-cream/50 hover:border-gold-500/40 hover:text-cream'
@@ -370,11 +429,20 @@ const OrdersAdmin = () => {
             {/* Order Inspector Modal */}
             {inspectingOrder && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-                    <div className="w-full max-w-3xl rounded-sm border border-gold-500/30 bg-carbon p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <div
+                        ref={orderDialogRef}
+                        tabIndex={-1}
+                        className="w-full max-w-3xl rounded-sm border border-gold-500/30 bg-carbon p-6 shadow-2xl max-h-[90vh] overflow-y-auto outline-none"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="admin-order-dialog-title"
+                    >
                         <div className="flex items-center justify-between border-b border-gold-500/20 pb-4">
                             <div>
                                 <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-gold-400">Order Inspection</span>
-                                <h2 className="font-display text-3xl text-cream">{inspectingOrder.orderNumber}</h2>
+                                <h2 id="admin-order-dialog-title" className="font-display text-3xl text-cream">
+                                    {inspectingOrder.orderNumber}
+                                </h2>
                             </div>
                             <button onClick={() => setInspectingOrder(null)} className="text-cream/40 hover:text-cream">
                                 <IconClose size={22} />
@@ -386,19 +454,37 @@ const OrdersAdmin = () => {
                             <div className="border border-gold-500/15 bg-obsidian/60 p-4 rounded-sm">
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Customer & Shipping Details</h4>
                                 <div className="mt-3 space-y-1.5 text-xs text-cream/70">
-                                    <p><strong className="text-cream">Recipient:</strong> {inspectingOrder.addressSnapshot?.recipientName || 'Customer'}</p>
-                                    <p><strong className="text-cream">Email:</strong> {inspectingOrder.addressSnapshot?.email || 'N/A'}</p>
-                                    <p><strong className="text-cream">Phone:</strong> {inspectingOrder.addressSnapshot?.phone || 'N/A'}</p>
-                                    <p><strong className="text-cream">Address:</strong> {inspectingOrder.addressSnapshot?.line1}, {inspectingOrder.addressSnapshot?.city}, {inspectingOrder.addressSnapshot?.state} {inspectingOrder.addressSnapshot?.postalCode}</p>
+                                    <p>
+                                        <strong className="text-cream">Recipient:</strong> {inspectingOrder.addressSnapshot?.recipientName || 'Customer'}
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Email:</strong> {inspectingOrder.addressSnapshot?.email || 'N/A'}
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Phone:</strong> {inspectingOrder.addressSnapshot?.phone || 'N/A'}
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Address:</strong> {inspectingOrder.addressSnapshot?.line1},{' '}
+                                        {inspectingOrder.addressSnapshot?.city}, {inspectingOrder.addressSnapshot?.state}{' '}
+                                        {inspectingOrder.addressSnapshot?.postalCode}
+                                    </p>
                                 </div>
                             </div>
 
                             <div className="border border-gold-500/15 bg-obsidian/60 p-4 rounded-sm">
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Fulfilment & Financials</h4>
                                 <div className="mt-3 space-y-1.5 text-xs text-cream/70">
-                                    <p><strong className="text-cream">Current Status:</strong> <span className="text-gold-300 font-semibold">{titleCase(inspectingOrder.status)}</span></p>
-                                    <p><strong className="text-cream">Placed On:</strong> {new Date(inspectingOrder.createdAt).toLocaleString('en-IN')}</p>
-                                    <p><strong className="text-cream">Total Amount:</strong> <span className="font-display text-base text-gold-300">{rupees(inspectingOrder.totalPaise)}</span></p>
+                                    <p>
+                                        <strong className="text-cream">Current Status:</strong>{' '}
+                                        <span className="text-gold-300 font-semibold">{titleCase(inspectingOrder.status)}</span>
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Placed On:</strong> {new Date(inspectingOrder.createdAt).toLocaleString('en-IN')}
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Total Amount:</strong>{' '}
+                                        <span className="font-display text-base text-gold-300">{rupees(inspectingOrder.totalPaise)}</span>
+                                    </p>
                                 </div>
                                 <div className="mt-4 flex gap-2">
                                     <button
@@ -428,7 +514,9 @@ const OrdersAdmin = () => {
                                     <tbody className="divide-y divide-gold-500/10">
                                         {(inspectingOrder.itemsSnapshot || []).map((item, idx) => (
                                             <tr key={idx}>
-                                                <td className="p-3 font-medium text-cream">{item.productName} ({item.variantName})</td>
+                                                <td className="p-3 font-medium text-cream">
+                                                    {item.productName} ({item.variantName})
+                                                </td>
                                                 <td className="p-3 text-cream/50">{item.sku}</td>
                                                 <td className="p-3 text-right text-cream/70">{rupees(item.unitPricePaise)}</td>
                                                 <td className="p-3 text-center text-cream/80 font-bold">{item.quantity}</td>
@@ -449,6 +537,41 @@ const OrdersAdmin = () => {
 // ----------------------------------------------------
 // 3. CATALOGUE & CATEGORY MANAGEMENT
 // ----------------------------------------------------
+interface VariantDraft {
+    key: string;
+    id?: string;
+    sku: string;
+    name: string;
+    color: string;
+    colorHex: string;
+    pricePaise: string;
+    compareAtPricePaise: string;
+    isActive: boolean;
+    attributes: Record<string, unknown>;
+    images: File[];
+}
+
+let variantDraftCounter = 0;
+
+const variantAttribute = (variant: ProductVariant, key: string): string => {
+    const value = variant.attributes?.[key];
+    return typeof value === 'string' ? value : '';
+};
+
+const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
+    key: variant?.id || `new-variant-${++variantDraftCounter}`,
+    id: variant?.id,
+    sku: variant?.sku || '',
+    name: variant?.name || '',
+    color: variant ? variantAttribute(variant, 'color') : '',
+    colorHex: variantAttribute(variant || ({ attributes: {} } as ProductVariant), 'colorHex') || '#C5A059',
+    pricePaise: variant ? String(variant.pricePaise) : '',
+    compareAtPricePaise: variant?.compareAtPricePaise ? String(variant.compareAtPricePaise) : '',
+    isActive: variant?.isActive ?? true,
+    attributes: variant?.attributes || {},
+    images: [],
+});
+
 const CatalogueAdmin = () => {
     const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products');
     const [products, setProducts] = useState<Product[]>([]);
@@ -459,6 +582,8 @@ const CatalogueAdmin = () => {
 
     const [openProductModal, setOpenProductModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([createVariantDraft()]);
+    const [imageAssignments, setImageAssignments] = useState<Record<string, string | null>>({});
 
     const [openCategoryModal, setOpenCategoryModal] = useState(false);
     const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -466,6 +591,14 @@ const CatalogueAdmin = () => {
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [saving, setSaving] = useState(false);
+    const productDialogRef = useDialog<HTMLFormElement>(openProductModal, () => {
+        setOpenProductModal(false);
+        setEditingProduct(null);
+    });
+    const categoryDialogRef = useDialog<HTMLFormElement>(openCategoryModal, () => {
+        setOpenCategoryModal(false);
+        setEditingCategory(null);
+    });
 
     const load = () =>
         Promise.all([api.adminProducts(), api.adminCategories()])
@@ -475,7 +608,21 @@ const CatalogueAdmin = () => {
             })
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load catalogue.'));
 
-    useEffect(() => { void load(); }, []);
+    useEffect(() => {
+        void load();
+    }, []);
+
+    const openProductEditor = (product: Product | null) => {
+        setEditingProduct(product);
+        setVariantDrafts(product?.variants.length ? product.variants.map(createVariantDraft) : [createVariantDraft()]);
+        setImageAssignments(Object.fromEntries((product?.images || []).map((image) => [image.id, image.variantId || null])));
+        setError('');
+        setOpenProductModal(true);
+    };
+
+    const updateVariantDraft = (key: string, update: Partial<VariantDraft>) => {
+        setVariantDrafts((current) => current.map((draft) => (draft.key === key ? { ...draft, ...update } : draft)));
+    };
 
     // Create or Edit Product Submit
     const handleProductSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -488,6 +635,10 @@ const CatalogueAdmin = () => {
         try {
             let productId: string;
             let productName: string;
+            if (variantDrafts.length === 0 || !variantDrafts.some((variant) => variant.isActive)) {
+                throw new Error('Add at least one active product option.');
+            }
+
             if (editingProduct) {
                 const product = await api.updateProduct(editingProduct.id, {
                     name: String(form.get('name')),
@@ -512,20 +663,46 @@ const CatalogueAdmin = () => {
                     dimensions: String(form.get('dimensions')),
                     status: String(form.get('status')),
                 });
-                await api.createVariant(product.id, {
-                    sku: String(form.get('barcode')).trim().toUpperCase(),
-                    name: String(form.get('variantName')),
-                    pricePaise: Number(form.get('pricePaise')),
-                    isActive: true,
-                });
                 productId = product.id;
                 productName = product.name;
             }
 
-            const imageFiles = form.getAll('images').filter((file): file is File => file instanceof File && file.size > 0);
-            for (const [index, file] of imageFiles.entries()) {
+            for (const draft of variantDrafts) {
+                const color = draft.color.trim();
+                const input = {
+                    sku: draft.sku.trim().toUpperCase(),
+                    name: draft.name.trim(),
+                    pricePaise: Number(draft.pricePaise),
+                    ...(draft.compareAtPricePaise ? { compareAtPricePaise: Number(draft.compareAtPricePaise) } : {}),
+                    attributes: draft.attributes,
+                    ...(color ? { color, colorHex: draft.colorHex } : {}),
+                    isActive: draft.isActive,
+                };
+                const savedVariant = draft.id ? await api.updateVariant(draft.id, input) : await api.createVariant(productId, input);
+
+                for (const [index, file] of draft.images.entries()) {
                     const imageForm = new FormData();
                     imageForm.set('file', file);
+                    imageForm.set('variantId', savedVariant.id);
+                    imageForm.set('altText', `${productName} — ${color || draft.name}`);
+                    imageForm.set('sortOrder', String(index));
+                    await api.uploadProductImage(productId, imageForm);
+                }
+            }
+
+            if (editingProduct) {
+                for (const image of editingProduct.images) {
+                    const variantId = imageAssignments[image.id] ?? null;
+                    if (variantId !== (image.variantId ?? null)) {
+                        await api.updateProductImage(productId, image.id, { variantId });
+                    }
+                }
+            }
+
+            const imageFiles = form.getAll('images').filter((file): file is File => file instanceof File && file.size > 0);
+            for (const [index, file] of imageFiles.entries()) {
+                const imageForm = new FormData();
+                imageForm.set('file', file);
                 imageForm.set('altText', productName);
                 imageForm.set('sortOrder', String(index));
                 await api.uploadProductImage(productId, imageForm);
@@ -533,7 +710,10 @@ const CatalogueAdmin = () => {
 
             const videoUrl = String(form.get('videoUrl') || '').trim();
             if (videoUrl) {
-                await api.addProductVideoUrl(productId, { url: videoUrl, altText: productName });
+                await api.addProductVideoUrl(productId, {
+                    url: videoUrl,
+                    altText: productName,
+                });
             }
             const videoFile = form.get('videoFile');
             if (videoFile instanceof File && videoFile.size > 0) {
@@ -624,8 +804,7 @@ const CatalogueAdmin = () => {
                     </button>
                     <button
                         onClick={() => {
-                            setEditingProduct(null);
-                            setOpenProductModal(true);
+                            openProductEditor(null);
                         }}
                         className="flex h-11 items-center gap-2 bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian shadow-lg hover:bg-gold-300"
                     >
@@ -677,7 +856,9 @@ const CatalogueAdmin = () => {
                         >
                             <option value="">All Categories</option>
                             {categories.map((cat) => (
-                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                <option key={cat.id} value={cat.id}>
+                                    {cat.name}
+                                </option>
                             ))}
                         </select>
                         <select
@@ -724,9 +905,13 @@ const CatalogueAdmin = () => {
                                         <td className="p-4 text-xs text-cream/50">{product.category?.name || 'Unassigned'}</td>
                                         <td className="p-4 text-xs text-cream/70">{product.variants?.length || 0} variant(s)</td>
                                         <td className="p-4">
-                                            <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-                                                product.status === 'PUBLISHED' ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300' : 'border-gold-500/30 bg-gold-950/30 text-gold-300'
-                                            }`}>
+                                            <span
+                                                className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                                                    product.status === 'PUBLISHED'
+                                                        ? 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300'
+                                                        : 'border-gold-500/30 bg-gold-950/30 text-gold-300'
+                                                }`}
+                                            >
                                                 {titleCase(product.status)}
                                             </span>
                                         </td>
@@ -737,8 +922,7 @@ const CatalogueAdmin = () => {
                                             <div className="flex items-center justify-center gap-2">
                                                 <button
                                                     onClick={() => {
-                                                        setEditingProduct(product);
-                                                        setOpenProductModal(true);
+                                                        openProductEditor(product);
                                                     }}
                                                     className="p-2 text-cream/60 hover:text-gold-300 border border-gold-500/20 rounded-sm bg-obsidian"
                                                     title="Edit Product"
@@ -779,9 +963,11 @@ const CatalogueAdmin = () => {
                                     <td className="p-4 font-display text-lg text-cream">{cat.name}</td>
                                     <td className="p-4 text-cream/40 font-mono text-xs">{cat.slug}</td>
                                     <td className="p-4">
-                                        <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-                                            cat.isPublished ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-gold-300'
-                                        }`}>
+                                        <span
+                                            className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                                                cat.isPublished ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-gold-300'
+                                            }`}
+                                        >
                                             {cat.isPublished ? 'Published' : 'Draft'}
                                         </span>
                                     </td>
@@ -806,13 +992,30 @@ const CatalogueAdmin = () => {
             {/* Product Modal (Create/Edit) */}
             {openProductModal && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
-                    <form onSubmit={handleProductSubmit} className="mx-auto my-6 w-full max-w-2xl border border-gold-500/30 bg-carbon p-7 rounded-sm shadow-2xl">
+                    <form
+                        ref={productDialogRef}
+                        tabIndex={-1}
+                        onSubmit={handleProductSubmit}
+                        className="mx-auto my-6 w-full max-w-5xl border border-gold-500/30 bg-carbon p-5 shadow-2xl outline-none sm:p-7"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="product-dialog-title"
+                    >
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
                             <div>
                                 <p className="text-[10px] uppercase tracking-[0.22em] text-gold-400 font-bold">Catalogue Manager</p>
-                                <h2 className="mt-1 font-display text-3xl text-cream">{editingProduct ? 'Edit Product' : 'Add New Product'}</h2>
+                                <h2 id="product-dialog-title" className="mt-1 font-display text-3xl text-cream">
+                                    {editingProduct ? 'Edit Product' : 'Add New Product'}
+                                </h2>
                             </div>
-                            <button type="button" onClick={() => { setOpenProductModal(false); setEditingProduct(null); }} className="text-xs text-cream/40 hover:text-cream">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenProductModal(false);
+                                    setEditingProduct(null);
+                                }}
+                                className="text-xs text-cream/40 hover:text-cream"
+                            >
                                 Close
                             </button>
                         </div>
@@ -824,14 +1027,22 @@ const CatalogueAdmin = () => {
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">URL Slug</span>
-                                <input name="slug" defaultValue={editingProduct?.slug || ''} className={inputStyle} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required />
+                                <input
+                                    name="slug"
+                                    defaultValue={editingProduct?.slug || ''}
+                                    className={inputStyle}
+                                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                                    required
+                                />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Category</span>
                                 <select name="categoryId" defaultValue={editingProduct?.categoryId || ''} className={inputStyle} required>
                                     <option value="">Select Category…</option>
                                     {categories.map((cat) => (
-                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.name}
+                                        </option>
                                     ))}
                                 </select>
                             </label>
@@ -844,26 +1055,14 @@ const CatalogueAdmin = () => {
                                 </select>
                             </label>
 
-                            {!editingProduct && (
-                                <>
-                                    <label>
-                                        <span className="mb-1.5 block text-xs text-cream/60 font-medium">Barcode Number</span>
-                                        <input name="barcode" placeholder="8901234567890" className={inputStyle} required />
-                                    </label>
-                                    <label>
-                                        <span className="mb-1.5 block text-xs text-cream/60 font-medium">Variant Name</span>
-                                        <input name="variantName" defaultValue="Standard Edition" className={inputStyle} required />
-                                    </label>
-                                    <label>
-                                        <span className="mb-1.5 block text-xs text-cream/60 font-medium">Price in Paise (e.g. ₹999 = 99900)</span>
-                                        <input name="pricePaise" type="number" min="0" defaultValue="99900" className={inputStyle} required />
-                                    </label>
-                                </>
-                            )}
-
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Material</span>
-                                <input name="material" defaultValue={editingProduct?.material || ''} placeholder="e.g. Stainless steel" className={inputStyle} />
+                                <input
+                                    name="material"
+                                    defaultValue={editingProduct?.material || ''}
+                                    placeholder="e.g. Stainless steel"
+                                    className={inputStyle}
+                                />
                             </label>
                             <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Dimensions (L × W × H)</span>
@@ -872,13 +1071,230 @@ const CatalogueAdmin = () => {
 
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Description (shown on storefront)</span>
-                                <textarea name="description" defaultValue={editingProduct?.description || ''} rows={4} className="w-full border border-gold-500/25 bg-obsidian p-4 text-sm text-cream outline-none focus:border-gold-400 rounded-sm" />
+                                <textarea
+                                    name="description"
+                                    defaultValue={editingProduct?.description || ''}
+                                    rows={4}
+                                    className="w-full border border-gold-500/25 bg-obsidian p-4 text-sm text-cream outline-none focus:border-gold-400 rounded-sm"
+                                />
                             </label>
 
+                            <section className="sm:col-span-2 border-y border-line py-5" aria-labelledby="product-options-heading">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <h3 id="product-options-heading" className="font-display text-xl text-cream">
+                                            Colours and options
+                                        </h3>
+                                        <p className="mt-1 text-xs leading-5 text-cream/55">
+                                            Each option has its own SKU, price, swatch and image set. The colour name is shown to customers.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVariantDrafts((current) => [...current, createVariantDraft()])}
+                                        className="flex min-h-11 items-center gap-2 border border-gold-400/45 px-3 text-xs font-semibold text-gold-200 hover:border-gold-300 hover:text-gold-100"
+                                    >
+                                        <IconPlus size={14} /> Add colour
+                                    </button>
+                                </div>
+
+                                <div className="mt-5 space-y-4">
+                                    {variantDrafts.map((draft, index) => (
+                                        <div key={draft.key} className="bg-obsidian/55 p-4">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <strong className="text-sm text-cream">
+                                                    Option {index + 1}
+                                                    {draft.color ? ` · ${draft.color}` : ''}
+                                                </strong>
+                                                {!draft.id && variantDrafts.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setVariantDrafts((current) => current.filter((item) => item.key !== draft.key))}
+                                                        className="min-h-11 px-2 text-xs text-red-200 hover:text-red-100"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Colour name</span>
+                                                    <input
+                                                        value={draft.color}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                color: event.target.value,
+                                                            })
+                                                        }
+                                                        placeholder="e.g. Sage Green"
+                                                        maxLength={80}
+                                                        className={inputStyle}
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Option name</span>
+                                                    <input
+                                                        value={draft.name}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                name: event.target.value,
+                                                            })
+                                                        }
+                                                        placeholder="e.g. Sage Green · 6 piece"
+                                                        maxLength={120}
+                                                        className={inputStyle}
+                                                        required
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">SKU / barcode</span>
+                                                    <input
+                                                        value={draft.sku}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                sku: event.target.value.toUpperCase(),
+                                                            })
+                                                        }
+                                                        placeholder="GHC-SET-SAGE"
+                                                        pattern="[A-Z0-9][A-Z0-9._-]*"
+                                                        maxLength={80}
+                                                        className={inputStyle}
+                                                        required
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Swatch</span>
+                                                    <span className="flex h-12 items-center gap-3 border border-gold-500/25 bg-obsidian px-3">
+                                                        <input
+                                                            type="color"
+                                                            value={draft.colorHex}
+                                                            onChange={(event) =>
+                                                                updateVariantDraft(draft.key, {
+                                                                    colorHex: event.target.value.toUpperCase(),
+                                                                })
+                                                            }
+                                                            className="size-8 cursor-pointer border-0 bg-transparent"
+                                                            aria-label={`Swatch colour for option ${index + 1}`}
+                                                        />
+                                                        <span className="text-xs tabular-nums text-cream/55">{draft.colorHex}</span>
+                                                    </span>
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Price in paise</span>
+                                                    <input
+                                                        type="number"
+                                                        value={draft.pricePaise}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                pricePaise: event.target.value,
+                                                            })
+                                                        }
+                                                        min="0"
+                                                        placeholder="99900"
+                                                        className={inputStyle}
+                                                        required
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Compare-at price</span>
+                                                    <input
+                                                        type="number"
+                                                        value={draft.compareAtPricePaise}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                compareAtPricePaise: event.target.value,
+                                                            })
+                                                        }
+                                                        min="0"
+                                                        placeholder="Optional"
+                                                        className={inputStyle}
+                                                    />
+                                                </label>
+                                                <label className="sm:col-span-2">
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Images for this option</span>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/jpeg,image/png,image/webp,image/gif"
+                                                        multiple
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                images: Array.from(event.target.files || []),
+                                                            })
+                                                        }
+                                                        className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian"
+                                                    />
+                                                </label>
+                                            </div>
+                                            <label className="mt-3 flex min-h-11 items-center gap-3 text-xs text-cream/65">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={draft.isActive}
+                                                    onChange={(event) =>
+                                                        updateVariantDraft(draft.key, {
+                                                            isActive: event.target.checked,
+                                                        })
+                                                    }
+                                                    className="size-4 accent-gold-400"
+                                                />
+                                                Available for customers
+                                            </label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+
+                            {editingProduct && editingProduct.images.length > 0 && (
+                                <section className="sm:col-span-2" aria-labelledby="existing-images-heading">
+                                    <h3 id="existing-images-heading" className="text-sm font-semibold text-cream">
+                                        Assign existing images
+                                    </h3>
+                                    <p className="mt-1 text-xs text-cream/55">
+                                        Choose which colour owns each older image. Shared images appear after every colour’s own photos.
+                                    </p>
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                        {editingProduct.images.map((image) => (
+                                            <div key={image.id} className="flex items-center gap-3 bg-obsidian/55 p-2">
+                                                <img src={image.thumbnailUrl} alt={image.altText} className="size-16 shrink-0 object-cover" />
+                                                <label className="min-w-0 flex-1">
+                                                    <span className="mb-1 block text-[11px] text-cream/55">Gallery assignment</span>
+                                                    <select
+                                                        value={imageAssignments[image.id] || ''}
+                                                        onChange={(event) =>
+                                                            setImageAssignments((current) => ({
+                                                                ...current,
+                                                                [image.id]: event.target.value || null,
+                                                            }))
+                                                        }
+                                                        className="field h-10 w-full text-xs"
+                                                    >
+                                                        <option value="">Shared across all options</option>
+                                                        {variantDrafts
+                                                            .filter((draft) => draft.id)
+                                                            .map((draft) => (
+                                                                <option key={draft.id} value={draft.id}>
+                                                                    {draft.color || draft.name}
+                                                                </option>
+                                                            ))}
+                                                    </select>
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
                             <label className="sm:col-span-2">
-                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Images & GIFs</span>
-                                <input name="images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer" />
-                                <span className="mt-1 block text-[10px] text-cream/40">Choose multiple JPEG, PNG, WebP, or GIF files. GIFs remain animated.</span>
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Shared gallery images</span>
+                                <input
+                                    name="images"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp,image/gif"
+                                    multiple
+                                    className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer"
+                                />
+                                <span className="mt-1 block text-[10px] text-cream/40">
+                                    Optional lifestyle or packaging photos shown after every selected colour’s own images.
+                                </span>
                             </label>
 
                             <label className="sm:col-span-2">
@@ -889,13 +1305,21 @@ const CatalogueAdmin = () => {
 
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Upload Product Video</span>
-                                <input name="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime" className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer" />
+                                <input
+                                    name="videoFile"
+                                    type="file"
+                                    accept="video/mp4,video/webm,video/quicktime"
+                                    className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer"
+                                />
                                 <span className="mt-1 block text-[10px] text-cream/40">MP4, WebM, or MOV; up to 25 MB.</span>
                             </label>
                         </div>
 
-                        <button disabled={saving} className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian disabled:opacity-50 hover:bg-gold-300 rounded-sm shadow-md">
-                            {saving ? 'Saving Changes…' : editingProduct ? 'Update Product' : 'Create Product & Initial Variant'}
+                        <button
+                            disabled={saving}
+                            className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian disabled:opacity-50 hover:bg-gold-300 rounded-sm shadow-md"
+                        >
+                            {saving ? 'Saving product and options…' : editingProduct ? 'Save product and options' : 'Create product and options'}
                         </button>
                     </form>
                 </div>
@@ -904,10 +1328,29 @@ const CatalogueAdmin = () => {
             {/* Category Modal */}
             {openCategoryModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
-                    <form onSubmit={handleCategorySubmit} className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+                    <form
+                        ref={categoryDialogRef}
+                        tabIndex={-1}
+                        onSubmit={handleCategorySubmit}
+                        className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="category-dialog-title"
+                    >
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
-                            <h2 className="font-display text-2xl text-cream">{editingCategory ? 'Edit Category' : 'Create Category'}</h2>
-                            <button type="button" onClick={() => { setOpenCategoryModal(false); setEditingCategory(null); }} className="text-xs text-cream/40">Close</button>
+                            <h2 id="category-dialog-title" className="font-display text-2xl text-cream">
+                                {editingCategory ? 'Edit Category' : 'Create Category'}
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenCategoryModal(false);
+                                    setEditingCategory(null);
+                                }}
+                                className="text-xs text-cream/40"
+                            >
+                                Close
+                            </button>
                         </div>
                         <div className="mt-5 space-y-4">
                             <label className="block">
@@ -920,14 +1363,27 @@ const CatalogueAdmin = () => {
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs text-cream/60">Description</span>
-                                <textarea name="description" defaultValue={editingCategory?.description || ''} rows={3} className="w-full border border-gold-500/25 bg-obsidian p-3 text-sm text-cream outline-none rounded-sm" />
+                                <textarea
+                                    name="description"
+                                    defaultValue={editingCategory?.description || ''}
+                                    rows={3}
+                                    className="w-full border border-gold-500/25 bg-obsidian p-3 text-sm text-cream outline-none rounded-sm"
+                                />
                             </label>
                             <label className="flex items-center gap-2 text-xs text-cream">
-                                <input type="checkbox" name="isPublished" defaultChecked={editingCategory ? editingCategory.isPublished : true} className="accent-gold-400 size-4" />
+                                <input
+                                    type="checkbox"
+                                    name="isPublished"
+                                    defaultChecked={editingCategory ? editingCategory.isPublished : true}
+                                    className="accent-gold-400 size-4"
+                                />
                                 <span>Published on Storefront</span>
                             </label>
                         </div>
-                        <button disabled={saving} className="mt-6 h-11 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm">
+                        <button
+                            disabled={saving}
+                            className="mt-6 h-11 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                        >
                             {saving ? 'Saving Category…' : editingCategory ? 'Update Category' : 'Create Category'}
                         </button>
                     </form>
@@ -952,6 +1408,8 @@ const InventoryAdmin = () => {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
+    const warehouseDialogRef = useDialog<HTMLFormElement>(openWarehouseModal, () => setOpenWarehouseModal(false));
+    const stockDialogRef = useDialog<HTMLFormElement>(Boolean(editingLevel), () => setEditingLevel(null));
 
     const load = () =>
         Promise.all([api.inventory(), api.adminProducts(), api.warehouses()])
@@ -962,22 +1420,25 @@ const InventoryAdmin = () => {
             })
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load inventory.'));
 
-    useEffect(() => { void load(); }, []);
+    useEffect(() => {
+        void load();
+    }, []);
 
     const variantsMap = useMemo(() => {
         const map = new Map<string, { label: string; sku: string; name: string }>();
         for (const p of products) {
             for (const v of p.variants) {
-                map.set(v.id, { label: `${p.name} · ${v.sku}`, sku: v.sku, name: p.name });
+                map.set(v.id, {
+                    label: `${p.name} · ${v.sku}`,
+                    sku: v.sku,
+                    name: p.name,
+                });
             }
         }
         return map;
     }, [products]);
 
-    const warehousesMap = useMemo(
-        () => new Map(warehouses.map((warehouse) => [warehouse.id, warehouse])),
-        [warehouses],
-    );
+    const warehousesMap = useMemo(() => new Map(warehouses.map((warehouse) => [warehouse.id, warehouse])), [warehouses]);
 
     const handleCreateWarehouse = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -1027,7 +1488,9 @@ const InventoryAdmin = () => {
     const filteredLevels = useMemo(() => {
         return levels.filter((level) => {
             const info = variantsMap.get(level.variantId);
-            const matchesSearch = !searchQuery || (info && (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) || info.name.toLowerCase().includes(searchQuery.toLowerCase())));
+            const matchesSearch =
+                !searchQuery ||
+                (info && (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) || info.name.toLowerCase().includes(searchQuery.toLowerCase())));
             const available = level.onHand - level.reserved;
             const matchesLowStock = !lowStockOnly || available <= level.lowStockThreshold;
             return matchesSearch && matchesLowStock;
@@ -1063,7 +1526,7 @@ const InventoryAdmin = () => {
                 </div>
                 <button
                     onClick={() => setLowStockOnly(!lowStockOnly)}
-                    className={`flex items-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-semibold transition-all ${
+                    className={`flex items-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-semibold transition-colors ${
                         lowStockOnly ? 'border-red-500/40 bg-red-950/40 text-red-200' : 'border-gold-500/25 bg-carbon text-cream/60 hover:border-gold-400'
                     }`}
                 >
@@ -1075,7 +1538,10 @@ const InventoryAdmin = () => {
             {!warehouses.length && (
                 <div className="mb-6 border border-amber-500/30 bg-amber-950/20 p-5 rounded-sm">
                     <h2 className="text-sm font-bold text-amber-300">Set up your first warehouse</h2>
-                    <p className="mt-1 text-xs text-cream/65">Inventory is tracked per warehouse. Creating one automatically adds every catalogue variant at zero stock, ready for you to set its on-hand quantity.</p>
+                    <p className="mt-1 text-xs text-cream/65">
+                        Inventory is tracked per warehouse. Creating one automatically adds every catalogue variant at zero stock, ready for you to set its
+                        on-hand quantity.
+                    </p>
                     <button
                         onClick={() => setOpenWarehouseModal(true)}
                         className="mt-4 flex h-10 items-center gap-2 border border-amber-400/40 px-3 text-xs font-semibold text-amber-200 hover:bg-amber-400/10 rounded-sm"
@@ -1108,12 +1574,12 @@ const InventoryAdmin = () => {
 
                             return (
                                 <tr key={level.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                    <td className="p-4 font-medium text-cream">
-                                        {info ? info.label : level.variantId}
-                                    </td>
+                                    <td className="p-4 font-medium text-cream">{info ? info.label : level.variantId}</td>
                                     <td className="p-4 text-xs text-cream/60">
                                         {warehousesMap.get(level.warehouseId)?.name || level.warehouseId}
-                                        {warehousesMap.get(level.warehouseId) && <span className="ml-2 text-[10px] text-gold-400">{warehousesMap.get(level.warehouseId)?.code}</span>}
+                                        {warehousesMap.get(level.warehouseId) && (
+                                            <span className="ml-2 text-[10px] text-gold-400">{warehousesMap.get(level.warehouseId)?.code}</span>
+                                        )}
                                     </td>
                                     <td className="p-4 text-center font-display text-base text-cream">{level.onHand}</td>
                                     <td className="p-4 text-center text-cream/50">{level.reserved}</td>
@@ -1122,9 +1588,13 @@ const InventoryAdmin = () => {
                                     </td>
                                     <td className="p-4 text-center text-cream/40">{level.lowStockThreshold}</td>
                                     <td className="p-4 text-center">
-                                        <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-                                            isLow ? 'border-red-500/30 bg-red-950/30 text-red-300 animate-pulse' : 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300'
-                                        }`}>
+                                        <span
+                                            className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                                                isLow
+                                                    ? 'border-red-500/30 bg-red-950/30 text-red-300 animate-pulse'
+                                                    : 'border-emerald-500/30 bg-emerald-950/30 text-emerald-300'
+                                            }`}
+                                        >
                                             {isLow ? 'Low Stock Warning' : 'Stocked'}
                                         </span>
                                     </td>
@@ -1146,13 +1616,25 @@ const InventoryAdmin = () => {
 
             {openWarehouseModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
-                    <form onSubmit={handleCreateWarehouse} className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+                    <form
+                        ref={warehouseDialogRef}
+                        tabIndex={-1}
+                        onSubmit={handleCreateWarehouse}
+                        className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="warehouse-dialog-title"
+                    >
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
                             <div>
                                 <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-gold-400">Inventory Setup</span>
-                                <h3 className="font-display text-2xl text-cream">Add Warehouse</h3>
+                                <h3 id="warehouse-dialog-title" className="font-display text-2xl text-cream">
+                                    Add Warehouse
+                                </h3>
                             </div>
-                            <button type="button" onClick={() => setOpenWarehouseModal(false)} className="text-xs text-cream/40 hover:text-cream">Close</button>
+                            <button type="button" onClick={() => setOpenWarehouseModal(false)} className="text-xs text-cream/40 hover:text-cream">
+                                Close
+                            </button>
                         </div>
                         <p className="mt-4 text-xs leading-relaxed text-cream/60">All catalogue variants will be added to this warehouse with zero stock.</p>
                         <div className="mt-5 space-y-4">
@@ -1165,7 +1647,10 @@ const InventoryAdmin = () => {
                                 <input name="code" placeholder="MAIN" pattern="[A-Za-z0-9_-]+" className={inputStyle} required />
                             </label>
                         </div>
-                        <button disabled={saving} className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 disabled:opacity-50 rounded-sm">
+                        <button
+                            disabled={saving}
+                            className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 disabled:opacity-50 rounded-sm"
+                        >
                             {saving ? 'Creating Warehouse…' : 'Create Warehouse'}
                         </button>
                     </form>
@@ -1175,13 +1660,25 @@ const InventoryAdmin = () => {
             {/* Adjust Stock Modal */}
             {editingLevel && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
-                    <form onSubmit={handleSaveStock} className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+                    <form
+                        ref={stockDialogRef}
+                        tabIndex={-1}
+                        onSubmit={handleSaveStock}
+                        className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="stock-dialog-title"
+                    >
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
                             <div>
                                 <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-gold-400">Warehouse Stock</span>
-                                <h3 className="font-display text-2xl text-cream">Adjust SKU Level</h3>
+                                <h3 id="stock-dialog-title" className="font-display text-2xl text-cream">
+                                    Adjust SKU Level
+                                </h3>
                             </div>
-                            <button type="button" onClick={() => setEditingLevel(null)} className="text-xs text-cream/40">Close</button>
+                            <button type="button" onClick={() => setEditingLevel(null)} className="text-xs text-cream/40">
+                                Close
+                            </button>
                         </div>
                         <div className="mt-5 space-y-4">
                             <div>
@@ -1194,10 +1691,20 @@ const InventoryAdmin = () => {
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs text-cream/70">Low Stock Alert Threshold</span>
-                                <input name="lowStockThreshold" type="number" min="0" defaultValue={editingLevel.lowStockThreshold} className={inputStyle} required />
+                                <input
+                                    name="lowStockThreshold"
+                                    type="number"
+                                    min="0"
+                                    defaultValue={editingLevel.lowStockThreshold}
+                                    className={inputStyle}
+                                    required
+                                />
                             </label>
                         </div>
-                        <button disabled={saving} className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm">
+                        <button
+                            disabled={saving}
+                            className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                        >
                             {saving ? 'Updating Level…' : 'Save Stock Levels'}
                         </button>
                     </form>
@@ -1216,13 +1723,17 @@ const PromotionsAdmin = () => {
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
     const [saving, setSaving] = useState(false);
+    const couponDialogRef = useDialog<HTMLFormElement>(openModal, () => setOpenModal(false));
 
     const load = () =>
-        api.coupons()
+        api
+            .coupons()
             .then(setCoupons)
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load coupons.'));
 
-    useEffect(() => { void load(); }, []);
+    useEffect(() => {
+        void load();
+    }, []);
 
     const handleCreateCoupon = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -1255,7 +1766,10 @@ const PromotionsAdmin = () => {
             title="Promotions & Discounts"
             description="Manage promotional coupons, percentage discounts, minimum cart spend limits, and coupon expiration dates."
             action={
-                <button onClick={() => setOpenModal(true)} className="flex h-11 items-center gap-2 bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian shadow-lg hover:bg-gold-300">
+                <button
+                    onClick={() => setOpenModal(true)}
+                    className="flex h-11 items-center gap-2 bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian shadow-lg hover:bg-gold-300"
+                >
                     <IconPlus size={16} /> Create Coupon
                 </button>
             }
@@ -1280,16 +1794,18 @@ const PromotionsAdmin = () => {
                         {coupons.map((c) => (
                             <tr key={c.id} className="transition-colors hover:bg-gold-400/[.03]">
                                 <td className="p-4 font-mono font-bold text-gold-300 text-base">{c.code}</td>
-                                <td className="p-4 font-semibold text-cream">
-                                    {c.type === 'PERCENT' ? `${c.value}% OFF` : rupees(c.value)}
-                                </td>
+                                <td className="p-4 font-semibold text-cream">{c.type === 'PERCENT' ? `${c.value}% OFF` : rupees(c.value)}</td>
                                 <td className="p-4 text-cream/50 text-xs">{rupees(c.minimumSubtotalPaise)}</td>
                                 <td className="p-4 text-cream/70 text-xs">{c.usageLimit ?? 'Unlimited'}</td>
-                                <td className="p-4 text-cream/40 text-xs">{shortDate(c.startsAt)} → {shortDate(c.endsAt)}</td>
+                                <td className="p-4 text-cream/40 text-xs">
+                                    {shortDate(c.startsAt)} → {shortDate(c.endsAt)}
+                                </td>
                                 <td className="p-4 text-center">
-                                    <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-                                        c.isActive ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-cream/40'
-                                    }`}>
+                                    <span
+                                        className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
+                                            c.isActive ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-cream/40'
+                                        }`}
+                                    >
                                         {c.isActive ? 'Active' : 'Inactive'}
                                     </span>
                                 </td>
@@ -1303,10 +1819,22 @@ const PromotionsAdmin = () => {
             {/* Create Coupon Modal */}
             {openModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
-                    <form onSubmit={handleCreateCoupon} className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl">
+                    <form
+                        ref={couponDialogRef}
+                        tabIndex={-1}
+                        onSubmit={handleCreateCoupon}
+                        className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="coupon-dialog-title"
+                    >
                         <div className="flex justify-between border-b border-gold-500/20 pb-4">
-                            <h3 className="font-display text-2xl text-cream">Create Promo Coupon</h3>
-                            <button type="button" onClick={() => setOpenModal(false)} className="text-xs text-cream/40">Close</button>
+                            <h3 id="coupon-dialog-title" className="font-display text-2xl text-cream">
+                                Create Promo Coupon
+                            </h3>
+                            <button type="button" onClick={() => setOpenModal(false)} className="text-xs text-cream/40">
+                                Close
+                            </button>
                         </div>
                         <div className="mt-5 grid gap-4 sm:grid-cols-2">
                             <label className="sm:col-span-2">
@@ -1338,10 +1866,19 @@ const PromotionsAdmin = () => {
                             </label>
                             <label>
                                 <span className="mb-1 block text-xs text-cream/70">Ends At</span>
-                                <input name="endsAt" type="date" defaultValue={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]} className={inputStyle} required />
+                                <input
+                                    name="endsAt"
+                                    type="date"
+                                    defaultValue={new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]}
+                                    className={inputStyle}
+                                    required
+                                />
                             </label>
                         </div>
-                        <button disabled={saving} className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm">
+                        <button
+                            disabled={saving}
+                            className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                        >
                             {saving ? 'Creating…' : 'Publish Promo Code'}
                         </button>
                     </form>
@@ -1365,7 +1902,10 @@ const AuditLogsAdmin = () => {
     }, []);
 
     return (
-        <AdminShell title="Security Audit Logs" description="Full immutable security audit trail documenting actor actions, entity mutations, and IP signatures.">
+        <AdminShell
+            title="Security Audit Logs"
+            description="Full immutable security audit trail documenting actor actions, entity mutations, and IP signatures."
+        >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
 
             <div className={`${box} overflow-x-auto`}>
@@ -1413,7 +1953,9 @@ const OperationsAdmin = () => {
             .finally(() => setRefreshing(false));
     };
 
-    useEffect(() => { void load(); }, []);
+    useEffect(() => {
+        void load();
+    }, []);
 
     const signals = ops
         ? [
@@ -1448,12 +1990,14 @@ const OperationsAdmin = () => {
                 {signals.map(([label, value]) => {
                     const healthy = value === 'Healthy' || value === 0;
                     return (
-                        <article key={String(label)} className={`${box} p-6 transition-all hover:border-gold-500/40`}>
+                        <article key={String(label)} className={`${box} p-6 transition-colors hover:border-gold-500/40`}>
                             <div className="flex items-center justify-between">
                                 <span className={healthy ? 'text-emerald-400' : 'text-amber-400'}>
                                     {healthy ? <IconCheckCircle color="#10B981" size={22} /> : <IconAlert size={22} />}
                                 </span>
-                                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${healthy ? 'bg-emerald-950/30 text-emerald-300' : 'bg-amber-950/30 text-amber-300'}`}>
+                                <span
+                                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${healthy ? 'bg-emerald-950/30 text-emerald-300' : 'bg-amber-950/30 text-amber-300'}`}
+                                >
                                     {healthy ? 'Pass' : 'Attention'}
                                 </span>
                             </div>
@@ -1503,7 +2047,10 @@ const UsersAdmin = () => {
     };
 
     return (
-        <AdminShell title="User & Role Administration" description="Manage security roles, assign administrative access privileges, and configure RBAC authorization.">
+        <AdminShell
+            title="User & Role Administration"
+            description="Manage security roles, assign administrative access privileges, and configure RBAC authorization."
+        >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
 
@@ -1529,7 +2076,10 @@ const UsersAdmin = () => {
                             <option value="SUPPORT_AGENT">SUPPORT_AGENT — Customer & Orders Support</option>
                         </select>
                     </label>
-                    <button disabled={saving} className="mt-4 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm">
+                    <button
+                        disabled={saving}
+                        className="mt-4 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                    >
                         {saving ? 'Assigning Role…' : 'Update User Authorization'}
                     </button>
                 </form>
@@ -1538,16 +2088,20 @@ const UsersAdmin = () => {
                     <h3 className="font-display text-2xl text-gold-300 border-b border-gold-500/15 pb-3">Role Permissions Reference</h3>
                     <div className="space-y-3 text-xs text-cream/70">
                         <div>
-                            <strong className="text-gold-400">ADMIN:</strong> Unrestricted operational capabilities, financial telemetry, audit logs, and security governance.
+                            <strong className="text-gold-400">ADMIN:</strong> Unrestricted operational capabilities, financial telemetry, audit logs, and
+                            security governance.
                         </div>
                         <div>
-                            <strong className="text-gold-400">CATALOGUE_MANAGER:</strong> Product creation/editing, variant price adjustments, media derivative processing, category taxonomy.
+                            <strong className="text-gold-400">CATALOGUE_MANAGER:</strong> Product creation/editing, variant price adjustments, media derivative
+                            processing, category taxonomy.
                         </div>
                         <div>
-                            <strong className="text-gold-400">WAREHOUSE_MANAGER:</strong> Multi-warehouse stock level adjustments, low-stock threshold monitoring, SKU receipts.
+                            <strong className="text-gold-400">WAREHOUSE_MANAGER:</strong> Multi-warehouse stock level adjustments, low-stock threshold
+                            monitoring, SKU receipts.
                         </div>
                         <div>
-                            <strong className="text-gold-400">SUPPORT_AGENT:</strong> Order inspection, status transitions, guest order lookups, customer invoice generation.
+                            <strong className="text-gold-400">SUPPORT_AGENT:</strong> Order inspection, status transitions, guest order lookups, customer
+                            invoice generation.
                         </div>
                     </div>
                 </div>

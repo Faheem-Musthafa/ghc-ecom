@@ -46,6 +46,10 @@ const environmentSchema = z
     RAZORPAY_KEY_ID: z.string().min(1),
     RAZORPAY_KEY_SECRET: z.string().min(1),
     RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
+    ALLOW_TEST_PAYMENTS_IN_PRODUCTION: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     EMAIL_FROM: z.string().email(),
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
@@ -81,6 +85,7 @@ const environmentSchema = z
     }
     if (environment.NODE_ENV === 'production') {
       const frontend = new URL(environment.FRONTEND_ORIGIN);
+      const api = new URL(environment.API_PUBLIC_URL);
       const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
       if (frontend.protocol !== 'https:' || localHosts.has(frontend.hostname)) {
         context.addIssue({
@@ -88,6 +93,37 @@ const environmentSchema = z
           path: ['FRONTEND_ORIGIN'],
           message: 'must use a public HTTPS origin in production',
         });
+      }
+      if (api.protocol !== 'https:' || localHosts.has(api.hostname)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['API_PUBLIC_URL'],
+          message: 'must use a public HTTPS URL in production',
+        });
+      }
+      if (
+        environment.RAZORPAY_KEY_ID.startsWith('rzp_test_') &&
+        !environment.ALLOW_TEST_PAYMENTS_IN_PRODUCTION
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RAZORPAY_KEY_ID'],
+          message: 'test keys require ALLOW_TEST_PAYMENTS_IN_PRODUCTION=true',
+        });
+      }
+      for (const key of [
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'RAZORPAY_KEY_SECRET',
+        'RAZORPAY_WEBHOOK_SECRET',
+        'SMTP_PASSWORD',
+      ] as const) {
+        if (environment[key].toLowerCase().includes('replace-with')) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: 'must be configured with a production secret',
+          });
+        }
       }
     }
   });
