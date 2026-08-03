@@ -10,6 +10,7 @@ export interface Category {
 export interface ProductVariant {
     id: string;
     sku: string;
+    barcode?: string | null;
     name: string;
     pricePaise: number;
     compareAtPricePaise?: number | null;

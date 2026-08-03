@@ -4,8 +4,9 @@ export const rupees = (paise: number) =>
     new Intl.NumberFormat('en-IN', {
         style: 'currency',
         currency: 'INR',
-        maximumFractionDigits: 0,
-    }).format(Math.round(paise / 100));
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    }).format(paise / 100);
 
 export const shortDate = (value: string) =>
     new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));

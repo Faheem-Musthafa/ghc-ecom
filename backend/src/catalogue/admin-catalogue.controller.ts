@@ -32,11 +32,13 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
+import { ImportGoogleDriveImageDto } from './dto/import-google-drive-image.dto';
 import { ProductImageMetadataDto } from './dto/product-image-metadata.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
+import { GoogleDriveImageService } from './google-drive-image.service';
 
 const imageInterceptor = FileInterceptor('file', {
   storage: memoryStorage(),
@@ -68,7 +70,10 @@ const videoPipe = new ParseFilePipeBuilder()
 @UseGuards(SupabaseAuthGuard, RolesGuard)
 @Roles(AppRole.ADMIN, AppRole.CATALOGUE_MANAGER)
 export class AdminCatalogueController {
-  constructor(private readonly catalogue: CatalogueService) {}
+  constructor(
+    private readonly catalogue: CatalogueService,
+    private readonly googleDriveImages: GoogleDriveImageService,
+  ) {}
 
   @Get('categories')
   listCategories(): Promise<Category[]> {
@@ -265,6 +270,21 @@ export class AdminCatalogueController {
     @Req() request: Request,
   ): Promise<ProductImage> {
     return this.catalogue.addProductImage(actor.id, productId, file, metadata, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Post('products/:productId/images/google-drive')
+  async addGoogleDriveImage(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() input: ImportGoogleDriveImageDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<ProductImage> {
+    const file = await this.googleDriveImages.download(input.driveUrl);
+    return this.catalogue.addProductImage(actor.id, productId, file, input, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });
