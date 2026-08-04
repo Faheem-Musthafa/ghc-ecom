@@ -21,12 +21,30 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
+import {
+    catalogueCsvExport,
+    catalogueCsvTemplate,
+    driveLinksFromCsvCell,
+    importBoolean,
+    importRupeesToPaise,
+    parseCatalogueCsv,
+    validateCatalogueCsvRows,
+} from '../lib/catalogue-csv';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
 import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product, ProductVariant, Warehouse } from '../types';
 
 const box = 'border border-line bg-carbon';
 const inputStyle = 'field h-12 w-full text-sm';
+
+const downloadCsv = (filename: string, contents: string): void => {
+    const url = URL.createObjectURL(new Blob([contents], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+};
 
 const NotificationToast = ({ message, type = 'info', onClose }: { message: string; type?: 'info' | 'success' | 'error'; onClose: () => void }) => {
     if (!message) return null;
@@ -541,14 +559,16 @@ interface VariantDraft {
     key: string;
     id?: string;
     sku: string;
+    barcode: string;
     name: string;
     color: string;
     colorHex: string;
-    pricePaise: string;
-    compareAtPricePaise: string;
+    priceRupees: string;
+    compareAtPriceRupees: string;
     isActive: boolean;
     attributes: Record<string, unknown>;
     images: File[];
+    driveImageUrls: string;
 }
 
 let variantDraftCounter = 0;
@@ -558,18 +578,33 @@ const variantAttribute = (variant: ProductVariant, key: string): string => {
     return typeof value === 'string' ? value : '';
 };
 
+const paiseToRupeesInput = (paise: number): string => String(paise / 100);
+
+const rupeesInputToPaise = (rupeesValue: string): number =>
+    Math.round(Number(rupeesValue) * 100);
+
+const driveImageLinks = (value: string): string[] =>
+    value
+        .split(/\r?\n/)
+        .map((link) => link.trim())
+        .filter(Boolean);
+
 const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
     key: variant?.id || `new-variant-${++variantDraftCounter}`,
     id: variant?.id,
     sku: variant?.sku || '',
+    barcode: variant?.barcode || '',
     name: variant?.name || '',
     color: variant ? variantAttribute(variant, 'color') : '',
     colorHex: variantAttribute(variant || ({ attributes: {} } as ProductVariant), 'colorHex') || '#C5A059',
-    pricePaise: variant ? String(variant.pricePaise) : '',
-    compareAtPricePaise: variant?.compareAtPricePaise ? String(variant.compareAtPricePaise) : '',
+    priceRupees: variant ? paiseToRupeesInput(variant.pricePaise) : '',
+    compareAtPriceRupees: variant?.compareAtPricePaise
+        ? paiseToRupeesInput(variant.compareAtPricePaise)
+        : '',
     isActive: variant?.isActive ?? true,
     attributes: variant?.attributes || {},
     images: [],
+    driveImageUrls: '',
 });
 
 const CatalogueAdmin = () => {
@@ -591,6 +626,8 @@ const CatalogueAdmin = () => {
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [saving, setSaving] = useState(false);
+    const [bulkImporting, setBulkImporting] = useState(false);
+    const [bulkImportErrors, setBulkImportErrors] = useState<string[]>([]);
     const productDialogRef = useDialog<HTMLFormElement>(openProductModal, () => {
         setOpenProductModal(false);
         setEditingProduct(null);
@@ -671,9 +708,12 @@ const CatalogueAdmin = () => {
                 const color = draft.color.trim();
                 const input = {
                     sku: draft.sku.trim().toUpperCase(),
+                    barcode: draft.barcode.trim().toUpperCase() || null,
                     name: draft.name.trim(),
-                    pricePaise: Number(draft.pricePaise),
-                    ...(draft.compareAtPricePaise ? { compareAtPricePaise: Number(draft.compareAtPricePaise) } : {}),
+                    pricePaise: rupeesInputToPaise(draft.priceRupees),
+                    ...(draft.compareAtPriceRupees
+                        ? { compareAtPricePaise: rupeesInputToPaise(draft.compareAtPriceRupees) }
+                        : {}),
                     attributes: draft.attributes,
                     ...(color ? { color, colorHex: draft.colorHex } : {}),
                     isActive: draft.isActive,
@@ -687,6 +727,15 @@ const CatalogueAdmin = () => {
                     imageForm.set('altText', `${productName} — ${color || draft.name}`);
                     imageForm.set('sortOrder', String(index));
                     await api.uploadProductImage(productId, imageForm);
+                }
+
+                for (const [index, driveUrl] of driveImageLinks(draft.driveImageUrls).entries()) {
+                    await api.importGoogleDriveImage(productId, {
+                        driveUrl,
+                        variantId: savedVariant.id,
+                        altText: `${productName} — ${color || draft.name}`,
+                        sortOrder: draft.images.length + index,
+                    });
                 }
             }
 
@@ -706,6 +755,15 @@ const CatalogueAdmin = () => {
                 imageForm.set('altText', productName);
                 imageForm.set('sortOrder', String(index));
                 await api.uploadProductImage(productId, imageForm);
+            }
+
+            const sharedDriveLinks = driveImageLinks(String(form.get('driveImageUrls') || ''));
+            for (const [index, driveUrl] of sharedDriveLinks.entries()) {
+                await api.importGoogleDriveImage(productId, {
+                    driveUrl,
+                    altText: productName,
+                    sortOrder: imageFiles.length + index,
+                });
             }
 
             const videoUrl = String(form.get('videoUrl') || '').trim();
@@ -741,6 +799,129 @@ const CatalogueAdmin = () => {
             await load();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Product deletion failed.');
+        }
+    };
+
+    const handleBulkImport = async (file: File) => {
+        setBulkImporting(true);
+        setBulkImportErrors([]);
+        setError('');
+        setSuccessMessage('');
+        try {
+            const rows = parseCatalogueCsv(await file.text());
+            const validationErrors = validateCatalogueCsvRows(rows, new Set(categories.map((category) => category.slug)));
+            if (validationErrors.length > 0) {
+                setBulkImportErrors(validationErrors);
+                setError(`Import stopped: ${validationErrors.length} validation error(s). No products were changed.`);
+                return;
+            }
+
+            const groups = new Map<string, typeof rows>();
+            for (const row of rows) groups.set(row.product_slug, [...(groups.get(row.product_slug) || []), row]);
+            if (!window.confirm(`Import ${rows.length} variant row(s) across ${groups.size} product(s)? Matching slugs and SKUs will be updated.`)) return;
+
+            const categoryBySlug = new Map(categories.map((category) => [category.slug, category]));
+            const productBySlug = new Map(products.map((product) => [product.slug, product]));
+            const importErrors: string[] = [];
+            let productsCreated = 0;
+            let productsUpdated = 0;
+            let variantsCreated = 0;
+            let variantsUpdated = 0;
+
+            for (const [slug, productRows] of groups) {
+                const base = productRows[0];
+                const category = categoryBySlug.get(base.category_slug)!;
+                let savedProduct: Product;
+                try {
+                    const productInput = {
+                        categoryId: category.id,
+                        name: base.product_name,
+                        slug,
+                        shortDescription: base.short_description,
+                        description: base.description,
+                        material: base.material,
+                        dimensions: base.dimensions,
+                        status: base.status.toUpperCase(),
+                    };
+                    const existingProduct = productBySlug.get(slug);
+                    if (existingProduct) {
+                        savedProduct = await api.updateProduct(existingProduct.id, productInput);
+                        productsUpdated += 1;
+                    } else {
+                        savedProduct = await api.createProduct(productInput);
+                        productsCreated += 1;
+                    }
+                    productBySlug.set(slug, savedProduct);
+                } catch (caught) {
+                    const message = caught instanceof Error ? caught.message : 'Product save failed.';
+                    importErrors.push(`Product “${slug}”: ${message}`);
+                    continue;
+                }
+
+                const existingVariants = new Map(
+                    (products.find((product) => product.slug === slug)?.variants || []).map((variant) => [variant.sku, variant]),
+                );
+                for (const row of productRows) {
+                    try {
+                        const sku = row.sku.toUpperCase();
+                        const existingVariant = existingVariants.get(sku);
+                        const variantInput = {
+                            sku,
+                            barcode: row.barcode ? row.barcode.toUpperCase() : null,
+                            name: row.variant_name,
+                            pricePaise: importRupeesToPaise(row.price_rupees)!,
+                            ...(row.compare_at_price_rupees
+                                ? { compareAtPricePaise: importRupeesToPaise(row.compare_at_price_rupees)! }
+                                : {}),
+                            attributes: existingVariant?.attributes || {},
+                            ...(row.color ? { color: row.color } : {}),
+                            ...(row.color_hex ? { colorHex: row.color_hex.toUpperCase() } : {}),
+                            isActive: row.is_active ? importBoolean(row.is_active)! : true,
+                        };
+                        const savedVariant = existingVariant
+                            ? await api.updateVariant(existingVariant.id, variantInput)
+                            : await api.createVariant(savedProduct.id, variantInput);
+                        if (existingVariant) variantsUpdated += 1;
+                        else variantsCreated += 1;
+
+                        for (const [index, driveUrl] of driveLinksFromCsvCell(row.google_drive_image_links).entries()) {
+                            await api.importGoogleDriveImage(savedProduct.id, {
+                                driveUrl,
+                                variantId: savedVariant.id,
+                                altText: `${base.product_name} — ${row.color || row.variant_name}`,
+                                sortOrder: index,
+                            });
+                        }
+                    } catch (caught) {
+                        const message = caught instanceof Error ? caught.message : 'Variant save failed.';
+                        importErrors.push(`Row ${row.sourceRow} (${row.sku}): ${message}`);
+                    }
+                }
+
+                const sharedLinks = new Set(productRows.flatMap((row) => driveLinksFromCsvCell(row.shared_google_drive_image_links)));
+                for (const [index, driveUrl] of [...sharedLinks].entries()) {
+                    try {
+                        await api.importGoogleDriveImage(savedProduct.id, {
+                            driveUrl,
+                            altText: base.product_name,
+                            sortOrder: index,
+                        });
+                    } catch (caught) {
+                        const message = caught instanceof Error ? caught.message : 'Shared image import failed.';
+                        importErrors.push(`Product “${slug}” shared image: ${message}`);
+                    }
+                }
+            }
+
+            setBulkImportErrors(importErrors);
+            setSuccessMessage(
+                `Bulk import finished: ${productsCreated} product(s) created, ${productsUpdated} updated, ${variantsCreated} variant(s) created, and ${variantsUpdated} updated.`,
+            );
+            await load();
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Could not read the catalogue CSV.');
+        } finally {
+            setBulkImporting(false);
         }
     };
 
@@ -792,7 +973,34 @@ const CatalogueAdmin = () => {
             title="Catalogue Command"
             description="Manage products, variants, media, publishing state, and catalogue categories."
             action={
-                <div className="flex gap-3">
+                <div className="flex flex-wrap justify-end gap-3">
+                    <button
+                        onClick={() => downloadCsv('glockery-catalogue-template.csv', catalogueCsvTemplate())}
+                        className="flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400"
+                    >
+                        <IconDownload size={15} /> Template
+                    </button>
+                    <button
+                        onClick={() => downloadCsv('glockery-catalogue-export.csv', catalogueCsvExport(products))}
+                        disabled={!products.length}
+                        className="flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400 disabled:opacity-40"
+                    >
+                        <IconDownload size={15} /> Export
+                    </button>
+                    <label className="flex h-11 cursor-pointer items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400">
+                        <IconPlus size={15} /> {bulkImporting ? 'Importing…' : 'Import CSV'}
+                        <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            disabled={bulkImporting}
+                            className="sr-only"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (file) void handleBulkImport(file);
+                            }}
+                        />
+                    </label>
                     <button
                         onClick={() => {
                             setEditingCategory(null);
@@ -815,6 +1023,21 @@ const CatalogueAdmin = () => {
         >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMessage} type="success" onClose={() => setSuccessMessage('')} />
+            {bulkImportErrors.length > 0 && (
+                <div className="mb-6 border border-amber-500/35 bg-amber-950/20 p-4 text-xs text-amber-100" role="alert">
+                    <div className="flex items-center justify-between gap-4">
+                        <strong>Bulk import report · {bulkImportErrors.length} issue(s)</strong>
+                        <button onClick={() => setBulkImportErrors([])} className="text-amber-200/70 hover:text-amber-100">
+                            Close
+                        </button>
+                    </div>
+                    <ul className="mt-3 max-h-44 list-disc space-y-1 overflow-y-auto pl-5">
+                        {bulkImportErrors.map((message, index) => (
+                            <li key={`${message}-${index}`}>{message}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {/* View Mode Tabs */}
             <div className="mb-6 border-b border-gold-500/20 flex gap-6">
@@ -1147,7 +1370,7 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">SKU / barcode</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">SKU</span>
                                                     <input
                                                         value={draft.sku}
                                                         onChange={(event) =>
@@ -1156,10 +1379,25 @@ const CatalogueAdmin = () => {
                                                             })
                                                         }
                                                         placeholder="GHC-SET-SAGE"
-                                                        pattern="[A-Z0-9][A-Z0-9._-]*"
+                                                        pattern={'[A-Z0-9][A-Z0-9._\\-]*'}
                                                         maxLength={80}
                                                         className={inputStyle}
                                                         required
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Barcode</span>
+                                                    <input
+                                                        value={draft.barcode}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                barcode: event.target.value.toUpperCase(),
+                                                            })
+                                                        }
+                                                        placeholder="e.g. 8901234567890"
+                                                        pattern={'[A-Za-z0-9][A-Za-z0-9._\\-]*'}
+                                                        maxLength={80}
+                                                        className={inputStyle}
                                                     />
                                                 </label>
                                                 <label>
@@ -1180,32 +1418,34 @@ const CatalogueAdmin = () => {
                                                     </span>
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Price in paise</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Price (₹)</span>
                                                     <input
                                                         type="number"
-                                                        value={draft.pricePaise}
+                                                        value={draft.priceRupees}
                                                         onChange={(event) =>
                                                             updateVariantDraft(draft.key, {
-                                                                pricePaise: event.target.value,
+                                                                priceRupees: event.target.value,
                                                             })
                                                         }
                                                         min="0"
-                                                        placeholder="99900"
+                                                        step="0.01"
+                                                        placeholder="999.00"
                                                         className={inputStyle}
                                                         required
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Compare-at price</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Compare-at price (₹)</span>
                                                     <input
                                                         type="number"
-                                                        value={draft.compareAtPricePaise}
+                                                        value={draft.compareAtPriceRupees}
                                                         onChange={(event) =>
                                                             updateVariantDraft(draft.key, {
-                                                                compareAtPricePaise: event.target.value,
+                                                                compareAtPriceRupees: event.target.value,
                                                             })
                                                         }
                                                         min="0"
+                                                        step="0.01"
                                                         placeholder="Optional"
                                                         className={inputStyle}
                                                     />
@@ -1223,6 +1463,23 @@ const CatalogueAdmin = () => {
                                                         }
                                                         className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian"
                                                     />
+                                                </label>
+                                                <label className="sm:col-span-2">
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Google Drive image links</span>
+                                                    <textarea
+                                                        value={draft.driveImageUrls}
+                                                        onChange={(event) =>
+                                                            updateVariantDraft(draft.key, {
+                                                                driveImageUrls: event.target.value,
+                                                            })
+                                                        }
+                                                        rows={3}
+                                                        placeholder={'Paste public Google Drive file links here\nOne image link per line'}
+                                                        className={inputStyle}
+                                                    />
+                                                    <span className="mt-1 block text-[10px] text-cream/40">
+                                                        In Drive, set each image to “Anyone with the link”. Folder links are not supported.
+                                                    </span>
                                                 </label>
                                             </div>
                                             <label className="mt-3 flex min-h-11 items-center gap-3 text-xs text-cream/65">
@@ -1294,6 +1551,19 @@ const CatalogueAdmin = () => {
                                 />
                                 <span className="mt-1 block text-[10px] text-cream/40">
                                     Optional lifestyle or packaging photos shown after every selected colour’s own images.
+                                </span>
+                            </label>
+
+                            <label className="sm:col-span-2">
+                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Shared Google Drive image links</span>
+                                <textarea
+                                    name="driveImageUrls"
+                                    rows={3}
+                                    placeholder={'Paste public Google Drive file links here\nOne image link per line'}
+                                    className={inputStyle}
+                                />
+                                <span className="mt-1 block text-[10px] text-cream/40">
+                                    These images appear after each option’s own images. Set Drive access to “Anyone with the link”.
                                 </span>
                             </label>
 
@@ -1425,12 +1695,13 @@ const InventoryAdmin = () => {
     }, []);
 
     const variantsMap = useMemo(() => {
-        const map = new Map<string, { label: string; sku: string; name: string }>();
+        const map = new Map<string, { label: string; sku: string; barcode: string; name: string }>();
         for (const p of products) {
             for (const v of p.variants) {
                 map.set(v.id, {
                     label: `${p.name} · ${v.sku}`,
                     sku: v.sku,
+                    barcode: v.barcode || '',
                     name: p.name,
                 });
             }
@@ -1490,7 +1761,10 @@ const InventoryAdmin = () => {
             const info = variantsMap.get(level.variantId);
             const matchesSearch =
                 !searchQuery ||
-                (info && (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) || info.name.toLowerCase().includes(searchQuery.toLowerCase())));
+                (info &&
+                    (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        info.barcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        info.name.toLowerCase().includes(searchQuery.toLowerCase())));
             const available = level.onHand - level.reserved;
             const matchesLowStock = !lowStockOnly || available <= level.lowStockThreshold;
             return matchesSearch && matchesLowStock;
@@ -1520,7 +1794,7 @@ const InventoryAdmin = () => {
                     <input
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by SKU or Product Name…"
+                        placeholder="Search by SKU, barcode or product name…"
                         className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none"
                     />
                 </div>
@@ -1556,7 +1830,7 @@ const InventoryAdmin = () => {
                 <table className="w-full min-w-[860px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
-                            <th className="p-4">Barcode / Item</th>
+                            <th className="p-4">SKU / Barcode / Item</th>
                             <th className="p-4">Warehouse</th>
                             <th className="p-4 text-center">On Hand</th>
                             <th className="p-4 text-center">Reserved</th>
@@ -1574,7 +1848,14 @@ const InventoryAdmin = () => {
 
                             return (
                                 <tr key={level.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                    <td className="p-4 font-medium text-cream">{info ? info.label : level.variantId}</td>
+                                    <td className="p-4 font-medium text-cream">
+                                        {info ? info.label : level.variantId}
+                                        {info?.barcode && (
+                                            <span className="mt-1 block font-mono text-[10px] text-cream/45">
+                                                Barcode: {info.barcode}
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="p-4 text-xs text-cream/60">
                                         {warehousesMap.get(level.warehouseId)?.name || level.warehouseId}
                                         {warehousesMap.get(level.warehouseId) && (
@@ -1644,7 +1925,13 @@ const InventoryAdmin = () => {
                             </label>
                             <label className="block">
                                 <span className="mb-1.5 block text-xs text-cream/70">Warehouse Code</span>
-                                <input name="code" placeholder="MAIN" pattern="[A-Za-z0-9_-]+" className={inputStyle} required />
+                                <input
+                                    name="code"
+                                    placeholder="MAIN"
+                                    pattern={'[A-Za-z0-9_\\-]+'}
+                                    className={inputStyle}
+                                    required
+                                />
                             </label>
                         </div>
                         <button

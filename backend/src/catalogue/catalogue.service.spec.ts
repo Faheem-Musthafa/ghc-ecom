@@ -153,10 +153,17 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', name: 'Standard', pricePaise: 10_000 },
+        { sku: 'sku-1', barcode: 'abc-123', name: 'Standard', pricePaise: 10_000 },
         {},
       ),
     ).resolves.toEqual(variant);
+
+    expect(transaction.productVariant.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sku: 'SKU-1',
+        barcode: 'ABC-123',
+      }),
+    });
 
     expect(transaction.inventoryLevel.createMany).toHaveBeenCalledWith({
       data: [

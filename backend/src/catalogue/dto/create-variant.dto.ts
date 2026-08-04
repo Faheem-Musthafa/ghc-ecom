@@ -16,6 +16,13 @@ export class CreateVariantDto {
   @Matches(/^[A-Z0-9][A-Z0-9._-]*$/)
   sku!: string;
 
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+  barcode?: string | null;
+
   @IsString()
   @MaxLength(120)
   name!: string;

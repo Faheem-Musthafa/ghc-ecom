@@ -306,6 +306,7 @@ export class CatalogueService {
           data: {
             ...variantInput,
             sku: input.sku.toUpperCase(),
+            barcode: input.barcode?.toUpperCase() ?? null,
             attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
@@ -355,6 +356,7 @@ export class CatalogueService {
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
+          barcode: input.barcode === undefined ? undefined : input.barcode?.toUpperCase() || null,
           attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
       });
