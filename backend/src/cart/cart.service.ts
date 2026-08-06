@@ -1,5 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { CartStatus, Prisma, ProductStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
@@ -17,6 +22,9 @@ const cartInclude = {
           },
           product: {
             include: {
+              category: {
+                select: { name: true },
+              },
               images: {
                 where: { variantId: null },
                 orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
@@ -129,6 +137,24 @@ export class CartService {
         where: { cartId: cart.id, status: 'ACTIVE' },
         data: { status: 'EXPIRED' },
       });
+      const inventoryLevels = await transaction.inventoryLevel.findMany({
+        where: {
+          variantId: input.variantId,
+          warehouse: { isActive: true },
+        },
+        select: { onHand: true, reserved: true },
+      });
+      const availableStock = Math.max(
+        0,
+        ...inventoryLevels.map((level) => Math.max(0, level.onHand - level.reserved)),
+      );
+      if (input.quantity > availableStock) {
+        throw new ConflictException(
+          availableStock === 0
+            ? 'This product is currently out of stock.'
+            : `Only ${availableStock} item${availableStock === 1 ? '' : 's'} are currently available.`,
+        );
+      }
       await transaction.cartItem.upsert({
         where: { cartId_variantId: { cartId: cart.id, variantId: input.variantId } },
         create: { cartId: cart.id, variantId: input.variantId, quantity: input.quantity },

@@ -5,6 +5,8 @@ import { MemoryRouter, Route } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
+import CartDrawer from './components/CartDrawer';
+import Toast from './components/Toast';
 import HomePage from './pages';
 import AccountPage from './pages/account';
 import AdminPage from './pages/admin';
@@ -39,6 +41,7 @@ const product: Product = {
             pricePaise: 249900,
             attributes: { color: 'Gold', colorHex: '#C5A059' },
             isActive: true,
+            availableStock: 8,
         },
         {
             id: '33333333-3333-4333-8333-333333333334',
@@ -47,6 +50,7 @@ const product: Product = {
             pricePaise: 259900,
             attributes: { color: 'Sage Green', colorHex: '#9CAF88' },
             isActive: true,
+            availableStock: 5,
         },
     ],
     images: [
@@ -93,6 +97,7 @@ const json = (body: unknown, status = 200) =>
         headers: { 'content-type': 'application/json' },
     });
 let mockAuthenticated = false;
+let currentProduct = product;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -129,9 +134,9 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
             subtotalPaise: variant.pricePaise,
         });
     }
-    if (url.endsWith('/categories')) return json([product.category]);
-    if (url.includes('/products?')) return json({ items: [product], total: 1, page: 1, limit: 48 });
-    if (url.endsWith(`/products/${product.slug}`)) return json(product);
+    if (url.endsWith('/categories')) return json([currentProduct.category]);
+    if (url.includes('/products?')) return json({ items: [currentProduct], total: 1, page: 1, limit: 48 });
+    if (url.endsWith(`/products/${product.slug}`)) return json(currentProduct);
     if (url.includes('/admin/orders')) return json([], 403);
     if (url.includes('/admin/operations')) return json({}, 403);
     return json({});
@@ -144,7 +149,11 @@ const render = async (node: React.ReactNode, path = '/') => {
         ReactDOM.render(
             <AuthProvider>
                 <CartProvider>
-                    <MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>
+                    <MemoryRouter initialEntries={[path]}>
+                        {node}
+                        <CartDrawer />
+                        <Toast />
+                    </MemoryRouter>
                 </CartProvider>
             </AuthProvider>,
             container,
@@ -160,6 +169,7 @@ describe('black and gold commerce UI', () => {
         localStorage.clear();
         sessionStorage.clear();
         mockAuthenticated = false;
+        currentProduct = product;
         saveSession(null);
         vi.stubGlobal('fetch', fetchMock);
         fetchMock.mockClear();
@@ -179,6 +189,7 @@ describe('black and gold commerce UI', () => {
         expect(container.textContent).toContain('Chat with Glockery on WhatsApp');
         expect(container.querySelectorAll('iframe[src*="instagram.com/reel/"]')).toHaveLength(5);
         expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/products?'), expect.anything());
+        expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('limit=8'), expect.anything());
         expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), expect.anything());
     });
 
@@ -201,8 +212,13 @@ describe('black and gold commerce UI', () => {
         await act(async () => {
             videoThumbnail?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
+        expect(container.querySelector('video')).toBeNull();
+        const playVideo = container.querySelector<HTMLButtonElement>('button[aria-label="Play Noir Gold Serving Set video"]');
+        await act(async () => {
+            playVideo?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
         expect(container.querySelector('video')).not.toBeNull();
-        const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add to bag'));
+        const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add to cart'));
         await act(async () => {
             add?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
             await Promise.resolve();
@@ -215,6 +231,25 @@ describe('black and gold commerce UI', () => {
             }),
         );
         expect(container.textContent).toContain('The bag');
+    });
+
+    it('disables buying when every product option is out of stock', async () => {
+        const unavailableProduct: Product = {
+            ...product,
+            variants: product.variants.map((variant) => ({ ...variant, availableStock: 0 })),
+        };
+        currentProduct = unavailableProduct;
+        const container = await render(
+            <Route path="/product/:productId">
+                <ProductDetailPage />
+            </Route>,
+            `/product/${product.slug}`,
+        );
+
+        const add = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Out of stock'));
+        expect(add).toBeDefined();
+        expect((add as HTMLButtonElement | undefined)?.disabled).toBe(true);
+        expect(container.textContent).toContain('Out of stock — choose another option.');
     });
 
     it('renders an empty server-backed bag without demo products', async () => {

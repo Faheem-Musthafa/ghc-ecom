@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useHistory, useLocation, useParams } from 'react-router-dom';
-import CartDrawer from '../components/CartDrawer';
 import Header from '../components/Header';
 import Pagination from '../components/Pagination';
 import ProductCard from '../components/ProductCard';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import Toast from '../components/Toast';
 import { api } from '../lib/api';
 import { titleCase } from '../lib/commerce';
 import { Product } from '../types';
@@ -105,8 +103,6 @@ const CategoryPage = () => {
             </main>
 
             <StoreFooter />
-            <CartDrawer />
-            <Toast />
         </div>
     );
 };

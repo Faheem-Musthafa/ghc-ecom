@@ -14,4 +14,13 @@ export const shortDate = (value: string) =>
 export const titleCase = (value: string) =>
     value.toLowerCase().replace(/(^|_|\s)(\w)/g, (_match, space, letter) => `${space ? ' ' : ''}${letter.toUpperCase()}`);
 
+export const slugify = (value: string) =>
+    value
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'item';
+
 export const fallbackImage = fallbackImageUrl;

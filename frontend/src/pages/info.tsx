@@ -27,7 +27,7 @@ const pageContent: Record<
         title: 'Crockery and kitchenware for every home.',
         metaTitle: 'About Glockery Home Centre Vengara',
         metaDesc: 'Visit Glockery Home Centre near ICICI Bank in Vengara, Malappuram for crockery, kitchenware and home essentials.',
-        intro: 'Glockery Home Centre is a crockery and kitchenware shop in Vengara, Malappuram. Shop in store or contact us to order for delivery across India.',
+        intro: 'Glockery Home Centre is a crockery and kitchenware shop in Vengara, Malappuram. Shop in store or contact us for product and order support.',
         sections: [
             {
                 title: 'Visit our Vengara store',
@@ -38,8 +38,8 @@ const pageContent: Record<
                 body: 'Our collections include dinner sets, tea sets and cups, serving dishes, canister sets, trays, oil and vinegar sets, cutlery and other kitchen essentials.',
             },
             {
-                title: 'Order from anywhere in India',
-                body: 'Glockery advertises free delivery across India. Contact us on WhatsApp to confirm current stock and delivery details for the products you want.',
+                title: 'Order support',
+                body: 'Contact us on WhatsApp to confirm current stock, product details, and any help you need before placing an order.',
             },
             {
                 title: 'Call or WhatsApp',
@@ -48,19 +48,19 @@ const pageContent: Record<
         ],
     },
     shipping: {
-        eyebrow: 'Delivery information',
-        title: 'Delivery from Vengara to customers across India.',
-        metaTitle: 'Delivery Information | Glockery Home Centre Vengara',
-        metaDesc: 'Read delivery and order-help information for Glockery Home Centre, Vengara.',
-        intro: 'Glockery advertises free delivery across India. Availability and delivery timing depend on the product and destination, so confirm the details with us when ordering.',
+        eyebrow: 'Order information',
+        title: 'Order and return help from Glockery.',
+        metaTitle: 'Order & Return Information | Glockery Home Centre Vengara',
+        metaDesc: 'Read order and return-help information for Glockery Home Centre, Vengara.',
+        intro: 'Use this page for help with an order, a product enquiry, or a return request.',
         sections: [
             {
                 title: 'Before you order',
-                body: 'Send us the product name or photo and your delivery postcode on WhatsApp. We will help confirm current stock and delivery details.',
+                body: 'Send us the product name or photo on WhatsApp. We will help confirm current stock and product details.',
             },
             {
-                title: 'Delivery updates',
-                body: 'For an update on an existing order, contact 8138 003 232 or WhatsApp 6282 000 289 with your order details.',
+                title: 'Order updates',
+                body: 'For help with an existing order, contact 8138 003 232 or WhatsApp 6282 000 289 with your order number.',
             },
             {
                 title: 'Shop in person',
@@ -76,7 +76,7 @@ const pageContent: Record<
         eyebrow: 'Quick answers',
         title: 'Frequently asked questions',
         metaTitle: 'Frequently Asked Questions | Glockery Home Centre Vengara',
-        metaDesc: 'Find Glockery Home Centre Vengara location, contact and delivery information.',
+        metaDesc: 'Find Glockery Home Centre Vengara location, contact and order information.',
         intro: 'Useful information about visiting the shop, browsing products and placing an order.',
         sections: [
             {
@@ -88,8 +88,8 @@ const pageContent: Record<
                 body: 'The range includes dinner sets, tea sets, cups, serving dishes, canisters, trays, oil and vinegar sets, cutlery and other crockery and kitchenware.',
             },
             {
-                title: 'Do you deliver outside Kerala?',
-                body: 'Yes. Glockery advertises free delivery across India. Contact us with your postcode and chosen product to confirm the current delivery details.',
+                title: 'How do I get help with an order?',
+                body: 'Contact us with your order number on WhatsApp or by phone. We can help with payment, product, and return queries.',
             },
             {
                 title: 'How can I contact the shop?',
@@ -123,11 +123,11 @@ const pageContent: Record<
         title: 'Privacy policy',
         metaTitle: 'Privacy Policy | Glockery Home Centre',
         metaDesc: 'How Glockery Home Centre uses information supplied through customer accounts and online orders.',
-        intro: 'This website uses the information you provide to manage your account, process orders and arrange delivery.',
+        intro: 'This website uses the information you provide to manage your account and process orders.',
         sections: [
             {
                 title: 'Information We Collect',
-                body: 'The website collects details such as your name, delivery address, email address and phone number when needed for accounts, orders and delivery updates.',
+                body: 'The website collects details such as your name, contact address, email address and phone number when needed for accounts and orders.',
             },
             {
                 title: 'Payments',
@@ -135,7 +135,7 @@ const pageContent: Record<
             },
             {
                 title: 'Service providers',
-                body: 'Order information may be shared with the services needed to complete payment and delivery. Contact the shop if you have a question about your information.',
+                body: 'Order information may be shared with the services needed to complete payment. Contact the shop if you have a question about your information.',
             },
         ],
     },
@@ -152,7 +152,7 @@ const pageContent: Record<
             },
             {
                 title: 'Pricing & Taxes',
-                body: 'Prices are displayed in Indian rupees. Any delivery charge or discount applied by the online checkout is shown before payment.',
+                body: 'Prices are displayed in Indian rupees. Any discount applied by the online checkout is shown before payment.',
             },
             {
                 title: 'Questions before ordering',
@@ -237,7 +237,7 @@ export const InfoPage = ({ kind = 'about' }: { kind?: InfoPageKind }) => {
 
     const tabs: Array<{ id: InfoPageKind; label: string; href: string }> = [
         { id: 'about', label: 'About', href: '/about' },
-        { id: 'shipping', label: 'Shipping & returns', href: '/shipping-returns' },
+        { id: 'shipping', label: 'Orders & returns', href: '/shipping-returns' },
         { id: 'faq', label: 'FAQ', href: '/faq' },
         { id: 'contact', label: 'Contact', href: '/contact' },
         { id: 'privacy', label: 'Privacy', href: '/privacy' },

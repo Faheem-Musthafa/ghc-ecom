@@ -14,12 +14,16 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
     const [error, setError] = useState('');
 
     const variant = product.variants?.[0];
+    const outOfStock = !variant || variant.availableStock <= 0;
     const image = primaryImageForVariant(product, variant)?.mediumUrl || fallbackImage;
     const isWishlisted = isInWishlist(product.id);
     const hasDiscount = Boolean(variant?.compareAtPricePaise && variant.compareAtPricePaise > variant.pricePaise);
 
     const add = async () => {
-        if (!variant) return;
+        if (!variant || outOfStock) {
+            setError('This product is currently out of stock.');
+            return;
+        }
         setAdding(true);
         setError('');
         try {
@@ -78,17 +82,17 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
                         </Link>
                     ) : (
                         <button
-                            disabled={!variant || adding}
+                            disabled={outOfStock || adding}
                             onClick={add}
                             className="min-h-11 px-2 text-sm font-semibold text-gold-300 hover:text-gold-100 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            {adding ? 'Adding…' : 'Add to bag'}
+                            {adding ? 'Adding to cart…' : outOfStock ? 'Out of stock' : 'Add to cart'}
                         </button>
                     )}
                 </div>
                 {error && (
                     <p className="mt-2 text-xs text-red-200" role="alert">
-                        {error} Try again.
+                        {error}
                     </p>
                 )}
             </div>

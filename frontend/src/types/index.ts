@@ -16,6 +16,7 @@ export interface ProductVariant {
     compareAtPricePaise?: number | null;
     attributes?: Record<string, unknown>;
     isActive: boolean;
+    availableStock: number;
 }
 
 export interface ProductImage {
@@ -81,9 +82,16 @@ export interface CartItem {
     id: string;
     variantId: string;
     sku: string;
+    barcode?: string | null;
     productName: string;
+    productSlug?: string;
+    categoryName?: string;
+    productDescription?: string | null;
+    productMaterial?: string | null;
+    productDimensions?: string | null;
     variantName: string;
     imageUrl: string | null;
+    attributes?: Record<string, unknown>;
     quantity: number;
     unitPricePaise: number;
     lineTotalPaise: number;
@@ -152,6 +160,27 @@ export interface PaymentIntent {
     };
 }
 
+export interface OrderRefund {
+    id: string;
+    amountPaise: number;
+    currency: string;
+    status: string;
+    reason?: string | null;
+    processedAt?: string | null;
+    createdAt: string;
+}
+
+export interface OrderPayment {
+    id: string;
+    razorpayPaymentId?: string | null;
+    status: string;
+    amountPaise: number;
+    currency: string;
+    method?: string | null;
+    capturedAt?: string | null;
+    refunds: OrderRefund[];
+}
+
 export interface Order {
     id: string;
     orderNumber: string;
@@ -164,8 +193,11 @@ export interface Order {
     shippingPaise: number;
     taxPaise: number;
     totalPaise: number;
+    razorpayOrderId?: string | null;
+    confirmedAt?: string | null;
     createdAt: string;
     updatedAt: string;
+    payments?: OrderPayment[];
     invoice?: { id: string } | null;
 }
 
@@ -267,4 +299,17 @@ export interface Warehouse {
     code: string;
     name: string;
     isActive: boolean;
+}
+
+export interface StaffUser {
+    id: string;
+    email: string;
+    fullName: string | null;
+    roles: Array<'ADMIN' | 'CATALOGUE_MANAGER' | 'WAREHOUSE_MANAGER' | 'SUPPORT_AGENT'>;
+    createdAt: string;
+}
+
+export interface CreatedStaffUser {
+    user: StaffUser;
+    temporaryPassword: string;
 }

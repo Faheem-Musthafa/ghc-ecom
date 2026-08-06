@@ -1,0 +1,39 @@
+import { OrderStatus } from '@prisma/client';
+import { renderOrderEmail } from './order-email-template';
+
+describe('renderOrderEmail', () => {
+  const order = {
+    orderNumber: 'GHC-EMAIL-42',
+    status: OrderStatus.CONFIRMED,
+    createdAt: new Date('2026-08-06T12:00:00.000Z'),
+    totalPaise: 11_198,
+    itemsSnapshot: [
+      {
+        productName: 'Noir Gold Tea Set',
+        variantName: 'Six cup set',
+        sku: 'GHC-TEA-006',
+        quantity: 1,
+        lineTotalPaise: 11_198,
+      },
+    ],
+  } as never;
+
+  it('renders a complete branded confirmation with the order line item', () => {
+    const email = renderOrderEmail(order, 'order.confirmed', 'Faheem');
+
+    expect(email.subject).toBe('Confirmed — your Glockery order GHC-EMAIL-42');
+    expect(email.text).toContain('Noir Gold Tea Set (Six cup set) × 1 — ₹111.98');
+    expect(email.html).toContain('GLOCKERY');
+    expect(email.html).toContain('Noir Gold Tea Set');
+    expect(email.html).toContain('VIEW ORDER DETAILS');
+  });
+
+  it('uses cancellation content and escapes unsafe customer input', () => {
+    const email = renderOrderEmail(order, 'order.cancelled', '<script>alert(1)</script>');
+
+    expect(email.subject).toBe('Cancelled — your Glockery order GHC-EMAIL-42');
+    expect(email.html).toContain('Your order has been cancelled');
+    expect(email.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(email.html).not.toContain('<script>alert(1)</script>');
+  });
+});

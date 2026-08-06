@@ -25,15 +25,16 @@ const ProductVariantSelector: React.FC<ProductVariantSelectorProps> = ({ product
                 {product.variants.map((variant) => {
                     const image = primaryImageForVariant(product, variant);
                     const colorHex = variantColorHex(variant);
+                    const outOfStock = variant.availableStock <= 0;
                     return (
-                        <label key={variant.id} className={`relative cursor-pointer ${!variant.isActive ? 'cursor-not-allowed opacity-45' : ''}`}>
+                        <label key={variant.id} className={`relative cursor-pointer ${!variant.isActive || outOfStock ? 'cursor-not-allowed opacity-45' : ''}`}>
                             <input
                                 className="peer sr-only"
                                 type="radio"
                                 name={groupName}
                                 value={variant.id}
                                 checked={variant.id === selected.id}
-                                disabled={!variant.isActive}
+                                disabled={!variant.isActive || outOfStock}
                                 onChange={() => onSelect(variant.id)}
                             />
                             <span
@@ -48,7 +49,7 @@ const ProductVariantSelector: React.FC<ProductVariantSelectorProps> = ({ product
                                         aria-hidden="true"
                                     />
                                 ) : null}
-                                <span>{variantOptionName(variant)}</span>
+                                <span>{variantOptionName(variant)}{outOfStock ? ' — Out of stock' : ''}</span>
                             </span>
                         </label>
                     );

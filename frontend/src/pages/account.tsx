@@ -153,7 +153,7 @@ const AddressesView = () => {
     };
 
     return (
-        <AccountShell title="Delivery Addresses" intro="Secure destinations used for rapid one-click checkout.">
+        <AccountShell title="Contact Addresses" intro="Saved contact details used for your account and order records.">
             {error && <p className="mb-5 border border-red-500/30 p-4 text-xs text-red-200 rounded-sm">{error}</p>}
             <div className="grid gap-4 md:grid-cols-2">
                 {addresses.map((address) => (
@@ -164,7 +164,7 @@ const AddressesView = () => {
                                     <IconMapPin size={18} />
                                 </div>
                                 <span className="text-[9px] uppercase tracking-[0.2em] font-bold text-gold-300 border border-gold-500/30 px-2 py-0.5 rounded-sm">
-                                    {address.isDefault ? 'Default Destination' : address.label}
+                                    {address.isDefault ? 'Default Contact' : address.label}
                                 </span>
                             </div>
                             <h3 className="mt-4 font-display text-xl font-bold text-cream">{address.recipientName}</h3>
@@ -201,7 +201,7 @@ const AddressesView = () => {
                     className="min-h-[200px] flex flex-col items-center justify-center gap-2 border border-dashed border-gold-500/40 bg-carbon/50 p-6 text-xs font-bold uppercase tracking-[0.2em] text-gold-300 hover:bg-gold-400/10 hover:border-gold-400 transition rounded-sm"
                 >
                     <span className="text-2xl text-gold-400">+</span>
-                    Add New Destination Address
+                    Add New Contact Address
                 </button>
             </div>
 
@@ -230,7 +230,7 @@ const AddressesView = () => {
                             ))}
                         </div>
                         <label className="mt-5 flex items-center gap-2 text-xs text-cream/60">
-                            <input type="checkbox" name="isDefault" className="accent-gold-400 size-4" /> Make this my default delivery address
+                            <input type="checkbox" name="isDefault" className="accent-gold-400 size-4" /> Make this my default contact address
                         </label>
                         <button className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian hover:bg-gold-300 rounded-sm transition">
                             Save Address
@@ -389,8 +389,9 @@ const ProfileView = () => {
 };
 
 const AccountPage = () => {
-    const { signedIn } = useAuth();
+    const { signedIn, isInitializing } = useAuth();
     const location = useLocation();
+    if (isInitializing) return null;
     if (!signedIn) return <Redirect to={`/auth?next=${encodeURIComponent(location.pathname)}`} />;
     if (location.pathname.startsWith('/account/orders')) return <OrdersView />;
     if (location.pathname.startsWith('/account/addresses')) return <AddressesView />;

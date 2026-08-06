@@ -1,8 +1,8 @@
 import { Product } from '../types';
+import { slugify } from './commerce';
 
 export const catalogueCsvHeaders = [
     'product_name',
-    'product_slug',
     'category_slug',
     'status',
     'short_description',
@@ -22,11 +22,10 @@ export const catalogueCsvHeaders = [
 ] as const;
 
 export type CatalogueCsvHeader = (typeof catalogueCsvHeaders)[number];
-export type CatalogueCsvRow = Record<CatalogueCsvHeader, string> & { sourceRow: number };
+export type CatalogueCsvRow = Record<CatalogueCsvHeader, string> & { product_slug: string; sourceRow: number };
 
 const requiredHeaders = [
     'product_name',
-    'product_slug',
     'category_slug',
     'status',
     'variant_name',
@@ -40,7 +39,66 @@ const csvCell = (value: string): string => `"${spreadsheetSafe(value).replace(/"
 
 const csv = (rows: string[][]): string => `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}\r\n`;
 
-export const catalogueCsvTemplate = (): string => csv([catalogueCsvHeaders.slice()]);
+export const catalogueCsvTemplate = (): string => csv([
+    catalogueCsvHeaders.slice(),
+    [
+        'Noir Gold Tea Set',
+        'tea-sets',
+        'DRAFT',
+        'Elegant tea set for everyday hosting.',
+        'A six-piece tea set with a refined gold finish.',
+        'Ceramic',
+        '6 pieces',
+        'Gold',
+        'EXAMPLE-TEA-GOLD',
+        '',
+        '1299',
+        '1499',
+        'Gold',
+        '#C9A35B',
+        'TRUE',
+        '',
+        '',
+    ],
+    [
+        'Noir Gold Tea Set',
+        'tea-sets',
+        'DRAFT',
+        'Elegant tea set for everyday hosting.',
+        'A six-piece tea set with a refined gold finish.',
+        'Ceramic',
+        '6 pieces',
+        'Sage',
+        'EXAMPLE-TEA-SAGE',
+        '',
+        '1349',
+        '1549',
+        'Sage Green',
+        '#9CAF88',
+        'TRUE',
+        '',
+        '',
+    ],
+    [
+        'Handcrafted Serving Bowl',
+        'serveware',
+        'DRAFT',
+        'A versatile bowl for serving and sharing.',
+        'Hand-finished serving bowl for dining tables and celebrations.',
+        'Stoneware',
+        '24 cm diameter',
+        'Natural',
+        'EXAMPLE-BOWL-NATURAL',
+        '',
+        '899',
+        '',
+        'Natural',
+        '#D8C3A5',
+        'TRUE',
+        '',
+        '',
+    ],
+]);
 
 const attributeText = (attributes: Record<string, unknown> | undefined, key: string): string => {
     const value = attributes?.[key];
@@ -53,7 +111,6 @@ export const catalogueCsvExport = (products: Product[]): string => {
         for (const variant of product.variants) {
             rows.push([
                 product.name,
-                product.slug,
                 product.category.slug,
                 product.status,
                 product.shortDescription || '',
@@ -136,7 +193,7 @@ export const parseCatalogueCsv = (text: string): CatalogueCsvRow[] => {
                 return [header, column >= 0 ? importedCell(values[column] ?? '') : ''];
             }),
         ) as Record<CatalogueCsvHeader, string>;
-        return { ...row, sourceRow: index + 2 };
+        return { ...row, product_slug: slugify(row.product_name), sourceRow: index + 2 };
     });
 };
 
@@ -162,13 +219,13 @@ export const driveLinksFromCsvCell = (value: string): string[] =>
 export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs: Set<string>): string[] => {
     const errors: string[] = [];
     const seenSkus = new Map<string, number>();
+    const seenBarcodes = new Map<string, number>();
     const productSignatures = new Map<string, string>();
 
     if (rows.length === 0) return ['The CSV has headers but no product rows.'];
     for (const row of rows) {
         const prefix = `Row ${row.sourceRow}`;
         if (!row.product_name) errors.push(`${prefix}: product_name is required.`);
-        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(row.product_slug)) errors.push(`${prefix}: product_slug is invalid.`);
         if (!categorySlugs.has(row.category_slug)) errors.push(`${prefix}: category_slug “${row.category_slug}” does not exist.`);
         if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(row.status.toUpperCase())) errors.push(`${prefix}: status must be DRAFT, PUBLISHED, or ARCHIVED.`);
         if (!row.variant_name) errors.push(`${prefix}: variant_name is required.`);
@@ -176,7 +233,10 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs:
         if (!/^[A-Z0-9][A-Z0-9._-]*$/.test(sku)) errors.push(`${prefix}: sku is invalid.`);
         if (seenSkus.has(sku)) errors.push(`${prefix}: sku duplicates row ${seenSkus.get(sku)}.`);
         else seenSkus.set(sku, row.sourceRow);
-        if (row.barcode && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(row.barcode)) errors.push(`${prefix}: barcode is invalid.`);
+        const barcode = row.barcode.toUpperCase();
+        if (barcode && !/^[A-Z0-9][A-Z0-9._-]*$/.test(barcode)) errors.push(`${prefix}: barcode is invalid.`);
+        if (barcode && seenBarcodes.has(barcode)) errors.push(`${prefix}: barcode duplicates row ${seenBarcodes.get(barcode)}.`);
+        else if (barcode) seenBarcodes.set(barcode, row.sourceRow);
 
         const pricePaise = importRupeesToPaise(row.price_rupees);
         if (pricePaise === undefined) errors.push(`${prefix}: price_rupees must be a non-negative amount with at most two decimals.`);

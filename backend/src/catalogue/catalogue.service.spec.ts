@@ -8,15 +8,18 @@ describe('CatalogueService', () => {
     uploadProductImage: jest.fn(),
     removeProductImages: jest.fn(),
     getProductImagePublicUrl: jest.fn(),
+    uploadProductVideo: jest.fn(),
+    getProductVideoPublicUrl: jest.fn(),
   };
   const imageProcessor = { process: jest.fn() };
+  const videoProcessor = { process: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('lists only published products in published categories with active variants', async () => {
-    const products = [{ id: 'product-id', status: ProductStatus.PUBLISHED }];
+    const products = [{ id: 'product-id', status: ProductStatus.PUBLISHED, variants: [] }];
     const prisma = {
       product: {
         findMany: jest.fn().mockResolvedValue(products),
@@ -173,35 +176,50 @@ describe('CatalogueService', () => {
     });
   });
 
-  it('adds a direct HTTPS product video to the product gallery', async () => {
-    const video = { id: 'video-id', url: 'https://cdn.example.com/product.mp4' };
+  it('stores uploaded videos as browser-ready MP4 files', async () => {
+    const video = { id: 'video-id', url: 'https://storage.example.com/video.mp4' };
     const prisma = {
       product: { findUnique: jest.fn().mockResolvedValue({ id: 'product-id' }) },
       productVideo: { create: jest.fn().mockResolvedValue(video) },
     };
+    videoProcessor.process.mockResolvedValue({
+      buffer: Buffer.from('converted-video'),
+      mimetype: 'video/mp4',
+    });
+    supabase.getProductVideoPublicUrl.mockReturnValue(video.url);
     const service = new CatalogueService(
       prisma as never,
       audit as never,
       supabase as never,
       imageProcessor as never,
+      videoProcessor as never,
     );
 
     await expect(
-      service.addProductVideoUrl(
+      service.uploadProductVideo(
         'actor-id',
         'product-id',
-        { url: 'https://cdn.example.com/product.mp4', altText: 'Product walkthrough' },
+        {
+          buffer: Buffer.from('mov-source'),
+          mimetype: 'video/quicktime',
+          originalname: 'product.mov',
+        } as Express.Multer.File,
+        { altText: 'Product walkthrough' },
         {},
       ),
     ).resolves.toEqual(video);
 
+    expect(supabase.uploadProductVideo).toHaveBeenCalledWith(
+      expect.stringMatching(/^product-id\/.+\/source\.mp4$/),
+      Buffer.from('converted-video'),
+      'video/mp4',
+    );
     expect(prisma.productVideo.create).toHaveBeenCalledWith({
-      data: {
-        productId: 'product-id',
-        url: 'https://cdn.example.com/product.mp4',
-        altText: 'Product walkthrough',
-        sortOrder: 0,
-      },
+      data: expect.objectContaining({
+        sourceFilename: 'product.mov',
+        sourceMimeType: 'video/mp4',
+        storagePath: expect.stringMatching(/^product-id\/.+\/source\.mp4$/),
+      }),
     });
   });
 

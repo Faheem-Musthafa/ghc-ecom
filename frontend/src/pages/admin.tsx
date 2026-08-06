@@ -30,12 +30,23 @@ import {
     parseCatalogueCsv,
     validateCatalogueCsvRows,
 } from '../lib/catalogue-csv';
-import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
+import { inventoryCsvExport, inventoryCsvTemplate, parseInventoryCsv, validateInventoryCsvRows } from '../lib/inventory-csv';
+import { fallbackImage, rupees, shortDate, slugify, titleCase } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
-import { AuditLog, Category, Coupon, InventoryLevel, OperationsSnapshot, Order, Product, ProductVariant, Warehouse } from '../types';
+import { AuditLog, Category, Coupon, CreatedStaffUser, InventoryLevel, OperationsSnapshot, Order, Product, ProductVariant, StaffUser, Warehouse } from '../types';
 
 const box = 'border border-line bg-carbon';
 const inputStyle = 'field h-12 w-full text-sm';
+
+const orderItemAttributes = (attributes?: Record<string, unknown>): Array<[string, string]> => {
+    if (!attributes) return [];
+    return Object.entries(attributes).flatMap(([key, value]) => {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+            return [[key, String(value)]];
+        }
+        return [];
+    });
+};
 
 const downloadCsv = (filename: string, contents: string): void => {
     const url = URL.createObjectURL(new Blob([contents], { type: 'text/csv;charset=utf-8' }));
@@ -275,20 +286,20 @@ const Overview = () => {
 // ----------------------------------------------------
 const OrdersTable = ({
     orders,
-    onTransition,
     onInspect,
 }: {
     orders: Order[];
-    onTransition?: (order: Order, status: string) => void;
     onInspect?: (order: Order) => void;
 }) => (
     <div className={`${box} overflow-x-auto`}>
-        <table className="w-full min-w-[800px] text-left text-sm">
+        <table className="w-full min-w-[1050px] text-left text-sm">
             <thead className="border-b border-gold-500/20 text-[10px] font-bold uppercase tracking-[0.2em] text-gold-400 bg-obsidian/50">
                 <tr>
                     <th className="p-4">Order #</th>
                     <th className="p-4">Placed Date</th>
+                    <th className="p-4">Customer</th>
                     <th className="p-4">Status</th>
+                    <th className="p-4">Payment</th>
                     <th className="p-4">Items</th>
                     <th className="p-4 text-right">Total</th>
                     <th className="p-4 text-center">Actions</th>
@@ -296,23 +307,36 @@ const OrdersTable = ({
             </thead>
             <tbody className="divide-y divide-gold-500/10">
                 {orders.map((order) => {
+                    const payment = order.payments?.[0];
                     const statusColor =
-                        order.status === 'DELIVERED'
+                        order.status === 'CONFIRMED'
                             ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20'
                             : order.status === 'CANCELLED' || order.status === 'PAYMENT_FAILED'
                               ? 'text-red-300 border-red-500/30 bg-red-950/20'
-                              : order.status === 'SHIPPED' || order.status === 'PROCESSING'
-                                ? 'text-blue-300 border-blue-500/30 bg-blue-950/20'
-                                : 'text-amber-300 border-amber-500/30 bg-amber-950/20';
+                              : 'text-amber-300 border-amber-500/30 bg-amber-950/20';
 
                     return (
                         <tr key={order.id} className="transition-colors hover:bg-gold-400/[.03]">
                             <td className="p-4 font-display text-lg text-cream">{order.orderNumber}</td>
                             <td className="p-4 text-xs text-cream/50">{shortDate(order.createdAt)}</td>
+                            <td className="p-4 text-xs">
+                                <p className="font-medium text-cream">{order.addressSnapshot?.recipientName || 'Customer'}</p>
+                                <p className="mt-0.5 text-cream/45">{order.addressSnapshot?.email || 'No email'}</p>
+                            </td>
                             <td className="p-4">
                                 <span className={`inline-block rounded-full border px-3 py-1 text-[10px] font-bold tracking-wider ${statusColor}`}>
                                     {titleCase(order.status)}
                                 </span>
+                            </td>
+                            <td className="p-4 text-xs">
+                                {payment ? (
+                                    <>
+                                        <p className="font-medium text-cream">{titleCase(payment.status)}</p>
+                                        <p className="mt-0.5 text-cream/45">{payment.method ? titleCase(payment.method) : 'Razorpay'}</p>
+                                    </>
+                                ) : (
+                                    <span className="text-cream/45">Awaiting payment</span>
+                                )}
                             </td>
                             <td className="p-4 text-xs text-cream/60">{order.itemsSnapshot?.length || 0} line items</td>
                             <td className="p-4 text-right font-semibold text-gold-300">{rupees(order.totalPaise)}</td>
@@ -326,21 +350,6 @@ const OrdersTable = ({
                                         >
                                             <IconEye size={14} /> View
                                         </button>
-                                    )}
-                                    {onTransition && (
-                                        <select
-                                            aria-label={`Advance ${order.orderNumber}`}
-                                            value=""
-                                            onChange={(e) => e.target.value && onTransition(order, e.target.value)}
-                                            className="h-8 border border-gold-500/25 bg-obsidian px-2 text-xs text-cream outline-none focus:border-gold-400 rounded-sm"
-                                        >
-                                            <option value="">Status…</option>
-                                            {['CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((st) => (
-                                                <option key={st} value={st}>
-                                                    {titleCase(st)}
-                                                </option>
-                                            ))}
-                                        </select>
                                     )}
                                 </div>
                             </td>
@@ -359,39 +368,43 @@ const OrdersAdmin = () => {
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [inspectingOrder, setInspectingOrder] = useState<Order | null>(null);
     const [error, setError] = useState('');
+    const [loadingOrders, setLoadingOrders] = useState(false);
+    const [hasMore, setHasMore] = useState(false);
     const orderDialogRef = useDialog<HTMLDivElement>(Boolean(inspectingOrder), () => setInspectingOrder(null));
 
-    const load = (search = '') =>
-        api
-            .adminOrders(
+    const load = async (search = '', status = 'ALL', offset = 0, append = false, signal?: AbortSignal) => {
+        setLoadingOrders(true);
+        try {
+            const result = await api.adminOrders(
                 new URLSearchParams({
                     limit: '100',
+                    offset: String(offset),
                     ...(search ? { search } : {}),
+                    ...(status !== 'ALL' ? { status } : {}),
                 }).toString(),
-            )
-            .then(setOrders)
-            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load orders.'));
-
-    useEffect(() => {
-        void load();
-    }, []);
-
-    const transition = async (order: Order, status: string) => {
-        if (!window.confirm(`Move ${order.orderNumber} to ${titleCase(status)}?`)) return;
-        try {
-            await api.transitionOrder(order.id, status);
-            await load(query);
-            if (inspectingOrder?.id === order.id) {
-                setInspectingOrder((prev) => (prev ? { ...prev, status } : null));
-            }
+                signal,
+            );
+            if (signal?.aborted) return;
+            setOrders((current) => {
+                if (!append) return result;
+                const existingIds = new Set(current.map((order) => order.id));
+                return [...current, ...result.filter((order) => !existingIds.has(order.id))];
+            });
+            setHasMore(result.length === 100);
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Status change failed.');
+            if (!signal?.aborted) {
+                setError(caught instanceof Error ? caught.message : 'Unable to load orders.');
+            }
+        } finally {
+            if (!signal?.aborted) setLoadingOrders(false);
         }
     };
 
-    const filteredOrders = useMemo(() => {
-        return orders.filter((o) => statusFilter === 'ALL' || o.status.toUpperCase() === statusFilter.toUpperCase());
-    }, [orders, statusFilter]);
+    useEffect(() => {
+        const controller = new AbortController();
+        void load('', 'ALL', 0, false, controller.signal);
+        return () => controller.abort();
+    }, []);
 
     const downloadInvoice = async (orderId: string) => {
         try {
@@ -403,7 +416,7 @@ const OrdersAdmin = () => {
     };
 
     return (
-        <AdminShell title="Orders Fulfilment" description="Search live customer orders, view detailed line item snapshots, and advance fulfilment states.">
+        <AdminShell title="Orders" description="Search paid customer orders and view their complete product, customer, and payment records.">
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
 
             {/* Filter Tabs & Search Bar */}
@@ -411,7 +424,7 @@ const OrdersAdmin = () => {
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
-                        void load(query);
+                        void load(query, statusFilter);
                     }}
                     className="flex w-full max-w-md border border-gold-500/25 bg-carbon rounded-sm"
                 >
@@ -426,10 +439,13 @@ const OrdersAdmin = () => {
                 </form>
 
                 <div className="flex flex-wrap gap-2">
-                    {['ALL', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((st) => (
+                    {['ALL', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'CONFIRMED', 'CANCELLED'].map((st) => (
                         <button
                             key={st}
-                            onClick={() => setStatusFilter(st)}
+                            onClick={() => {
+                                setStatusFilter(st);
+                                void load(query, st);
+                            }}
                             className={`rounded-sm border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 statusFilter === st
                                     ? 'border-gold-400 bg-gold-400/20 text-gold-300'
@@ -442,7 +458,20 @@ const OrdersAdmin = () => {
                 </div>
             </div>
 
-            <OrdersTable orders={filteredOrders} onTransition={transition} onInspect={setInspectingOrder} />
+            <OrdersTable orders={orders} onInspect={setInspectingOrder} />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-cream/55">
+                <span>{loadingOrders ? 'Loading orders…' : `Showing ${orders.length}${hasMore ? '+' : ''} orders`}</span>
+                {hasMore && (
+                    <button
+                        type="button"
+                        disabled={loadingOrders}
+                        onClick={() => void load(query, statusFilter, orders.length, true)}
+                        className="rounded-sm border border-gold-500/30 px-4 py-2 font-semibold text-gold-300 hover:border-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Load 100 more
+                    </button>
+                )}
+            </div>
 
             {/* Order Inspector Modal */}
             {inspectingOrder && (
@@ -470,7 +499,7 @@ const OrdersAdmin = () => {
                         <div className="mt-6 grid gap-6 md:grid-cols-2">
                             {/* Summary Box */}
                             <div className="border border-gold-500/15 bg-obsidian/60 p-4 rounded-sm">
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Customer & Shipping Details</h4>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Customer & Contact Details</h4>
                                 <div className="mt-3 space-y-1.5 text-xs text-cream/70">
                                     <p>
                                         <strong className="text-cream">Recipient:</strong> {inspectingOrder.addressSnapshot?.recipientName || 'Customer'}
@@ -483,14 +512,15 @@ const OrdersAdmin = () => {
                                     </p>
                                     <p>
                                         <strong className="text-cream">Address:</strong> {inspectingOrder.addressSnapshot?.line1},{' '}
+                                        {inspectingOrder.addressSnapshot?.line2 ? `${inspectingOrder.addressSnapshot.line2}, ` : ''}
                                         {inspectingOrder.addressSnapshot?.city}, {inspectingOrder.addressSnapshot?.state}{' '}
-                                        {inspectingOrder.addressSnapshot?.postalCode}
+                                        {inspectingOrder.addressSnapshot?.postalCode}, {inspectingOrder.addressSnapshot?.country || 'IN'}
                                     </p>
                                 </div>
                             </div>
 
                             <div className="border border-gold-500/15 bg-obsidian/60 p-4 rounded-sm">
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Fulfilment & Financials</h4>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gold-400">Order & Payment Summary</h4>
                                 <div className="mt-3 space-y-1.5 text-xs text-cream/70">
                                     <p>
                                         <strong className="text-cream">Current Status:</strong>{' '}
@@ -500,9 +530,32 @@ const OrdersAdmin = () => {
                                         <strong className="text-cream">Placed On:</strong> {new Date(inspectingOrder.createdAt).toLocaleString('en-IN')}
                                     </p>
                                     <p>
-                                        <strong className="text-cream">Total Amount:</strong>{' '}
+                                        <strong className="text-cream">Items subtotal:</strong> {rupees(inspectingOrder.subtotalPaise)}
+                                    </p>
+                                    {inspectingOrder.discountPaise > 0 && (
+                                        <p>
+                                            <strong className="text-cream">Discount:</strong> -{rupees(inspectingOrder.discountPaise)}
+                                        </p>
+                                    )}
+                                    <p>
+                                        <strong className="text-cream">Tax:</strong> {rupees(inspectingOrder.taxPaise)}
+                                    </p>
+                                    <p>
+                                        <strong className="text-cream">Total paid:</strong>{' '}
                                         <span className="font-display text-base text-gold-300">{rupees(inspectingOrder.totalPaise)}</span>
                                     </p>
+                                    <p>
+                                        <strong className="text-cream">Razorpay order:</strong> {inspectingOrder.razorpayOrderId || 'Not created'}
+                                    </p>
+                                    {inspectingOrder.payments?.map((payment) => (
+                                        <div key={payment.id} className="border-t border-gold-500/10 pt-2">
+                                            <p><strong className="text-cream">Payment:</strong> {titleCase(payment.status)} · {rupees(payment.amountPaise)}</p>
+                                            <p><strong className="text-cream">Method:</strong> {payment.method ? titleCase(payment.method) : 'Not reported'}</p>
+                                            <p><strong className="text-cream">Payment ID:</strong> {payment.razorpayPaymentId || 'Awaiting Razorpay confirmation'}</p>
+                                            {payment.capturedAt && <p><strong className="text-cream">Captured:</strong> {new Date(payment.capturedAt).toLocaleString('en-IN')}</p>}
+                                            {payment.refunds.length > 0 && <p><strong className="text-cream">Refunds:</strong> {payment.refunds.map((refund) => `${titleCase(refund.status)} ${rupees(refund.amountPaise)}`).join(', ')}</p>}
+                                        </div>
+                                    ))}
                                 </div>
                                 <div className="mt-4 flex gap-2">
                                     <button
@@ -522,8 +575,9 @@ const OrdersAdmin = () => {
                                 <table className="w-full text-left text-xs">
                                     <thead className="border-b border-gold-500/15 bg-carbon text-[9px] uppercase tracking-wider text-cream/40">
                                         <tr>
-                                            <th className="p-3">Product / Variant</th>
-                                            <th className="p-3">SKU</th>
+                                            <th className="p-3">Product details</th>
+                                            <th className="p-3">SKU / Barcode</th>
+                                            <th className="p-3">Selected options</th>
                                             <th className="p-3 text-right">Price</th>
                                             <th className="p-3 text-center">Qty</th>
                                             <th className="p-3 text-right">Line Total</th>
@@ -532,10 +586,46 @@ const OrdersAdmin = () => {
                                     <tbody className="divide-y divide-gold-500/10">
                                         {(inspectingOrder.itemsSnapshot || []).map((item, idx) => (
                                             <tr key={idx}>
-                                                <td className="p-3 font-medium text-cream">
-                                                    {item.productName} ({item.variantName})
+                                                <td className="p-3">
+                                                    <div className="flex min-w-[240px] gap-3">
+                                                        <img
+                                                            src={item.imageUrl || fallbackImage}
+                                                            alt=""
+                                                            className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-carbon object-cover"
+                                                            onError={(event) => { event.currentTarget.src = fallbackImage; }}
+                                                        />
+                                                        <div>
+                                                            <p className="font-semibold text-cream">{item.productName}</p>
+                                                            {item.categoryName && <p className="mt-0.5 text-[10px] uppercase tracking-wider text-gold-400/75">{item.categoryName}</p>}
+                                                            <p className="mt-0.5 text-cream/60">Variant: {item.variantName || 'Default'}</p>
+                                                            {item.productDescription && <p className="mt-1 max-w-xs text-[10px] leading-relaxed text-cream/45">{item.productDescription}</p>}
+                                                            {item.productMaterial && <p className="mt-1 text-[10px] text-cream/45">Material: {item.productMaterial}</p>}
+                                                            {item.productDimensions && <p className="mt-1 text-[10px] text-cream/45">Dimensions: {item.productDimensions}</p>}
+                                                            {item.productSlug && (
+                                                                <a href={`/product/${item.productSlug}`} target="_blank" rel="noreferrer" className="mt-1 inline-block text-[10px] text-gold-300 hover:text-gold-100">
+                                                                    View product ↗
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </td>
-                                                <td className="p-3 text-cream/50">{item.sku}</td>
+                                                <td className="p-3 text-cream/60">
+                                                    <p>{item.sku || 'No SKU'}</p>
+                                                    <p className="mt-1 text-[10px] text-cream/40">Barcode: {item.barcode || '—'}</p>
+                                                </td>
+                                                <td className="p-3 text-cream/60">
+                                                    {orderItemAttributes(item.attributes).length > 0 ? (
+                                                        <div className="flex max-w-40 flex-wrap gap-1">
+                                                            {orderItemAttributes(item.attributes).map(([key, value]) => (
+                                                                <span key={key} className="rounded border border-gold-500/20 bg-carbon px-1.5 py-0.5 text-[10px] text-cream/70">
+                                                                    {titleCase(key)}: {value}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-cream/40">No options</span>
+                                                    )}
+                                                </td>
                                                 <td className="p-3 text-right text-cream/70">{rupees(item.unitPricePaise)}</td>
                                                 <td className="p-3 text-center text-cream/80 font-bold">{item.quantity}</td>
                                                 <td className="p-3 text-right font-semibold text-gold-300">{rupees(item.lineTotalPaise)}</td>
@@ -637,16 +727,21 @@ const CatalogueAdmin = () => {
         setEditingCategory(null);
     });
 
-    const load = () =>
-        Promise.all([api.adminProducts(), api.adminCategories()])
+    const load = (signal?: AbortSignal) =>
+        Promise.all([api.adminProducts(signal), api.adminCategories(signal)])
             .then(([items, cats]) => {
+                if (signal?.aborted) return;
                 setProducts(items);
                 setCategories(cats);
             })
-            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load catalogue.'));
+            .catch((caught) => {
+                if (!signal?.aborted) setError(caught instanceof Error ? caught.message : 'Unable to load catalogue.');
+            });
 
     useEffect(() => {
-        void load();
+        const controller = new AbortController();
+        void load(controller.signal);
+        return () => controller.abort();
     }, []);
 
     const openProductEditor = (product: Product | null) => {
@@ -675,11 +770,21 @@ const CatalogueAdmin = () => {
             if (variantDrafts.length === 0 || !variantDrafts.some((variant) => variant.isActive)) {
                 throw new Error('Add at least one active product option.');
             }
+            const barcodeOwners = new Map<string, number>();
+            for (const [index, variant] of variantDrafts.entries()) {
+                const barcode = variant.barcode.trim().toUpperCase();
+                if (!barcode) continue;
+                const previousIndex = barcodeOwners.get(barcode);
+                if (previousIndex !== undefined) {
+                    throw new Error(`Barcode “${barcode}” is used by options ${previousIndex + 1} and ${index + 1}. Each barcode must be unique.`);
+                }
+                barcodeOwners.set(barcode, index);
+            }
 
             if (editingProduct) {
                 const product = await api.updateProduct(editingProduct.id, {
                     name: String(form.get('name')),
-                    slug: String(form.get('slug')),
+                    slug: editingProduct.slug,
                     categoryId: String(form.get('categoryId')),
                     description: String(form.get('description')),
                     shortDescription: String(form.get('description')),
@@ -693,7 +798,7 @@ const CatalogueAdmin = () => {
                 const product = await api.createProduct({
                     categoryId: String(form.get('categoryId')),
                     name: String(form.get('name')),
-                    slug: String(form.get('slug')),
+                    slug: slugify(String(form.get('name'))),
                     shortDescription: String(form.get('description')),
                     description: String(form.get('description')),
                     material: String(form.get('material')),
@@ -766,13 +871,6 @@ const CatalogueAdmin = () => {
                 });
             }
 
-            const videoUrl = String(form.get('videoUrl') || '').trim();
-            if (videoUrl) {
-                await api.addProductVideoUrl(productId, {
-                    url: videoUrl,
-                    altText: productName,
-                });
-            }
             const videoFile = form.get('videoFile');
             if (videoFile instanceof File && videoFile.size > 0) {
                 const videoForm = new FormData();
@@ -799,6 +897,22 @@ const CatalogueAdmin = () => {
             await load();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Product deletion failed.');
+        }
+    };
+
+    const handleDeleteVideo = async (productId: string, videoId: string) => {
+        if (!window.confirm('Remove this product video?')) return;
+        setSaving(true);
+        setError('');
+        try {
+            await api.deleteProductVideo(productId, videoId);
+            setEditingProduct((current) => current ? { ...current, videos: current.videos.filter((video) => video.id !== videoId) } : null);
+            setSuccessMessage('Product video removed. You can now upload an MP4 replacement.');
+            await load();
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Could not remove the product video.');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -935,7 +1049,7 @@ const CatalogueAdmin = () => {
             if (editingCategory) {
                 await api.updateCategory(editingCategory.id, {
                     name: String(form.get('name')),
-                    slug: String(form.get('slug')),
+                    slug: editingCategory.slug,
                     description: String(form.get('description')),
                     isPublished: form.get('isPublished') === 'on',
                 });
@@ -943,7 +1057,7 @@ const CatalogueAdmin = () => {
             } else {
                 await api.createCategory({
                     name: String(form.get('name')),
-                    slug: String(form.get('slug')),
+                    slug: slugify(String(form.get('name'))),
                     description: String(form.get('description')),
                     isPublished: form.get('isPublished') === 'on',
                 });
@@ -1249,16 +1363,6 @@ const CatalogueAdmin = () => {
                                 <input name="name" defaultValue={editingProduct?.name || ''} className={inputStyle} required />
                             </label>
                             <label>
-                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">URL Slug</span>
-                                <input
-                                    name="slug"
-                                    defaultValue={editingProduct?.slug || ''}
-                                    className={inputStyle}
-                                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                                    required
-                                />
-                            </label>
-                            <label>
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Category</span>
                                 <select name="categoryId" defaultValue={editingProduct?.categoryId || ''} className={inputStyle} required>
                                     <option value="">Select Category…</option>
@@ -1386,7 +1490,7 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Barcode</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Barcode (unique)</span>
                                                     <input
                                                         value={draft.barcode}
                                                         onChange={(event) =>
@@ -1399,6 +1503,7 @@ const CatalogueAdmin = () => {
                                                         maxLength={80}
                                                         className={inputStyle}
                                                     />
+                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional, but cannot be reused by another option.</span>
                                                 </label>
                                                 <label>
                                                     <span className="mb-1.5 block text-xs text-cream/60">Swatch</span>
@@ -1540,6 +1645,21 @@ const CatalogueAdmin = () => {
                                 </section>
                             )}
 
+                            {editingProduct && editingProduct.videos.length > 0 && (
+                                <section className="sm:col-span-2" aria-labelledby="existing-videos-heading">
+                                    <h3 id="existing-videos-heading" className="text-sm font-semibold text-cream">Existing videos</h3>
+                                    <p className="mt-1 text-xs text-cream/55">Uploaded videos are converted and stored as browser-ready MP4 files. Replace older external or unsupported videos here.</p>
+                                    <div className="mt-3 space-y-2">
+                                        {editingProduct.videos.map((video) => (
+                                            <div key={video.id} className="flex flex-wrap items-center justify-between gap-3 bg-obsidian/55 p-3 text-xs">
+                                                <a href={video.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-gold-300 hover:text-gold-100">{video.altText || 'Product video'}</a>
+                                                <button type="button" disabled={saving} onClick={() => void handleDeleteVideo(editingProduct.id, video.id)} className="border border-red-500/35 px-3 py-2 font-semibold text-red-200 hover:bg-red-500/10 disabled:opacity-50">Remove video</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
+
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Shared gallery images</span>
                                 <input
@@ -1568,20 +1688,14 @@ const CatalogueAdmin = () => {
                             </label>
 
                             <label className="sm:col-span-2">
-                                <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Video URL</span>
-                                <input name="videoUrl" type="url" placeholder="https://cdn.example.com/product-video.mp4" className={inputStyle} />
-                                <span className="mt-1 block text-[10px] text-cream/40">Use a direct HTTPS MP4, WebM, or MOV URL.</span>
-                            </label>
-
-                            <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Upload Product Video</span>
                                 <input
                                     name="videoFile"
                                     type="file"
-                                    accept="video/mp4,video/webm,video/quicktime"
+                                    accept="video/mp4,video/webm,video/quicktime,video/x-msvideo,video/mpeg,video/ogg"
                                     className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian file:rounded-sm cursor-pointer"
                                 />
-                                <span className="mt-1 block text-[10px] text-cream/40">MP4, WebM, or MOV; up to 25 MB.</span>
+                                <span className="mt-1 block text-[10px] text-cream/40">MP4, WebM, MOV, AVI, MPEG, or OGG; up to 25 MB. Every upload is converted to an H.264/AAC MP4 before Supabase storage.</span>
                             </label>
                         </div>
 
@@ -1628,10 +1742,6 @@ const CatalogueAdmin = () => {
                                 <input name="name" defaultValue={editingCategory?.name || ''} className={inputStyle} required />
                             </label>
                             <label className="block">
-                                <span className="mb-1.5 block text-xs text-cream/60">URL Slug</span>
-                                <input name="slug" defaultValue={editingCategory?.slug || ''} className={inputStyle} required />
-                            </label>
-                            <label className="block">
                                 <span className="mb-1.5 block text-xs text-cream/60">Description</span>
                                 <textarea
                                     name="description"
@@ -1676,6 +1786,8 @@ const InventoryAdmin = () => {
     const [editingLevel, setEditingLevel] = useState<InventoryLevel | null>(null);
     const [openWarehouseModal, setOpenWarehouseModal] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [bulkImporting, setBulkImporting] = useState(false);
+    const [bulkImportErrors, setBulkImportErrors] = useState<string[]>([]);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
     const warehouseDialogRef = useDialog<HTMLFormElement>(openWarehouseModal, () => setOpenWarehouseModal(false));
@@ -1695,14 +1807,16 @@ const InventoryAdmin = () => {
     }, []);
 
     const variantsMap = useMemo(() => {
-        const map = new Map<string, { label: string; sku: string; barcode: string; name: string }>();
+        const map = new Map<string, { label: string; sku: string; barcode: string; name: string; imageUrl: string }>();
         for (const p of products) {
             for (const v of p.variants) {
+                const image = p.images.find((item) => item.variantId === v.id) || p.images[0];
                 map.set(v.id, {
                     label: `${p.name} · ${v.sku}`,
                     sku: v.sku,
                     barcode: v.barcode || '',
                     name: p.name,
+                    imageUrl: image?.thumbnailUrl || fallbackImage,
                 });
             }
         }
@@ -1756,6 +1870,60 @@ const InventoryAdmin = () => {
         }
     };
 
+    const handleInventoryImport = async (file: File) => {
+        setBulkImporting(true);
+        setBulkImportErrors([]);
+        setError('');
+        setSuccessMsg('');
+        try {
+            const rows = parseInventoryCsv(await file.text());
+            const errors = validateInventoryCsvRows(rows);
+            const warehouseByCode = new Map(warehouses.map((warehouse) => [warehouse.code.toUpperCase(), warehouse]));
+            const variantBySku = new Map([...variantsMap.entries()].map(([id, variant]) => [variant.sku.toUpperCase(), id]));
+            const levelByWarehouseAndVariant = new Map(levels.map((level) => [`${level.warehouseId}::${level.variantId}`, level]));
+
+            for (const row of rows) {
+                const warehouse = warehouseByCode.get(row.warehouse_code.toUpperCase());
+                const variantId = variantBySku.get(row.sku.toUpperCase());
+                if (!warehouse) errors.push(`Row ${row.sourceRow}: warehouse_code “${row.warehouse_code}” does not exist.`);
+                if (!variantId) errors.push(`Row ${row.sourceRow}: sku “${row.sku}” does not exist.`);
+                if (warehouse && variantId && Number(row.on_hand) < (levelByWarehouseAndVariant.get(`${warehouse.id}::${variantId}`)?.reserved || 0)) {
+                    errors.push(`Row ${row.sourceRow}: on_hand cannot be lower than currently reserved stock.`);
+                }
+            }
+            if (errors.length) {
+                setBulkImportErrors(errors);
+                setError(`Import stopped: ${errors.length} validation error(s). No inventory was changed.`);
+                return;
+            }
+            if (!window.confirm(`Set stock for ${rows.length} inventory row(s)? This replaces each listed on-hand quantity.`)) return;
+
+            const importErrors: string[] = [];
+            let updated = 0;
+            for (const row of rows) {
+                const warehouse = warehouseByCode.get(row.warehouse_code.toUpperCase())!;
+                const variantId = variantBySku.get(row.sku.toUpperCase())!;
+                try {
+                    await api.setInventory(warehouse.id, {
+                        variantId,
+                        onHand: Number(row.on_hand),
+                        lowStockThreshold: Number(row.low_stock_threshold),
+                    });
+                    updated += 1;
+                } catch (caught) {
+                    importErrors.push(`Row ${row.sourceRow} (${row.warehouse_code} / ${row.sku}): ${caught instanceof Error ? caught.message : 'Stock update failed.'}`);
+                }
+            }
+            setBulkImportErrors(importErrors);
+            setSuccessMsg(`Inventory import finished: ${updated} row(s) updated${importErrors.length ? `, ${importErrors.length} failed` : ''}.`);
+            await load();
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Could not read the inventory CSV.');
+        } finally {
+            setBulkImporting(false);
+        }
+    };
+
     const filteredLevels = useMemo(() => {
         return levels.filter((level) => {
             const info = variantsMap.get(level.variantId);
@@ -1776,16 +1944,60 @@ const InventoryAdmin = () => {
             title="Inventory Control"
             description="Live warehouse stock levels, reservations, available SKUs, and low-stock alert thresholds. New catalogue variants are added automatically at zero stock."
             action={
-                <button
-                    onClick={() => setOpenWarehouseModal(true)}
-                    className="flex h-11 items-center gap-2 bg-gold-400 px-4 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
-                >
-                    <IconPlus size={16} /> Add Warehouse
-                </button>
+                <div className="flex flex-wrap justify-end gap-3">
+                    <button
+                        onClick={() => downloadCsv('glockery-inventory-template.csv', inventoryCsvTemplate())}
+                        className="flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400"
+                    >
+                        <IconDownload size={15} /> Template
+                    </button>
+                    <button
+                        onClick={() => downloadCsv('glockery-inventory-export.csv', inventoryCsvExport(levels.flatMap((level) => {
+                            const warehouse = warehousesMap.get(level.warehouseId);
+                            const variant = variantsMap.get(level.variantId);
+                            return warehouse && variant ? [{ warehouseCode: warehouse.code, sku: variant.sku, onHand: level.onHand, lowStockThreshold: level.lowStockThreshold }] : [];
+                        })))}
+                        disabled={!levels.length}
+                        className="flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400 disabled:opacity-40"
+                    >
+                        <IconDownload size={15} /> Export
+                    </button>
+                    <label className="flex h-11 cursor-pointer items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400">
+                        <IconPlus size={15} /> {bulkImporting ? 'Importing…' : 'Import CSV'}
+                        <input
+                            type="file"
+                            accept=".csv,text/csv"
+                            disabled={bulkImporting}
+                            className="sr-only"
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (file) void handleInventoryImport(file);
+                            }}
+                        />
+                    </label>
+                    <button
+                        onClick={() => setOpenWarehouseModal(true)}
+                        className="flex h-11 items-center gap-2 bg-gold-400 px-4 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
+                    >
+                        <IconPlus size={16} /> Add Warehouse
+                    </button>
+                </div>
             }
         >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
+            {bulkImportErrors.length > 0 && (
+                <div className="mb-6 border border-amber-500/35 bg-amber-950/20 p-4 text-xs text-amber-100" role="alert">
+                    <div className="flex items-center justify-between gap-4">
+                        <strong>Inventory import report · {bulkImportErrors.length} issue(s)</strong>
+                        <button onClick={() => setBulkImportErrors([])} className="text-amber-200/70 hover:text-amber-100">Close</button>
+                    </div>
+                    <ul className="mt-3 max-h-44 list-disc space-y-1 overflow-y-auto pl-5">
+                        {bulkImportErrors.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}
+                    </ul>
+                </div>
+            )}
 
             {/* Filter Bar */}
             <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -1849,12 +2061,23 @@ const InventoryAdmin = () => {
                             return (
                                 <tr key={level.id} className="transition-colors hover:bg-gold-400/[.03]">
                                     <td className="p-4 font-medium text-cream">
-                                        {info ? info.label : level.variantId}
-                                        {info?.barcode && (
-                                            <span className="mt-1 block font-mono text-[10px] text-cream/45">
-                                                Barcode: {info.barcode}
-                                            </span>
-                                        )}
+                                        <div className="flex items-center gap-3">
+                                            <img
+                                                src={info?.imageUrl || fallbackImage}
+                                                alt=""
+                                                loading="lazy"
+                                                className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-obsidian object-cover"
+                                                onError={(event) => { event.currentTarget.src = fallbackImage; }}
+                                            />
+                                            <div>
+                                                <span>{info ? info.label : level.variantId}</span>
+                                                {info?.barcode && (
+                                                    <span className="mt-1 block font-mono text-[10px] text-cream/45">
+                                                        Barcode: {info.barcode}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </td>
                                     <td className="p-4 text-xs text-cream/60">
                                         {warehousesMap.get(level.warehouseId)?.name || level.warehouseId}
@@ -2306,28 +2529,47 @@ const OperationsAdmin = () => {
 };
 
 // ----------------------------------------------------
-// 8. USER MANAGEMENT & ROLE ASSIGNMENT (NEW)
+// 8. USER MANAGEMENT & ROLE ASSIGNMENT
 // ----------------------------------------------------
 const UsersAdmin = () => {
-    const [userId, setUserId] = useState('');
+    const [email, setEmail] = useState('');
+    const [fullName, setFullName] = useState('');
     const [role, setRole] = useState('ADMIN');
+    const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
+    const [createdUser, setCreatedUser] = useState<CreatedStaffUser | null>(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
-    const handleAssignRole = async (e: FormEvent<HTMLFormElement>) => {
+    const load = () =>
+        api.staffUsers()
+            .then(setStaffUsers)
+            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load staff accounts.'));
+
+    useEffect(() => {
+        void load();
+    }, []);
+
+    const handleCreateStaffUser = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        if (!userId) return;
         setSaving(true);
         setError('');
         setSuccessMsg('');
+        setCreatedUser(null);
 
         try {
-            await api.assignRole(userId.trim(), role);
-            setSuccessMsg(`Role ${role} successfully assigned to user ${userId}.`);
-            setUserId('');
+            const created = await api.createStaffUser({
+                email: email.trim(),
+                role,
+                ...(fullName.trim() ? { fullName: fullName.trim() } : {}),
+            });
+            setCreatedUser(created);
+            setSuccessMsg(`${created.user.email} can now sign in with the generated temporary password.`);
+            setEmail('');
+            setFullName('');
+            await load();
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Role assignment failed.');
+            setError(caught instanceof Error ? caught.message : 'Staff account creation failed.');
         } finally {
             setSaving(false);
         }
@@ -2336,26 +2578,33 @@ const UsersAdmin = () => {
     return (
         <AdminShell
             title="User & Role Administration"
-            description="Manage security roles, assign administrative access privileges, and configure RBAC authorization."
+            description="Create staff accounts, generate a one-time password, and grant the access role needed for their work."
         >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
 
             <div className="grid gap-6 md:grid-cols-2">
-                <form onSubmit={handleAssignRole} className={`${box} p-6 space-y-4`}>
-                    <h3 className="font-display text-2xl text-cream border-b border-gold-500/15 pb-3">Assign Security Role</h3>
+                <form onSubmit={handleCreateStaffUser} className={`${box} p-6 space-y-4`}>
+                    <h3 className="font-display text-2xl text-cream border-b border-gold-500/15 pb-3">Create Staff Account</h3>
+                    <p className="text-xs leading-5 text-cream/60">A secure password is generated automatically and shown once after the account is created.</p>
                     <label className="block">
-                        <span className="mb-1.5 block text-xs text-cream/70">User ID (UUID)</span>
+                        <span className="mb-1.5 block text-xs text-cream/70">Work Email</span>
                         <input
-                            value={userId}
-                            onChange={(e) => setUserId(e.target.value)}
-                            placeholder="e.g. 11111111-2222-3333-4444-555555555555"
+                            type="email"
+                            autoComplete="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="staff@example.com"
                             className={inputStyle}
                             required
                         />
                     </label>
                     <label className="block">
-                        <span className="mb-1.5 block text-xs text-cream/70">Assign Role</span>
+                        <span className="mb-1.5 block text-xs text-cream/70">Staff Name <em className="not-italic text-cream/40">(optional)</em></span>
+                        <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Name for account records" className={inputStyle} />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1.5 block text-xs text-cream/70">Access Role</span>
                         <select value={role} onChange={(e) => setRole(e.target.value)} className={inputStyle}>
                             <option value="ADMIN">ADMIN — Full System Operations Access</option>
                             <option value="CATALOGUE_MANAGER">CATALOGUE_MANAGER — Products & Categories</option>
@@ -2367,7 +2616,7 @@ const UsersAdmin = () => {
                         disabled={saving}
                         className="mt-4 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
                     >
-                        {saving ? 'Assigning Role…' : 'Update User Authorization'}
+                        {saving ? 'Creating Account…' : 'Create Staff Account'}
                     </button>
                 </form>
 
@@ -2393,6 +2642,55 @@ const UsersAdmin = () => {
                     </div>
                 </div>
             </div>
+
+            {createdUser && (
+                <section className="mt-6 border border-emerald-500/35 bg-emerald-950/20 p-6" aria-labelledby="temporary-password-title">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Account created</p>
+                            <h3 id="temporary-password-title" className="mt-1 font-display text-2xl text-cream">Temporary sign-in password</h3>
+                            <p className="mt-2 text-xs text-cream/70">Share this securely with {createdUser.user.email}. It is not displayed again after leaving this page.</p>
+                        </div>
+                        <button type="button" onClick={() => setCreatedUser(null)} className="text-xs text-cream/60 hover:text-cream">Dismiss</button>
+                    </div>
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                        <code className="border border-emerald-500/30 bg-obsidian px-4 py-3 font-mono text-base tracking-wide text-emerald-200">{createdUser.temporaryPassword}</code>
+                        <button
+                            type="button"
+                            onClick={() => void navigator.clipboard?.writeText(createdUser.temporaryPassword)}
+                            className="border border-emerald-500/35 px-4 py-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/10"
+                        >
+                            Copy password
+                        </button>
+                    </div>
+                </section>
+            )}
+
+            <section className={`${box} mt-6 overflow-x-auto`} aria-labelledby="staff-accounts-title">
+                <div className="flex items-center justify-between gap-4 border-b border-gold-500/15 p-5">
+                    <div>
+                        <h3 id="staff-accounts-title" className="font-display text-2xl text-cream">Staff Accounts</h3>
+                        <p className="mt-1 text-xs text-cream/55">Accounts with administrative access. Customer-only accounts are not shown.</p>
+                    </div>
+                    <button type="button" onClick={() => void load()} className="text-xs font-semibold text-gold-300 hover:text-gold-100">Refresh</button>
+                </div>
+                <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="border-b border-gold-500/15 bg-obsidian/50 text-[10px] uppercase tracking-[0.18em] text-gold-400">
+                        <tr><th className="p-4">Staff Member</th><th className="p-4">Email</th><th className="p-4">Roles</th><th className="p-4">Created</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-gold-500/10">
+                        {staffUsers.map((user) => (
+                            <tr key={user.id}>
+                                <td className="p-4 text-cream">{user.fullName || 'Staff account'}</td>
+                                <td className="p-4 text-cream/70">{user.email}</td>
+                                <td className="p-4"><div className="flex flex-wrap gap-2">{user.roles.map((item) => <span key={item} className="border border-gold-500/30 px-2 py-1 text-[10px] font-bold tracking-wide text-gold-300">{item}</span>)}</div></td>
+                                <td className="p-4 text-xs text-cream/55">{shortDate(user.createdAt)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {!staffUsers.length && <p className="p-8 text-center text-sm text-cream/45">No staff accounts have been created yet.</p>}
+            </section>
         </AdminShell>
     );
 };
@@ -2401,9 +2699,10 @@ const UsersAdmin = () => {
 // MAIN ROUTER CONTAINER
 // ----------------------------------------------------
 const AdminPage = () => {
-    const { signedIn } = useAuth();
+    const { signedIn, isInitializing } = useAuth();
     const path = useLocation().pathname;
 
+    if (isInitializing) return null;
     if (!signedIn) return <Redirect to="/auth?next=/admin" />;
 
     if (path.startsWith('/admin/orders')) return <OrdersAdmin />;

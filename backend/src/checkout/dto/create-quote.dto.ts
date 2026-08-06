@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   IsEmail,
-  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -31,7 +30,4 @@ export class CreateQuoteDto {
   @IsEmail()
   contactEmail!: string;
 
-  @IsOptional()
-  @IsIn(['standard', 'express'])
-  deliveryMethod?: 'standard' | 'express';
 }

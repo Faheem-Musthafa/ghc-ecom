@@ -100,12 +100,15 @@ export class OrdersService {
               OR: [
                 { orderNumber: { contains: input.search, mode: 'insensitive' } },
                 { razorpayOrderId: { contains: input.search, mode: 'insensitive' } },
+                { addressSnapshot: { path: ['email'], string_contains: input.search.toLowerCase() } },
+                { addressSnapshot: { path: ['recipientName'], string_contains: input.search } },
               ],
             }
           : {}),
       },
       include: orderInclude,
       orderBy: { createdAt: 'desc' },
+      skip: input.offset,
       take: input.limit,
     });
   }

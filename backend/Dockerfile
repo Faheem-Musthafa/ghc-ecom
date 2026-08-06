@@ -1,5 +1,6 @@
 FROM node:24-alpine AS base
 WORKDIR /app
+RUN apk add --no-cache ffmpeg
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./

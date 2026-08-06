@@ -5,14 +5,16 @@ import {
   Ip,
   Param,
   ParseUUIDPipe,
+  Post,
   Put,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { AppRole, AuditLog, UserRole } from '@prisma/client';
 import { Request } from 'express';
-import { AdminService } from './admin.service';
+import { AdminService, CreatedStaffUser, StaffUser } from './admin.service';
 import { AssignRoleDto } from './dto/assign-role.dto';
+import { CreateStaffUserDto } from './dto/create-staff-user.dto';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -24,6 +26,24 @@ import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 @Roles(AppRole.ADMIN)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Post('users')
+  createStaffUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() input: CreateStaffUserDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<CreatedStaffUser> {
+    return this.adminService.createStaffUser(actor.id, input, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Get('users')
+  listStaffUsers(): Promise<StaffUser[]> {
+    return this.adminService.listStaffUsers();
+  }
 
   @Put('users/:userId/roles')
   assignRole(
