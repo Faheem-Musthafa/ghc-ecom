@@ -12,8 +12,8 @@ const StoreFooter = () => (
                     Vengara, Malappuram, Kerala 676304
                 </address>
                 <div className="mt-4 flex flex-col gap-1 text-sm">
-                    <a className="text-gold-300 hover:text-gold-100" href="tel:+918138003232">Call: 8138 003 232</a>
-                    <a className="text-gold-300 hover:text-gold-100" href="https://wa.me/916282000289" target="_blank" rel="noreferrer">WhatsApp: 6282 000 289</a>
+                    <a className="text-gold-300 hover:text-gold-100" href="tel:+918138003232">📞: 8138 003 232</a>
+                    <a className="text-gold-300 hover:text-gold-100" href="https://wa.me/916282000289" target="_blank" rel="noreferrer">💬:6282 000 289</a>
                 </div>
             </div>
 

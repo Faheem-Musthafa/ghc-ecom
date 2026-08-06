@@ -8,6 +8,10 @@ function normalizeOrigin(value: string): string {
   return new URL(value).origin;
 }
 
+function emptyStringToUndefined(value: unknown): unknown {
+  return value === '' ? undefined : value;
+}
+
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -55,13 +59,13 @@ const environmentSchema = z
     SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
     SMTP_USER: z.string().min(1),
     SMTP_PASSWORD: z.string().min(1),
-    NOTIFICATION_WEBHOOK_URL: z.string().url().optional(),
-    NOTIFICATION_WEBHOOK_TOKEN: z.string().min(1).optional(),
-    SHIPPING_PROVIDER_URL: z.string().url().optional(),
-    SHIPPING_PROVIDER_TOKEN: z.string().min(1).optional(),
+    NOTIFICATION_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    NOTIFICATION_WEBHOOK_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    SHIPPING_PROVIDER_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    SHIPPING_PROVIDER_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
     SHIPPING_PROVIDER_NAME: z.string().min(1).default('manual'),
-    ALERT_WEBHOOK_URL: z.string().url().optional(),
-    ALERT_WEBHOOK_TOKEN: z.string().min(1).optional(),
+    ALERT_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    ALERT_WEBHOOK_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
     RETURN_WINDOW_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   })
   .superRefine((environment, context) => {

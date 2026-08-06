@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
+import instaLogo from '/img/blackLogo.png';
 import {
     IconClose,
     IconHeart,
@@ -24,6 +25,7 @@ const Header = () => {
     const location = useLocation();
 
     useEffect(() => setMobileOpen(false), [location.pathname]);
+   // const instaLOgo="https://www.bbc.com/news/newsbeat-36257455"
 
     return (
         <>
@@ -44,8 +46,8 @@ const Header = () => {
                     </button>
 
                     <Link to="/" className="shrink-0 leading-none text-cream" aria-label="Glockery Home Centre, Vengara">
-                        <span className="block text-base font-bold tracking-[0.18em]">GLOCKERY</span>
-                        <span className="mt-1 block text-[8px] font-semibold uppercase tracking-[0.2em] text-cream/60">Home Centre · Vengara</span>
+                        {/* <span className="block text-base font-bold tracking-[0.18em]">GLOCKERY</span>
+                        <span className="mt-1 block text-[8px] font-semibold uppercase tracking-[0.2em] text-cream/60">Home Centre · Vengara</span> */}
                     </Link>
 
                     <nav className="ml-12 hidden items-center gap-8 lg:flex" aria-label="Primary navigation">
@@ -67,9 +69,20 @@ const Header = () => {
                         </Link>
                         <button onClick={openCart} className="relative ml-1 flex h-11 items-center gap-2 px-2 text-cream hover:text-gold-300" aria-label={`Bag with ${itemCount} items`}>
                             <IconShoppingBag size={19} />
-                            <span className="hidden text-sm sm:inline">Bag</span>
+                            <span className="hidden text-sm sm:inline">Cart</span>
                             {itemCount > 0 && <span className="count-badge">{itemCount > 99 ? '99+' : itemCount}</span>}
                         </button>
+                        <a className="relative ml-1 flex h-11 items-center gap-2 px-2 text-cream hover:text-gold-300" href="tel:+918138003232">📞</a>
+                        <a
+                            className="relative ml-1 flex h-11 items-center justify-center rounded-full px-2 text-cream hover:text-gold-300"
+                            href="https://www.instagram.com/glockery_home_centre/"
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label="Visit Instagram"
+                        >
+                            <img src={instaLogo} alt="Instagram" className="h-6 w-6 object-contain" />
+                        </a>
+                  
                     </div>
                 </div>
 
@@ -81,6 +94,8 @@ const Header = () => {
                             <Link to="/about" className="min-h-12 border-b border-line py-3 text-sm text-cream">About</Link>
                             <Link to="/wishlist" className="min-h-12 border-b border-line py-3 text-sm text-cream">Wishlist ({wishlistIds.length})</Link>
                             <Link to={signedIn ? '/account' : '/auth'} className="min-h-12 py-3 text-sm text-cream">{signedIn ? 'My account' : 'Sign in'}</Link>
+                            
+
                         </div>
                     </nav>
                 )}
