@@ -21,6 +21,8 @@ import {
     Session,
     Shipment,
     ShippingAddressInput,
+    CreatedStaffUser,
+    StaffUser,
     Warehouse,
 } from '../types';
 import { resolveApiBaseUrl } from './api-url';
@@ -30,6 +32,7 @@ const CART_KEY = 'ghc_cart';
 const REQUEST_TIMEOUT_MS = 15_000;
 let currentSession: Session | null = null;
 let csrfToken: string | null = null;
+let csrfRefreshInFlight: Promise<void> | null = null;
 
 export class ApiError extends Error {
     constructor(
@@ -73,7 +76,36 @@ export const saveCartIdentity = (identity: CartIdentity | null) => {
     else localStorage.removeItem(CART_KEY);
 };
 
-type RequestOptions = { auth?: boolean; cart?: boolean; retry?: boolean };
+type RequestOptions = {
+    auth?: boolean;
+    cart?: boolean;
+    retry?: boolean;
+    csrfRetry?: boolean;
+    timeoutMs?: number;
+};
+
+const unsafeMethod = (method: string) => !['GET', 'HEAD', 'OPTIONS'].includes(method);
+
+const isInvalidCsrfResponse = (payload: unknown) => {
+    if (!payload || typeof payload !== 'object' || !('message' in payload)) return false;
+    const message = (payload as { message?: unknown }).message;
+    const text = Array.isArray(message) ? message.join(' ') : String(message || '');
+    return text.toLowerCase().includes('invalid csrf token');
+};
+
+async function refreshCsrfToken(): Promise<void> {
+    if (csrfRefreshInFlight) return csrfRefreshInFlight;
+    const task = request<{ csrfToken: string }>('/auth/csrf', {}, { retry: false, csrfRetry: false })
+        .then((result) => {
+            csrfToken = result.csrfToken;
+        });
+    csrfRefreshInFlight = task;
+    try {
+        await task;
+    } finally {
+        if (csrfRefreshInFlight === task) csrfRefreshInFlight = null;
+    }
+}
 
 async function request<T>(path: string, init: RequestInit = {}, options: RequestOptions = {}): Promise<T> {
     const session = getSession();
@@ -82,13 +114,13 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     if (init.body && !(init.body instanceof FormData)) headers.set('content-type', 'application/json');
     if (options.cart && cart?.guestToken && !session) headers.set('x-cart-token', cart.guestToken);
     const method = (init.method ?? 'GET').toUpperCase();
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    if (unsafeMethod(method) && csrfToken) {
         headers.set('x-csrf-token', csrfToken);
     }
 
     let response: Response;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs ?? REQUEST_TIMEOUT_MS);
     const abort = () => controller.abort();
     init.signal?.addEventListener('abort', abort, { once: true });
     try {
@@ -128,6 +160,15 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     if (response.status === 204) return undefined as T;
     const json = response.headers.get('content-type')?.includes('application/json');
     const payload = json ? await response.json() : await response.text();
+    if (
+        response.status === 403 &&
+        unsafeMethod(method) &&
+        options.csrfRetry !== false &&
+        isInvalidCsrfResponse(payload)
+    ) {
+        await refreshCsrfToken();
+        return request<T>(path, init, { ...options, csrfRetry: false });
+    }
     if (!response.ok) {
         const rawMessage =
             typeof payload === 'object' && payload && 'message' in payload
@@ -150,8 +191,7 @@ const cartOptions = (): RequestOptions => ({
 export const api = {
     async initializeSession() {
         try {
-            const csrf = await request<{ csrfToken: string }>('/auth/csrf', {}, { retry: false });
-            csrfToken = csrf.csrfToken;
+            await refreshCsrfToken();
             const result = await request<AuthResult>('/auth/session', {}, { retry: false });
             const session = normalizeAuth(result);
             saveSession(session);
@@ -220,7 +260,6 @@ export const api = {
         couponCode?: string;
         addressId?: string;
         shippingAddress?: ShippingAddressInput;
-        deliveryMethod?: 'standard' | 'express';
     }) => request<CheckoutQuote>('/checkout/quote', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
     paymentIntent: (quoteId: string) => request<PaymentIntent>('/checkout/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
     verifyPayment: (input: { razorpayPaymentId: string; razorpayOrderId: string; razorpaySignature: string }) =>
@@ -252,8 +291,8 @@ export const api = {
     createReturn: (id: string, reason: string) =>
         request<unknown>(`/orders/${id}/returns`, { method: 'POST', body: JSON.stringify({ reason }) }, { auth: true }),
 
-    adminProducts: () => request<Product[]>('/admin/catalogue/products', {}, { auth: true }),
-    adminCategories: () => request<Category[]>('/admin/catalogue/categories', {}, { auth: true }),
+    adminProducts: (signal?: AbortSignal) => request<Product[]>('/admin/catalogue/products', { signal }, { auth: true }),
+    adminCategories: (signal?: AbortSignal) => request<Category[]>('/admin/catalogue/categories', { signal }, { auth: true }),
     createProduct: (input: unknown) => request<Product>('/admin/catalogue/products', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
     updateProduct: (id: string, input: unknown) =>
         request<Product>(`/admin/catalogue/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
@@ -283,13 +322,16 @@ export const api = {
         request<ProductImage>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteProductImage: (productId: string, imageId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }, { auth: true }),
-    addProductVideoUrl: (productId: string, input: { url: string; altText?: string; sortOrder?: number }) =>
-        request<ProductVideo>(`/admin/catalogue/products/${productId}/videos/url`, { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
     uploadProductVideo: (productId: string, form: FormData) =>
-        request<ProductVideo>(`/admin/catalogue/products/${productId}/videos/upload`, { method: 'POST', body: form }, { auth: true }),
+        request<ProductVideo>(
+            `/admin/catalogue/products/${productId}/videos/upload`,
+            { method: 'POST', body: form },
+            { auth: true, timeoutMs: 45_000 },
+        ),
     deleteProductVideo: (productId: string, videoId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/videos/${videoId}`, { method: 'DELETE' }, { auth: true }),
-    adminOrders: (params = '') => request<Order[]>(`/admin/orders${params ? `?${params}` : ''}`, {}, { auth: true }),
+    adminOrders: (params = '', signal?: AbortSignal) =>
+        request<Order[]>(`/admin/orders${params ? `?${params}` : ''}`, { signal }, { auth: true }),
     transitionOrder: (id: string, status: string) =>
         request<Order>(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }, { auth: true }),
     inventory: () => request<InventoryLevel[]>('/admin/inventory/levels', {}, { auth: true }),
@@ -304,6 +346,9 @@ export const api = {
     auditLogs: () => request<AuditLog[]>('/admin/audit-logs', {}, { auth: true }),
     assignRole: (userId: string, role: string) =>
         request<unknown>(`/admin/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ role }) }, { auth: true }),
+    staffUsers: () => request<StaffUser[]>('/admin/users', {}, { auth: true }),
+    createStaffUser: (input: { email: string; role: string; fullName?: string }) =>
+        request<CreatedStaffUser>('/admin/users', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
     createWarehouse: (input: { code: string; name: string; isActive?: boolean }) =>
         request<Warehouse>('/admin/inventory/warehouses', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
 };

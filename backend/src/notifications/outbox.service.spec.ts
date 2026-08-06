@@ -10,6 +10,17 @@ describe('OutboxService', () => {
     id: '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
     orderNumber: 'GHC-TEST-1',
     status: OrderStatus.CONFIRMED,
+    totalPaise: 11_198,
+    createdAt: new Date('2026-08-06T12:00:00.000Z'),
+    itemsSnapshot: [
+      {
+        productName: 'Noir Gold Tea Set',
+        variantName: 'Six cup set',
+        sku: 'GHC-TEA-006',
+        quantity: 1,
+        lineTotalPaise: 11_198,
+      },
+    ],
     addressSnapshot: {
       recipientName: 'Customer',
       email: 'customer@example.com',

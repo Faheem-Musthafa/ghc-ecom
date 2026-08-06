@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import CartDrawer from '../components/CartDrawer';
 import Header from '../components/Header';
 import { IconHeart, IconMinus, IconPlay, IconPlus } from '../components/Icons';
 import ProductVariantSelector from '../components/ProductVariantSelector';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import Toast from '../components/Toast';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import { api } from '../lib/api';
@@ -26,14 +24,18 @@ export const ProductDetailPage = () => {
     const [error, setError] = useState('');
     const [adding, setAdding] = useState(false);
     const [addError, setAddError] = useState('');
+    const [unplayableVideoIds, setUnplayableVideoIds] = useState<string[]>([]);
+    const [requestedVideoId, setRequestedVideoId] = useState<string | null>(null);
 
     useEffect(() => {
         setLoading(true);
         api.product(productId)
             .then((result) => {
                 setProduct(result);
-                setSelectedVariantId(result.variants[0]?.id || '');
+                setSelectedVariantId(result.variants.find((variant) => variant.availableStock > 0)?.id || result.variants[0]?.id || '');
                 setActiveImage(0);
+                setUnplayableVideoIds([]);
+                setRequestedVideoId(null);
             })
             .catch((caught) => setError(caught instanceof Error ? caught.message : 'Product not found.'))
             .finally(() => setLoading(false));
@@ -68,6 +70,7 @@ export const ProductDetailPage = () => {
     }
 
     const variant = product.variants.find((item) => item.id === selectedVariantId) || product.variants[0];
+    const outOfStock = !variant || variant.availableStock <= 0;
     const productImages = productImagesForVariant(product, variant);
     const imageMedia = productImages.map((image) => ({
         id: image.id,
@@ -98,10 +101,15 @@ export const ProductDetailPage = () => {
         })),
     ];
     const activeMedia = gallery[activeImage] || gallery[0];
+    const videoIsUnplayable = activeMedia.type === 'video' && unplayableVideoIds.includes(activeMedia.id);
+    const videoRequested = activeMedia.type === 'video' && requestedVideoId === activeMedia.id;
     const isWishlisted = isInWishlist(product.id);
 
     const add = async () => {
-        if (!variant) return;
+        if (!variant || outOfStock) {
+            setAddError('This product is currently out of stock.');
+            return;
+        }
         setAdding(true);
         setAddError('');
         try {
@@ -134,16 +142,39 @@ export const ProductDetailPage = () => {
                 <section className="grid gap-9 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
                     <div>
                         <div className="relative aspect-square overflow-hidden bg-panel">
-                            {activeMedia.type === 'video' ? (
+                            {activeMedia.type === 'video' && !videoIsUnplayable && videoRequested ? (
                                 <video
                                     controls
-                                    preload="metadata"
+                                    autoPlay
+                                    preload="none"
                                     className="h-full w-full bg-black object-contain"
                                     aria-label={activeMedia.altText || product.name}
+                                    onError={() => setUnplayableVideoIds((current) => current.includes(activeMedia.id) ? current : [...current, activeMedia.id])}
                                 >
-                                    <source src={activeMedia.url} />
+                                    <source src={activeMedia.url} type={activeMedia.url.toLowerCase().includes('.webm') ? 'video/webm' : 'video/mp4'} />
                                     Your browser does not support this product video.
                                 </video>
+                            ) : activeMedia.type === 'video' && !videoIsUnplayable ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setRequestedVideoId(activeMedia.id)}
+                                    className="grid h-full w-full place-items-center bg-carbon p-8 text-center transition hover:bg-carbon/80"
+                                    aria-label={`Play ${activeMedia.altText || product.name}`}
+                                >
+                                    <span>
+                                        <IconPlay size={36} className="mx-auto text-gold-400" />
+                                        <span className="mt-4 block font-semibold text-cream">Play product video</span>
+                                        <span className="mt-2 block text-sm text-cream/60">Loads only when you press play</span>
+                                    </span>
+                                </button>
+                            ) : activeMedia.type === 'video' ? (
+                                <div className="grid h-full place-items-center bg-carbon p-8 text-center">
+                                    <div>
+                                        <IconPlay size={32} className="mx-auto text-gold-400" />
+                                        <p className="mt-4 font-semibold text-cream">This video cannot be played in your browser.</p>
+                                        <p className="mt-2 text-sm text-cream/60">Please ask the store to upload an MP4 video.</p>
+                                    </div>
+                                </div>
                             ) : (
                                 <img
                                     src={activeMedia.url || fallbackImage}
@@ -205,6 +236,8 @@ export const ProductDetailPage = () => {
                             selectedVariantId={variant?.id || ''}
                             onSelect={(variantId) => {
                                 setSelectedVariantId(variantId);
+                                const nextVariant = product.variants.find((item) => item.id === variantId);
+                                setQuantity((current) => Math.min(current, Math.max(1, nextVariant?.availableStock || 1)));
                                 setActiveImage(0);
                                 setAddError('');
                             }}
@@ -212,7 +245,7 @@ export const ProductDetailPage = () => {
 
                         {variant && (
                             <p className="mt-3 text-xs text-cream/55" aria-live="polite">
-                                Selected: {variantOptionName(variant)} · SKU {variant.sku}
+                                {outOfStock ? 'Out of stock — choose another option.' : `Selected: ${variantOptionName(variant)} · SKU ${variant.sku}`}
                             </p>
                         )}
 
@@ -221,6 +254,7 @@ export const ProductDetailPage = () => {
                                 <button
                                     className="grid w-11 place-items-center text-cream/70 hover:text-cream"
                                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                    disabled={outOfStock}
                                     aria-label="Decrease quantity"
                                 >
                                     <IconMinus size={14} />
@@ -228,19 +262,20 @@ export const ProductDetailPage = () => {
                                 <span className="grid w-8 place-items-center text-sm tabular-nums">{quantity}</span>
                                 <button
                                     className="grid w-11 place-items-center text-cream/70 hover:text-cream"
-                                    onClick={() => setQuantity(Math.min(99, quantity + 1))}
+                                    onClick={() => setQuantity(Math.min(variant?.availableStock || 1, quantity + 1))}
+                                    disabled={outOfStock || quantity >= (variant?.availableStock || 0)}
                                     aria-label="Increase quantity"
                                 >
                                     <IconPlus size={14} />
                                 </button>
                             </div>
-                            <button disabled={!variant || adding} onClick={add} className="button-primary flex-1 disabled:opacity-40">
-                                {adding ? 'Adding…' : 'Add to bag'}
+                            <button disabled={outOfStock || adding} onClick={add} className="button-primary flex-1 disabled:cursor-not-allowed disabled:opacity-40">
+                                {adding ? 'Adding to cart…' : outOfStock ? 'Out of stock' : 'Add to cart'}
                             </button>
                         </div>
                         {addError && (
                             <p className="mt-3 text-xs text-red-200" role="alert">
-                                {addError} Please try again.
+                                {addError}
                             </p>
                         )}
 
@@ -258,8 +293,8 @@ export const ProductDetailPage = () => {
                                 </div>
                             )}
                             <div className="flex justify-between gap-6 py-4">
-                                <dt className="text-cream/60">Delivery</dt>
-                                <dd className="text-right text-cream">Free delivery across India</dd>
+                                <dt className="text-cream/60">Order care</dt>
+                                <dd className="text-right text-cream">Carefully packed before confirmation</dd>
                             </div>
                             <div className="flex justify-between gap-6 py-4">
                                 <dt className="text-cream/60">Questions?</dt>
@@ -275,8 +310,6 @@ export const ProductDetailPage = () => {
             </main>
 
             <StoreFooter />
-            <CartDrawer />
-            <Toast />
         </div>
     );
 };

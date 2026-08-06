@@ -38,4 +38,11 @@ export class ListAdminOrdersDto {
   @Min(1)
   @Max(100)
   limit = 25;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100_000)
+  offset = 0;
 }

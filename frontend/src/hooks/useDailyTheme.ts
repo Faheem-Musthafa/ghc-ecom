@@ -12,12 +12,12 @@
  */
 
 // Product photography for the daily editorial rotation.
-import heroCutleryGold from '../img/hero-cutlery-gold.png';
-import heroJugSet from '../img/hero-jug-set.png';
-import heroCupSaucer from '../img/hero-cup-saucer.png';
-import heroKettleDark from '../img/hero-kettle-dark.png';
-import heroCanisterDark from '../img/hero-canister-dark.png';
-import heroNutsTray from '../img/hero-nuts-tray.png';
+import heroCutleryGold from '../img/hero-cutlery-gold.webp';
+import heroJugSet from '../img/hero-jug-set.webp';
+import heroCupSaucer from '../img/hero-cup-saucer.webp';
+import heroKettleDark from '../img/hero-kettle-dark.webp';
+import heroCanisterDark from '../img/hero-canister-dark.webp';
+import heroNutsTray from '../img/hero-nuts-tray.webp';
 
 export interface DailyTheme {
     hero: string;

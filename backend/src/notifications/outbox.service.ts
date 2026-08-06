@@ -11,6 +11,7 @@ import { PrismaService } from '../database/prisma.service';
 import { RefundsService } from '../fulfilment/refunds.service';
 import { InvoiceService } from '../orders/invoice.service';
 import { NotificationMessage, NotificationSenderService } from './notification-sender.service';
+import { renderOrderEmail } from './order-email-template';
 
 const MAX_ATTEMPTS = 5;
 
@@ -161,9 +162,11 @@ export class OutboxService {
 
   private messages(order: Order, eventType: string): NotificationMessage[] {
     const contact = this.contact(order.addressSnapshot);
-    const state = eventType === 'order.confirmed' ? 'confirmed' : 'cancelled';
-    const subject = `Order ${order.orderNumber} ${state}`;
-    const text = `Hello ${contact.recipientName ?? 'customer'}, your order ${order.orderNumber} is ${state}.`;
+    const email = renderOrderEmail(
+      order,
+      eventType === 'order.confirmed' ? 'order.confirmed' : 'order.cancelled',
+      contact.recipientName,
+    );
     const candidates: Array<[NotificationChannel, string | undefined]> = [
       [NotificationChannel.EMAIL, contact.email],
       [NotificationChannel.SMS, contact.phone],
@@ -174,7 +177,13 @@ export class OutboxService {
         (item): item is [NotificationChannel, string] =>
           Boolean(item[1]) && this.sender.supports(item[0]),
       )
-      .map(([channel, recipient]) => ({ channel, recipient, subject, text }));
+      .map(([channel, recipient]) => ({
+        channel,
+        recipient,
+        subject: email.subject,
+        text: email.text,
+        ...(channel === NotificationChannel.EMAIL ? { html: email.html } : {}),
+      }));
   }
 
   private contact(value: Prisma.JsonValue): AddressContact {

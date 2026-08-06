@@ -10,10 +10,6 @@ import { PrismaService } from '../database/prisma.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
 import { ShippingAddressDto } from './dto/shipping-address.dto';
 
-const GST_BASIS_POINTS = 1800;
-const FREE_SHIPPING_THRESHOLD_PAISE = 100_000;
-const STANDARD_SHIPPING_PAISE = 9_900;
-const EXPRESS_SHIPPING_PAISE = 25_000;
 const QUOTE_TTL_MS = 15 * 60 * 1000;
 
 @Injectable()
@@ -43,13 +39,9 @@ export class CheckoutService {
       : null;
     const discountPaise = this.discount(coupon, subtotalPaise);
     const taxablePaise = subtotalPaise - discountPaise;
-    const shippingPaise =
-      input.deliveryMethod === 'express'
-        ? EXPRESS_SHIPPING_PAISE
-        : taxablePaise >= FREE_SHIPPING_THRESHOLD_PAISE
-          ? 0
-          : STANDARD_SHIPPING_PAISE;
-    const taxPaise = Math.floor((taxablePaise * GST_BASIS_POINTS) / 10_000);
+    // Published catalogue prices are the final customer prices. This store does not offer delivery.
+    const shippingPaise = 0;
+    const taxPaise = 0;
     const totalPaise = taxablePaise + shippingPaise + taxPaise;
     const expiresAt = new Date(Date.now() + QUOTE_TTL_MS);
     const itemsSnapshot = this.itemsSnapshot(cart);
@@ -140,9 +132,19 @@ export class CheckoutService {
     return cart.items.map((item) => ({
       variantId: item.variantId,
       sku: item.variant.sku,
+      barcode: item.variant.barcode,
       productName: item.variant.product.name,
+      productSlug: item.variant.product.slug,
+      categoryName: item.variant.product.category?.name ?? null,
+      productDescription:
+        item.variant.product.shortDescription ?? item.variant.product.description ?? null,
+      productMaterial: item.variant.product.material ?? null,
+      productDimensions: item.variant.product.dimensions ?? null,
       variantName: item.variant.name,
-      imageUrl: item.variant.product.images[0]?.thumbnailUrl ?? null,
+      imageUrl:
+        item.variant.images?.[0]?.thumbnailUrl ??
+        item.variant.product.images?.[0]?.thumbnailUrl ??
+        null,
       quantity: item.quantity,
       unitPricePaise: item.variant.pricePaise,
       lineTotalPaise: item.variant.pricePaise * item.quantity,

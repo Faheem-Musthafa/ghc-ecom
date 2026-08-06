@@ -1,6 +1,6 @@
-import React, { FormEvent, useEffect, useState } from 'react';
+import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, Redirect, useHistory } from 'react-router-dom';
-import { IconAlert, IconArrowRight, IconCheckCircle, IconRefresh, IconShieldCheck, IconTruck } from '../components/Icons';
+import { IconAlert, IconArrowRight, IconCheckCircle, IconRefresh, IconShieldCheck } from '../components/Icons';
 import SEOHead from '../components/SEOHead';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
@@ -60,24 +60,38 @@ const CheckoutPage = () => {
     const { signedIn, session } = useAuth();
     const [addresses, setAddresses] = useState<Address[]>([]);
     const [selectedAddress, setSelectedAddress] = useState('');
-    const [deliveryMethod, setDeliveryMethod] = useState<'standard' | 'express'>('standard');
     const [quote, setQuote] = useState<CheckoutQuote | null>(null);
     const [loading, setLoading] = useState(false);
     const [paymentStage, setPaymentStage] = useState<PaymentStage>('idle');
     const [pendingIntent, setPendingIntent] = useState<PaymentIntent | null>(null);
     const [paymentFailed, setPaymentFailed] = useState(false);
     const [error, setError] = useState('');
+    const isMounted = useRef(false);
     const paymentBlocking = paymentStage !== 'idle' && paymentStage !== 'gateway' && !paymentFailed;
     const paymentDialogRef = useDialog<HTMLDivElement>(paymentBlocking, () => undefined, { focusInitial: false });
 
     useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    useEffect(() => {
         if (!signedIn) return;
+        let active = true;
         api.addresses()
             .then((items) => {
+                if (!active) return;
                 setAddresses(items);
                 setSelectedAddress(items.find((item) => item.isDefault)?.id || items[0]?.id || '');
             })
-            .catch(() => setAddresses([]));
+            .catch(() => {
+                if (active) setAddresses([]);
+            });
+        return () => {
+            active = false;
+        };
     }, [signedIn]);
 
     if (!cart?.items.length) return <Redirect to="/cart" />;
@@ -114,19 +128,22 @@ const CheckoutPage = () => {
                 const address = await api.createAddress({ ...shippingAddress, label: 'Home', isDefault: true });
                 addressId = address.id;
             }
+            if (!isMounted.current) return;
 
             const createdQuote = await api.quote({
                 cartId: cart.id,
                 contactEmail,
                 couponCode: String(form.get('couponCode') || '') || undefined,
-                deliveryMethod,
                 ...(signedIn ? { addressId } : { shippingAddress }),
             });
 
+            if (!isMounted.current) return;
             setQuote(createdQuote);
             const intent = await api.paymentIntent(createdQuote.id);
+            if (!isMounted.current) return;
             setPendingIntent(intent);
             await loadRazorpay();
+            if (!isMounted.current) return;
             const checkoutAddress = intent.checkout.shippingAddress;
 
             await new Promise<void>((resolve, reject) => {
@@ -151,7 +168,7 @@ const CheckoutPage = () => {
                     },
                     retry: { enabled: true, max_count: 2 },
                     handler: async (response: RazorpaySuccess) => {
-                        setPaymentStage('verifying');
+                        if (isMounted.current) setPaymentStage('verifying');
                         try {
                             let verified: Order;
                             try {
@@ -169,6 +186,10 @@ const CheckoutPage = () => {
                             if (verified.status === 'PAYMENT_FAILED' || verified.status === 'CANCELLED') {
                                 throw new Error('Razorpay did not confirm this payment. Your cart has not been charged.');
                             }
+                            if (!isMounted.current) {
+                                settle(resolve);
+                                return;
+                            }
                             resetCart();
                             history.push(`/order-confirmation/${verified.id}`);
                             settle(resolve);
@@ -179,24 +200,26 @@ const CheckoutPage = () => {
                     modal: {
                         confirm_close: true,
                         ondismiss: () => {
-                            setPaymentFailed(true);
+                            if (isMounted.current) setPaymentFailed(true);
                             settle(() => reject(new Error('Payment window closed before completion. No order was placed.')));
                         },
                     },
                 });
                 checkout.on('payment.failed', (response) => {
-                    setPaymentFailed(true);
+                    if (isMounted.current) setPaymentFailed(true);
                     const message = response.error?.description || response.error?.reason || 'Razorpay could not complete the payment.';
                     settle(() => reject(new Error(message)));
                 });
-                setPaymentStage('gateway');
+                if (isMounted.current) setPaymentStage('gateway');
                 checkout.open();
             });
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Checkout could not be completed.');
+            if (isMounted.current) setError(caught instanceof Error ? caught.message : 'Checkout could not be completed.');
         } finally {
-            setLoading(false);
-            setPaymentStage('idle');
+            if (isMounted.current) {
+                setLoading(false);
+                setPaymentStage('idle');
+            }
         }
     };
 
@@ -206,6 +229,7 @@ const CheckoutPage = () => {
         setError('');
         try {
             const order = await api.paymentStatus(pendingIntent.razorpayOrderId);
+            if (!isMounted.current) return;
             if (order.status === 'PAYMENT_PENDING') {
                 setError('Payment confirmation is still pending. Please wait a moment and check again.');
                 return;
@@ -218,9 +242,9 @@ const CheckoutPage = () => {
             resetCart();
             history.push(`/order-confirmation/${order.id}`);
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Payment status could not be checked.');
+            if (isMounted.current) setError(caught instanceof Error ? caught.message : 'Payment status could not be checked.');
         } finally {
-            setPaymentStage('idle');
+            if (isMounted.current) setPaymentStage('idle');
         }
     };
 
@@ -238,7 +262,7 @@ const CheckoutPage = () => {
             <nav className="border-b border-line" aria-label="Checkout progress">
                 <ol className="mx-auto flex max-w-[1240px] items-center gap-3 px-6 py-3 text-[10px] font-bold uppercase tracking-[0.14em] sm:px-10 lg:px-12">
                     <li className="text-cream/35">Bag</li><li className="text-cream/25" aria-hidden="true">/</li>
-                    <li className="text-gold-300" aria-current="step">Delivery</li><li className="text-cream/25" aria-hidden="true">/</li>
+                    <li className="text-gold-300" aria-current="step">Order details</li><li className="text-cream/25" aria-hidden="true">/</li>
                     <li className="text-cream/35">Payment</li>
                 </ol>
             </nav>
@@ -260,7 +284,7 @@ const CheckoutPage = () => {
 
             <main id="main-content" className="mx-auto grid max-w-[1240px] gap-12 px-6 py-12 sm:px-10 lg:grid-cols-[1fr_420px] lg:px-12 lg:py-16">
                 <form onSubmit={submit}>
-                    <p className="eyebrow">Delivery &amp; payment</p>
+                    <p className="eyebrow">Order details &amp; payment</p>
                     <h1 className="mt-2 font-display text-5xl font-semibold">Complete your order</h1>
 
                     {paymentFailed && (
@@ -268,7 +292,7 @@ const CheckoutPage = () => {
                             <IconAlert size={24} className="text-amber-400 shrink-0" />
                             <div>
                                 <h4 className="font-bold text-amber-300 text-sm">Payment not completed</h4>
-                                <p className="mt-1 text-xs text-cream/70">Your cart and delivery details are still here. Retry when you are ready.</p>
+                                <p className="mt-1 text-xs text-cream/70">Your cart and contact details are still here. Retry when you are ready.</p>
                             </div>
                         </div>
                     )}
@@ -276,7 +300,7 @@ const CheckoutPage = () => {
                     {/* Address Selection / Form */}
                     {signedIn && addresses.length > 0 && (
                         <section className="mt-8">
-                            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gold-400">Saved Delivery Address</p>
+                            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gold-400">Saved Contact Address</p>
                             <select value={selectedAddress} onChange={(e) => setSelectedAddress(e.target.value)} className={input}>
                                 {addresses.map((address) => (
                                     <option key={address.id} value={address.id}>
@@ -324,44 +348,6 @@ const CheckoutPage = () => {
                         </section>
                     )}
 
-                    {/* Delivery Method Selection */}
-                    <fieldset className="mt-8 border-t border-gold-500/20 pt-6">
-                        <legend className="mb-3 text-xs font-bold uppercase tracking-wider text-gold-400">Select Delivery Method</legend>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <label
-                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-colors focus-within:ring-2 focus-within:ring-gold-400/70 ${
-                                    deliveryMethod === 'standard' ? 'border-gold-400 bg-gold-400/10' : 'border-gold-500/20 bg-carbon'
-                                }`}
-                            >
-                                <input type="radio" name="deliveryMethod" value="standard" checked={deliveryMethod === 'standard'} onChange={() => setDeliveryMethod('standard')} className="sr-only" />
-                                <div className="flex items-center gap-3">
-                                    <IconTruck size={20} className="text-gold-400" />
-                                    <div>
-                                        <p className="text-xs font-bold text-cream">Standard Delivery</p>
-                                        <p className="text-[10px] text-cream/50">3 – 5 Business Days</p>
-                                    </div>
-                                </div>
-                                <span className="text-xs font-bold text-emerald-400">FREE</span>
-                            </label>
-
-                            <label
-                                className={`flex items-center justify-between border p-4 cursor-pointer rounded-sm transition-colors focus-within:ring-2 focus-within:ring-gold-400/70 ${
-                                    deliveryMethod === 'express' ? 'border-gold-400 bg-gold-400/10' : 'border-gold-500/20 bg-carbon'
-                                }`}
-                            >
-                                <input type="radio" name="deliveryMethod" value="express" checked={deliveryMethod === 'express'} onChange={() => setDeliveryMethod('express')} className="sr-only" />
-                                <div className="flex items-center gap-3">
-                                    <IconTruck size={20} className="text-gold-400" />
-                                    <div>
-                                        <p className="text-xs font-bold text-cream">Express Courier</p>
-                                        <p className="text-[10px] text-cream/50">1 – 2 Business Days</p>
-                                    </div>
-                                </div>
-                                <span className="text-xs font-bold text-gold-300">₹250</span>
-                            </label>
-                        </div>
-                    </fieldset>
-
                     {/* Coupon Code Input */}
                     <section className="mt-6">
                         <label className="block">
@@ -406,12 +392,12 @@ const CheckoutPage = () => {
                     </div>
                     <div className="mt-6 border-t border-gold-500/20 pt-4 space-y-2 text-xs text-cream/60">
                         <div className="flex justify-between">
-                            <span>Subtotal</span>
+                            <span>Items subtotal</span>
                             <span>{rupees(cart?.subtotalPaise || 0)}</span>
                         </div>
                         <div className="flex justify-between">
-                            <span>Shipping</span>
-                            <span>{quote ? rupees(quote.shippingPaise) : deliveryMethod === 'express' ? '₹250' : 'Calculated at checkout'}</span>
+                            <span>Taxes</span>
+                            <span>{quote?.taxPaise ? rupees(quote.taxPaise) : 'Included in prices'}</span>
                         </div>
                         {quote && quote.discountPaise > 0 && (
                             <div className="flex justify-between text-emerald-400 font-medium">
@@ -421,7 +407,7 @@ const CheckoutPage = () => {
                         )}
                         <div className="flex justify-between font-display text-xl text-gold-300 pt-2 border-t border-gold-500/15 font-normal">
                             <span>Total Payable</span>
-                            <span>{rupees(quote?.totalPaise || cart?.subtotalPaise || 0)}</span>
+                            <span>{rupees(quote?.totalPaise ?? cart?.subtotalPaise ?? 0)}</span>
                         </div>
                     </div>
                 </aside>

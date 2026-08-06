@@ -67,6 +67,30 @@ export class SupabaseService {
     }
   }
 
+  async createAdminUser(input: RegisterInput): Promise<User> {
+    const { data, error } = await this.adminClient.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: input.fullName,
+      },
+    });
+    if (error || !data.user) throw error || new Error('Supabase did not create the user');
+    return data.user;
+  }
+
+  async deleteAdminUser(userId: string): Promise<void> {
+    const { error } = await this.adminClient.auth.admin.deleteUser(userId);
+    if (error) throw error;
+  }
+
+  async listAdminUsers(): Promise<User[]> {
+    const { data, error } = await this.adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (error) throw error;
+    return data.users;
+  }
+
   async resetPassword(accessToken: string, refreshToken: string, password: string): Promise<void> {
     const recoveryClient = createClient(this.url, this.anonKey, {
       auth: {

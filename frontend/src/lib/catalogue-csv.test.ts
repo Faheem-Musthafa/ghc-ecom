@@ -33,6 +33,7 @@ const product: Product = {
             compareAtPricePaise: 149_900,
             attributes: { color: 'Gold', colorHex: '#C5A059' },
             isActive: true,
+            availableStock: 4,
         },
     ],
     images: [],
@@ -53,8 +54,20 @@ describe('catalogue CSV', () => {
         });
     });
 
-    it('provides a header-only downloadable template', () => {
-        expect(parseCatalogueCsv(catalogueCsvTemplate())).toEqual([]);
+    it('provides a downloadable template with product examples', () => {
+        const rows = parseCatalogueCsv(catalogueCsvTemplate());
+
+        expect(rows).toHaveLength(3);
+        expect(rows[0]).toMatchObject({
+            product_name: 'Noir Gold Tea Set',
+            product_slug: 'noir-gold-tea-set',
+            sku: 'EXAMPLE-TEA-GOLD',
+        });
+        expect(rows[2]).toMatchObject({
+            product_name: 'Handcrafted Serving Bowl',
+            category_slug: 'serveware',
+        });
+        expect(validateCatalogueCsvRows(rows, new Set(['tea-sets', 'serveware']))).toEqual([]);
     });
 
     it('validates categories, duplicate SKUs, prices, and booleans before import', () => {

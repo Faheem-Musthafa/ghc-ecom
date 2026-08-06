@@ -3,7 +3,7 @@ import { useCart } from '../contexts/CartContext';
 import { useDialog } from '../hooks/useDialog';
 import { useWishlist } from '../contexts/WishlistContext';
 import { Product } from '../types';
-import { IconCheck, IconHeart, IconMinus, IconPlus, IconShieldCheck, IconTruck, IconX } from './Icons';
+import { IconCheck, IconHeart, IconMinus, IconPlus, IconShieldCheck, IconX } from './Icons';
 import ProductVariantSelector from './ProductVariantSelector';
 import { primaryImageForVariant } from '../lib/product-options';
 
@@ -26,7 +26,7 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
 
     useEffect(() => {
         if (!product) return;
-        setSelectedVariantId(product.variants[0]?.id || '');
+        setSelectedVariantId(product.variants.find((variant) => variant.availableStock > 0)?.id || product.variants[0]?.id || '');
         setQuantity(1);
         setAdded(false);
         setError('');
@@ -35,11 +35,15 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
     if (!product) return null;
 
     const variant = product.variants.find((item) => item.id === selectedVariantId) || product.variants[0];
+    const outOfStock = !variant || variant.availableStock <= 0;
     const image = primaryImageForVariant(product, variant)?.largeUrl;
     const isWishlisted = isInWishlist(product.id);
 
     const handleAddToCart = async () => {
-        if (!variant) return;
+        if (!variant || outOfStock) {
+            setError('This product is currently out of stock.');
+            return;
+        }
         setAdding(true);
         setError('');
         try {
@@ -99,6 +103,8 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
                             selectedVariantId={variant?.id || ''}
                             onSelect={(variantId) => {
                                 setSelectedVariantId(variantId);
+                                const nextVariant = product.variants.find((item) => item.id === variantId);
+                                setQuantity((current) => Math.min(current, Math.max(1, nextVariant?.availableStock || 1)));
                                 setAdded(false);
                                 setError('');
                             }}
@@ -124,6 +130,7 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
                                 <span className="w-10 h-10 grid place-items-center text-sm font-bold text-cream">{quantity}</span>
                                 <button
                                     onClick={() => setQuantity(quantity + 1)}
+                                    disabled={outOfStock || quantity >= (variant?.availableStock || 0)}
                                     aria-label="Increase quantity"
                                     className="w-10 h-10 grid place-items-center text-cream/60 hover:text-cream"
                                 >
@@ -131,31 +138,31 @@ const QuickViewModal: React.FC<QuickViewModalProps> = ({ product, onClose }) => 
                                 </button>
                             </div>
                             <button
-                                disabled={!variant || adding}
+                                disabled={outOfStock || adding}
                                 onClick={handleAddToCart}
                                 className="flex-1 h-10 bg-gold-400 text-obsidian text-xs font-bold uppercase tracking-widest hover:bg-gold-300 disabled:opacity-50 transition flex items-center justify-center gap-2 rounded-sm"
                             >
                                 {adding ? (
-                                    'Adding…'
+                                    'Adding to cart…'
                                 ) : added ? (
                                     <>
-                                        <IconCheck size={16} /> Added to Bag
+                                        <IconCheck size={16} /> Added to cart
                                     </>
                                 ) : (
-                                    'Add to Bag'
+                                    outOfStock ? 'Out of Stock' : 'Add to cart'
                                 )}
                             </button>
                         </div>
 
                         {error && (
                             <p className="text-xs text-red-200" role="alert">
-                                {error} Please try again.
+                                {error}
                             </p>
                         )}
 
                         <div className="grid grid-cols-2 gap-2 text-[10px] text-cream/50 pt-2">
                             <span className="flex items-center gap-1.5">
-                                <IconTruck size={14} className="text-gold-400" /> Free delivery across India
+                                <IconCheck size={14} className="text-gold-400" /> Carefully packed order
                             </span>
                             <span className="flex items-center gap-1.5">
                                 <IconShieldCheck size={14} className="text-gold-400" /> 100% Authentic Guarantee

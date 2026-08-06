@@ -2,7 +2,9 @@ import React, { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom';
 import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
+import CartDrawer from './components/CartDrawer';
 import OfflineBanner from './components/OfflineBanner';
+import Toast from './components/Toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -10,6 +12,7 @@ import { WishlistProvider } from './contexts/WishlistContext';
 import './index.css';
 
 import ScrollToTop from './components/ScrollToTop';
+import FloatingContactButtons from './components/FloatingContactButtons';
 
 const HomePage = lazy(() => import('./pages'));
 const AccountPage = lazy(() => import('./pages/account'));
@@ -25,7 +28,6 @@ const OrderLookupPage = lazy(() => import('./pages/order-lookup'));
 const ProductDetailPage = lazy(() => import('./pages/product'));
 const ResetPasswordPage = lazy(() => import('./pages/reset-password'));
 const SearchPage = lazy(() => import('./pages/search'));
-const ShipmentTrackingPage = lazy(() => import('./pages/tracking'));
 const WishlistPage = lazy(() => import('./pages/wishlist'));
 const InfoPage = lazy(() => import('./pages/info'));
 
@@ -45,6 +47,7 @@ ReactDOM.render(
               <OfflineBanner />
               <Router>
                 <ScrollToTop />
+                <FloatingContactButtons />
                 <Suspense fallback={<RouteFallback />}>
                   <Switch>
                     <Route exact path="/" component={HomePage} />
@@ -62,7 +65,6 @@ ReactDOM.render(
                     <Route exact path="/terms" render={() => <InfoPage kind="terms" />} />
                     <Route exact path="/order-confirmation/:orderId" component={OrderConfirmationPage} />
                     <Route exact path="/order-lookup" component={OrderLookupPage} />
-                    <Route exact path="/tracking/:trackingNumber?" component={ShipmentTrackingPage} />
                     <Route path="/account/orders/:orderId" component={OrderDetailPage} />
                     <Route path="/account" component={AccountPage} />
                     <Route path="/admin" component={AdminPage} />
@@ -71,6 +73,8 @@ ReactDOM.render(
                     <Route component={ErrorPage} />
                   </Switch>
                 </Suspense>
+                <CartDrawer />
+                <Toast />
               </Router>
             </ToastProvider>
           </WishlistProvider>

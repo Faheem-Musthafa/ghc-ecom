@@ -97,6 +97,7 @@ describe('OrdersService', () => {
       from: '2026-07-01T00:00:00.000Z',
       to: '2026-07-31T23:59:59.000Z',
       limit: 20,
+      offset: 40,
     });
 
     expect(prisma.order.findMany).toHaveBeenCalledWith(
@@ -110,6 +111,7 @@ describe('OrdersService', () => {
           },
           OR: expect.any(Array),
         }),
+        skip: 40,
         take: 20,
       }),
     );

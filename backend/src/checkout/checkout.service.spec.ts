@@ -3,7 +3,7 @@ import { CartStatus, DiscountType } from '@prisma/client';
 import { CheckoutService } from './checkout.service';
 
 describe('CheckoutService', () => {
-  it('calculates subtotal, shipping, GST, and total from server-side snapshots', async () => {
+  it('uses the published price for standard delivery without hidden charges', async () => {
     const cart = {
       id: 'cart-id',
       userId: null,
@@ -24,7 +24,7 @@ describe('CheckoutService', () => {
             id: 'variant-id',
             sku: 'SKU-1',
             name: 'Default',
-            pricePaise: 100_000,
+            pricePaise: 1_100,
             attributes: {},
             product: {
               name: 'Stored Product',
@@ -73,17 +73,17 @@ describe('CheckoutService', () => {
     );
 
     expect(quoteData).toMatchObject({
-      subtotalPaise: 200_000,
+      subtotalPaise: 2_200,
       discountPaise: 0,
       shippingPaise: 0,
-      taxPaise: 36_000,
-      totalPaise: 236_000,
+      taxPaise: 0,
+      totalPaise: 2_200,
     });
     expect(quoteData?.itemsSnapshot).toEqual([
       expect.objectContaining({
-        unitPricePaise: 100_000,
+        unitPricePaise: 1_100,
         quantity: 2,
-        lineTotalPaise: 200_000,
+        lineTotalPaise: 2_200,
       }),
     ]);
   });

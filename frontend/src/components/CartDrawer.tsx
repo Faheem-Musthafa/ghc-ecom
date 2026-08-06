@@ -24,7 +24,12 @@ const CartDrawer = () => {
                 {error && <p className="border-b border-red-500/30 bg-red-950/40 px-6 py-3 text-xs text-red-200" role="alert">{error}</p>}
 
                 <div className="flex-1 overflow-y-auto px-6 py-2 sm:px-8">
-                    {items.length === 0 ? (
+                    {loading && !cart ? (
+                        <div className="grid h-full place-content-center text-center" role="status">
+                            <IconPackage size={44} className="mx-auto animate-pulse text-gold-400/80" />
+                            <p className="mt-5 text-sm text-cream/60">Preparing your bag…</p>
+                        </div>
+                    ) : items.length === 0 ? (
                         <div className="grid h-full place-content-center text-center">
                             <IconPackage size={44} className="mx-auto text-gold-400/80" />
                             <h3 className="mt-6 font-display text-3xl font-semibold text-cream">Your bag is empty.</h3>
@@ -57,7 +62,7 @@ const CartDrawer = () => {
                 {items.length > 0 && (
                     <footer className="border-t border-gold-500/20 bg-obsidian px-6 py-6 sm:px-8">
                         <div className="mb-5 flex items-end justify-between">
-                            <span className="text-xs text-cream/55">Subtotal<small className="mt-0.5 block text-[10px] text-cream/40">Taxes &amp; shipping calculated at checkout</small></span>
+                            <span className="text-xs text-cream/55">Subtotal<small className="mt-0.5 block text-[10px] text-cream/40">Taxes are included in displayed prices</small></span>
                             <strong className="font-display text-3xl font-semibold text-cream">{rupees(cart?.subtotalPaise || 0)}</strong>
                         </div>
                         <Link to="/checkout" onClick={closeCart} className="button-primary h-14 w-full gap-3">

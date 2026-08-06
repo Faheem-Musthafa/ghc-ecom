@@ -8,6 +8,7 @@ export interface NotificationMessage {
   recipient: string;
   subject: string;
   text: string;
+  html?: string;
 }
 
 @Injectable()
@@ -48,6 +49,7 @@ export class NotificationSenderService {
         to: message.recipient,
         subject: message.subject,
         text: message.text,
+        html: message.html,
       });
       return result.messageId;
     }

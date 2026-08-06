@@ -17,7 +17,12 @@ describe('AdminService', () => {
     const audit = {
       record: jest.fn().mockResolvedValue({ id: 'audit-id' }),
     };
-    const service = new AdminService(prisma as never, audit as never);
+    const supabase = {
+      createAdminUser: jest.fn(),
+      deleteAdminUser: jest.fn(),
+      listAdminUsers: jest.fn(),
+    };
+    const service = new AdminService(prisma as never, audit as never, supabase as never);
 
     await expect(
       service.assignRole('admin-id', 'target-id', AppRole.SUPPORT_AGENT, {
@@ -35,5 +40,42 @@ describe('AdminService', () => {
       ipAddress: '127.0.0.1',
       userAgent: 'test-agent',
     });
+  });
+
+  it('creates a confirmed staff account with a generated password and selected role', async () => {
+    const user = {
+      id: 'staff-id',
+      email: 'staff@example.com',
+      user_metadata: { full_name: 'Store Staff' },
+      created_at: '2026-08-06T00:00:00.000Z',
+    };
+    const prisma = {
+      userRole: {
+        upsert: jest.fn().mockResolvedValue({ userId: user.id, role: AppRole.WAREHOUSE_MANAGER }),
+      },
+    };
+    const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
+    const supabase = {
+      createAdminUser: jest.fn().mockResolvedValue(user),
+      deleteAdminUser: jest.fn(),
+      listAdminUsers: jest.fn(),
+    };
+    const service = new AdminService(prisma as never, audit as never, supabase as never);
+
+    const result = await service.createStaffUser(
+      'admin-id',
+      { email: 'STAFF@EXAMPLE.COM', fullName: 'Store Staff', role: AppRole.WAREHOUSE_MANAGER },
+      { ipAddress: '127.0.0.1', userAgent: 'test-agent' },
+    );
+
+    expect(supabase.createAdminUser).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'staff@example.com',
+      fullName: 'Store Staff',
+      password: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      user: expect.objectContaining({ email: 'staff@example.com', roles: [AppRole.WAREHOUSE_MANAGER] }),
+      temporaryPassword: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
+    }));
   });
 });

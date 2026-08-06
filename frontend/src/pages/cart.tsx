@@ -101,12 +101,12 @@ const CartPage = () => {
 
                             <div className="mt-6 space-y-3 border-b border-gold-500/15 pb-5 text-xs">
                                 <div className="flex justify-between">
-                                    <span className="text-cream/60">Subtotal</span>
+                                    <span className="text-cream/60">Items subtotal</span>
                                     <strong className="font-semibold text-cream tabular-nums">{rupees(cart?.subtotalPaise || 0)}</strong>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="text-cream/60">Shipping</span>
-                                    <span className="text-cream/60">Calculated at checkout</span>
+                                    <span className="text-cream/60">Taxes</span>
+                                    <span className="text-cream/60">Included in prices</span>
                                 </div>
                             </div>
 

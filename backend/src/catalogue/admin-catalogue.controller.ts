@@ -29,7 +29,6 @@ import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
 import { CatalogueProduct, CatalogueService } from './catalogue.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
-import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { ImportGoogleDriveImageDto } from './dto/import-google-drive-image.dto';
@@ -62,7 +61,7 @@ const videoInterceptor = FileInterceptor('file', {
 });
 
 const videoPipe = new ParseFilePipeBuilder()
-  .addFileTypeValidator({ fileType: /video\/(mp4|webm|quicktime)$/ })
+  .addFileTypeValidator({ fileType: /video\/(mp4|webm|quicktime|x-msvideo|mpeg|ogg)$/ })
   .addMaxSizeValidator({ maxSize: 25 * 1024 * 1024 })
   .build({ errorHttpStatusCode: HttpStatus.BAD_REQUEST });
 
@@ -209,20 +208,6 @@ export class AdminCatalogueController {
     @Req() request: Request,
   ): Promise<void> {
     return this.catalogue.deleteVariant(actor.id, variantId, {
-      ipAddress,
-      userAgent: request.header('user-agent'),
-    });
-  }
-
-  @Post('products/:productId/videos/url')
-  addVideoUrl(
-    @CurrentUser() actor: AuthenticatedUser,
-    @Param('productId', ParseUUIDPipe) productId: string,
-    @Body() input: CreateProductVideoDto,
-    @Ip() ipAddress: string,
-    @Req() request: Request,
-  ): Promise<ProductVideo> {
-    return this.catalogue.addProductVideoUrl(actor.id, productId, input, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

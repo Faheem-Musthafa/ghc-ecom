@@ -21,7 +21,6 @@ import { PrismaService } from '../database/prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
-import { CreateProductVideoDto } from './dto/create-product-video.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { ListProductsDto } from './dto/list-products.dto';
@@ -31,17 +30,34 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ImageDerivative, ImageProcessorService } from './image-processor.service';
+import { VideoProcessorService } from './video-processor.service';
 
 const productInclude = {
   category: true,
-  variants: { orderBy: { createdAt: 'asc' as const } },
+  variants: {
+    orderBy: { createdAt: 'asc' as const },
+    include: {
+      inventoryLevels: {
+        where: { warehouse: { isActive: true } },
+        select: { onHand: true, reserved: true },
+      },
+    },
+  },
   images: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
   videos: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
 } satisfies Prisma.ProductInclude;
 
-export type CatalogueProduct = Prisma.ProductGetPayload<{
+type ProductWithInventory = Prisma.ProductGetPayload<{
   include: typeof productInclude;
 }>;
+
+type CatalogueVariant = Omit<ProductWithInventory['variants'][number], 'inventoryLevels'> & {
+  availableStock: number;
+};
+
+export type CatalogueProduct = Omit<ProductWithInventory, 'variants'> & {
+  variants: CatalogueVariant[];
+};
 
 export interface PaginatedProducts {
   items: CatalogueProduct[];
@@ -73,6 +89,7 @@ export class CatalogueService {
     private readonly audit: AuditService,
     private readonly supabase: SupabaseService,
     private readonly imageProcessor: ImageProcessorService,
+    private readonly videoProcessor: VideoProcessorService = new VideoProcessorService(),
   ) {}
 
   listPublicCategories(): Promise<Category[]> {
@@ -106,8 +123,8 @@ export class CatalogueService {
         include: {
           ...productInclude,
           variants: {
+            ...productInclude.variants,
             where: { isActive: true },
-            orderBy: { createdAt: 'asc' },
           },
         },
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -116,7 +133,12 @@ export class CatalogueService {
       }),
       this.prisma.product.count({ where }),
     ]);
-    return { items, total, page: query.page, limit: query.limit };
+    return {
+      items: items.map((product) => this.withAvailableStock(product)),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
   }
 
   async getPublicProduct(slug: string): Promise<CatalogueProduct> {
@@ -130,15 +152,15 @@ export class CatalogueService {
       include: {
         ...productInclude,
         variants: {
+          ...productInclude.variants,
           where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
         },
       },
     });
     if (!product) {
       throw new NotFoundException('Product not found');
     }
-    return product;
+    return this.withAvailableStock(product);
   }
 
   listAdminCategories(): Promise<Category[]> {
@@ -147,11 +169,12 @@ export class CatalogueService {
     });
   }
 
-  listAdminProducts(): Promise<CatalogueProduct[]> {
-    return this.prisma.product.findMany({
+  async listAdminProducts(): Promise<CatalogueProduct[]> {
+    const products = await this.prisma.product.findMany({
       include: productInclude,
       orderBy: { createdAt: 'desc' },
     });
+    return products.map((product) => this.withAvailableStock(product));
   }
 
   async getAdminProduct(productId: string): Promise<CatalogueProduct> {
@@ -162,7 +185,7 @@ export class CatalogueService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
-    return product;
+    return this.withAvailableStock(product);
   }
 
   async createCategory(
@@ -259,7 +282,7 @@ export class CatalogueService {
       }),
     );
     await this.auditMutation(actorId, 'catalogue.product.created', 'product', product.id, context);
-    return product;
+    return this.withAvailableStock(product);
   }
 
   async updateProduct(
@@ -278,7 +301,7 @@ export class CatalogueService {
       'Product',
     );
     await this.auditMutation(actorId, 'catalogue.product.updated', 'product', product.id, context);
-    return product;
+    return this.withAvailableStock(product);
   }
 
   async deleteProduct(actorId: string, productId: string, context: RequestContext): Promise<void> {
@@ -500,36 +523,6 @@ export class CatalogueService {
     await this.auditMutation(actorId, 'catalogue.image.deleted', 'product_image', imageId, context);
   }
 
-  async addProductVideoUrl(
-    actorId: string,
-    productId: string,
-    input: CreateProductVideoDto,
-    context: RequestContext,
-  ): Promise<ProductVideo> {
-    await this.requireProduct(productId);
-    const video = await this.mutate(() =>
-      this.prisma.productVideo.create({
-        data: {
-          productId,
-          url: input.url,
-          altText: input.altText?.trim() || 'Product video',
-          sortOrder: input.sortOrder ?? 0,
-        },
-      }),
-    );
-    await this.auditMutation(
-      actorId,
-      'catalogue.video.created',
-      'product_video',
-      video.id,
-      context,
-      {
-        source: 'url',
-      },
-    );
-    return video;
-  }
-
   async uploadProductVideo(
     actorId: string,
     productId: string,
@@ -539,9 +532,10 @@ export class CatalogueService {
   ): Promise<ProductVideo> {
     await this.requireProduct(productId);
     const videoId = randomUUID();
-    const storagePath = `${productId}/${videoId}/source${this.videoExtension(file.mimetype)}`;
+    const processed = await this.videoProcessor.process(file);
+    const storagePath = `${productId}/${videoId}/source.mp4`;
     try {
-      await this.supabase.uploadProductVideo(storagePath, file.buffer, file.mimetype);
+      await this.supabase.uploadProductVideo(storagePath, processed.buffer, processed.mimetype);
     } catch {
       throw new BadGatewayException('Product video storage failed');
     }
@@ -553,7 +547,7 @@ export class CatalogueService {
           url: this.supabase.getProductVideoPublicUrl(storagePath),
           storagePath,
           sourceFilename: basename(file.originalname).slice(0, 255) || 'upload',
-          sourceMimeType: file.mimetype,
+          sourceMimeType: processed.mimetype,
           altText: metadata.altText,
           sortOrder: metadata.sortOrder ?? 0,
         },
@@ -781,15 +775,19 @@ export class CatalogueService {
     }
   }
 
-  private videoExtension(mimeType: string): string {
-    switch (mimeType) {
-      case 'video/webm':
-        return '.webm';
-      case 'video/quicktime':
-        return '.mov';
-      default:
-        return '.mp4';
-    }
+  private withAvailableStock(product: ProductWithInventory): CatalogueProduct {
+    return {
+      ...product,
+      variants: product.variants.map(({ inventoryLevels, ...variant }) => ({
+        ...variant,
+        // A checkout reservation is fulfilled from one warehouse, so show the
+        // maximum stock that can actually be reserved from a single active location.
+        availableStock: Math.max(
+          0,
+          ...inventoryLevels.map((level) => Math.max(0, level.onHand - level.reserved)),
+        ),
+      })),
+    };
   }
 
   private async auditMutation(
@@ -816,6 +814,10 @@ export class CatalogueService {
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
+          const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
+          if (target.some((field) => field.toLowerCase().includes('barcode'))) {
+            throw new ConflictException('Barcode must be unique across the catalogue');
+          }
           throw new ConflictException('A record with that unique value already exists');
         }
         if (error.code === 'P2003') {

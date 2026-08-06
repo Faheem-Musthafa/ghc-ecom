@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import { IconCheckCircle, IconDownload, IconTruck } from '../components/Icons';
+import { IconCheckCircle, IconDownload } from '../components/Icons';
 import { api } from '../lib/api';
 import { rupees, shortDate } from '../lib/commerce';
 import { openTrustedUrl } from '../lib/navigation';
@@ -58,7 +58,7 @@ export const OrderConfirmationPage = () => {
                             </span>
                             <h1 className="mt-2 font-display text-5xl font-semibold text-cream">Thank you for your order</h1>
                             <p className="mt-3 text-xs text-cream/65 leading-relaxed max-w-lg mx-auto">
-                                Order <strong className="text-sm text-gold-300">{order.orderNumber}</strong> has been received and is now being prepared.
+                                Order <strong className="text-sm text-gold-300">{order.orderNumber}</strong> has been received. Keep this confirmation for your records.
                             </p>
                         </div>
 
@@ -81,15 +81,12 @@ export const OrderConfirmationPage = () => {
                             </div>
 
                             <div className="border border-gold-500/20 bg-carbon p-6 rounded-sm shadow-lg">
-                                <h3 className="font-display text-xl font-bold text-gold-300 border-b border-gold-500/15 pb-3">Delivery Information</h3>
+                                <h3 className="font-display text-xl font-bold text-gold-300 border-b border-gold-500/15 pb-3">Order Contact</h3>
                                 <div className="mt-4 space-y-2 text-xs text-cream/70">
-                                    <p><strong>Recipient:</strong> {order.addressSnapshot?.recipientName}</p>
-                                    <p><strong>Shipping Address:</strong> {order.addressSnapshot?.line1}, {order.addressSnapshot?.city}, {order.addressSnapshot?.state} {order.addressSnapshot?.postalCode}</p>
-                                    <p><strong>Estimated Delivery:</strong> 3 – 5 Business Days</p>
-                                </div>
-                                <div className="mt-6 pt-4 border-t border-gold-500/15 flex items-center justify-between text-xs text-cream/50">
-                                    <span className="flex items-center gap-2"><IconTruck size={16} className="text-gold-400" /> Express Carrier</span>
-                                    <Link to={`/tracking/${order.orderNumber}`} className="font-bold text-gold-400 hover:text-gold-200">Track package</Link>
+                                    <p><strong>Name:</strong> {order.addressSnapshot?.recipientName}</p>
+                                    <p><strong>Email:</strong> {order.addressSnapshot?.email}</p>
+                                    <p><strong>Phone:</strong> {order.addressSnapshot?.phone}</p>
+                                    <p><strong>Address:</strong> {order.addressSnapshot?.line1}, {order.addressSnapshot?.city}, {order.addressSnapshot?.state} {order.addressSnapshot?.postalCode}</p>
                                 </div>
                             </div>
                         </div>

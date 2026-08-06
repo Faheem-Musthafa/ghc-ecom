@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import CartDrawer from '../components/CartDrawer';
 import Header from '../components/Header';
 import { IconArrowRight, IconMessageCircle } from '../components/Icons';
 import InstagramReels from '../components/InstagramReels';
 import ProductCard from '../components/ProductCard';
 import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
-import Toast from '../components/Toast';
 import { useDailyTheme } from '../hooks/useDailyTheme';
 import { api } from '../lib/api';
 import { Category, Product } from '../types';
@@ -21,22 +19,34 @@ const HomePage = () => {
     const theme = useDailyTheme();
 
     useEffect(() => {
-        setLoading(true);
-        Promise.all([api.products(new URLSearchParams({ page: '1', limit: '48' })), api.categories()])
-            .then(([result, allCategories]) => {
-                setProducts(result.items);
-                setCategories(allCategories);
-            })
-            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load products.'))
-            .finally(() => setLoading(false));
+        api.categories()
+            .then(setCategories)
+            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load categories.'));
     }, []);
 
-    const visibleProducts = useMemo(() => {
-        const filtered = activeCategory
-            ? products.filter((product) => product.categoryId === activeCategory)
-            : products;
-        return filtered.slice(0, 8);
-    }, [activeCategory, products]);
+    useEffect(() => {
+        const controller = new AbortController();
+        const params = new URLSearchParams({ page: '1', limit: '8' });
+        if (activeCategory) params.set('category', activeCategory);
+
+        setLoading(true);
+        setError('');
+        api.products(params, controller.signal)
+            .then((result) => {
+                if (!controller.signal.aborted) setProducts(result.items);
+            })
+            .catch((caught) => {
+                if (!controller.signal.aborted) {
+                    setError(caught instanceof Error ? caught.message : 'Unable to load products.');
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
+        return () => controller.abort();
+    }, [activeCategory]);
+
+    const visibleProducts = useMemo(() => products.slice(0, 8), [products]);
 
     return (
         <div className="flex min-h-screen flex-col bg-obsidian font-body text-cream">
@@ -44,7 +54,7 @@ const HomePage = () => {
                 '@context': 'https://schema.org',
                 '@type': 'HomeGoodsStore',
                 name: 'Glockery Home Centre',
-                description: 'Premium crockery and kitchenware in Vengara, Malappuram, with delivery across India.',
+                description: 'Premium crockery and kitchenware in Vengara, Malappuram.',
                 telephone: '+91 6282000289',
                 address: {
                     '@type': 'PostalAddress',
@@ -66,7 +76,7 @@ const HomePage = () => {
                                 Crockery and kitchenware for every home.
                             </h1>
                             <p className="mt-6 max-w-md text-base leading-7 text-cream/70">
-                                Shop dinner sets, tea sets, serving dishes, canisters and more from our Vengara store, with free delivery across India.
+                                Shop dinner sets, tea sets, serving dishes, canisters and more from our Vengara store.
                             </p>
                             <div className="mt-8 flex flex-wrap items-center gap-5">
                                 <a href="#collection" className="button-primary gap-3">Shop products <IconArrowRight size={16} /></a>
@@ -75,7 +85,7 @@ const HomePage = () => {
                         </div>
                     </div>
                     <div className="relative min-h-[320px] bg-panel sm:min-h-[420px] lg:min-h-[600px]">
-                        <img src={theme.hero} alt={theme.heroAlt} width={900} height={900} className="absolute inset-0 h-full w-full object-cover" />
+                        <img src={theme.hero} alt={theme.heroAlt} width={900} height={900} decoding="async" className="absolute inset-0 h-full w-full object-cover" />
                     </div>
                 </section>
 
@@ -91,7 +101,7 @@ const HomePage = () => {
                                     All
                                 </button>
                                 {categories.map((category) => (
-                                    <button key={category.id} onClick={() => setActiveCategory(category.id)} className={`shrink-0 min-h-11 border-b text-sm ${activeCategory === category.id ? 'border-gold-400 text-cream' : 'border-transparent text-cream/60 hover:text-cream'}`}>
+                                    <button key={category.id} onClick={() => setActiveCategory(category.slug)} className={`shrink-0 min-h-11 border-b text-sm ${activeCategory === category.slug ? 'border-gold-400 text-cream' : 'border-transparent text-cream/60 hover:text-cream'}`}>
                                         {category.name}
                                     </button>
                                 ))}
@@ -143,8 +153,6 @@ const HomePage = () => {
             </main>
 
             <StoreFooter />
-            <CartDrawer />
-            <Toast />
         </div>
     );
 };

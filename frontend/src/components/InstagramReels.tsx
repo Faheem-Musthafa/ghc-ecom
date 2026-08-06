@@ -37,7 +37,7 @@ const ReelEmbed = ({ reel }: { reel: typeof reels[number] }) => {
                         title={reel.title}
                         loading="lazy"
                         scrolling="no"
-                        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
                         allowFullScreen
                         className="absolute -left-3 -top-[50px] h-[660px] w-[calc(100%+24px)] border-0 sm:-top-[52px]"
                     />

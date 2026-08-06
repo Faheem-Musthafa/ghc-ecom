@@ -30,7 +30,7 @@ const StoreFooter = () => (
                     <p className="mb-3 font-semibold text-cream">Help</p>
                     <ul className="space-y-2 text-cream/65">
                         <li><Link className="hover:text-cream" to="/order-lookup">Find an order</Link></li>
-                        <li><Link className="hover:text-cream" to="/shipping-returns">Shipping &amp; returns</Link></li>
+                        <li><Link className="hover:text-cream" to="/shipping-returns">Orders &amp; returns</Link></li>
                         <li><Link className="hover:text-cream" to="/contact">Contact</Link></li>
                         <li><a className="hover:text-cream" href="https://www.instagram.com/glockery_home_centre/" target="_blank" rel="noreferrer">Instagram</a></li>
                     </ul>
@@ -45,8 +45,12 @@ const StoreFooter = () => (
                 </nav>
             </div>
         </div>
-        <div className="border-t border-line px-6 py-5 text-center text-xs text-cream/60">
-            © {new Date().getFullYear()} Glockery Home Centre
+        <div className="flex flex-col items-center gap-2 border-t border-line px-6 py-5 text-center text-xs text-cream/60 sm:flex-row sm:justify-center sm:gap-3">
+            <span>© {new Date().getFullYear()} Glockery Home Centre</span>
+            <span aria-hidden="true" className="hidden text-cream/30 sm:inline">•</span>
+            <a href="https://faheemcp.tech" target="_blank" rel="noreferrer" className="text-gold-300 hover:text-gold-100">
+                Developed by faheemcp.tech
+            </a>
         </div>
     </footer>
 );
