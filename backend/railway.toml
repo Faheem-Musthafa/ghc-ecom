@@ -1,0 +1,4 @@
+# The Nest build emits /app/dist/main.js (not /app/dist/src/main.js).
+# This overrides any stale Railway dashboard start-command setting.
+[deploy]
+startCommand = "node dist/main.js"
