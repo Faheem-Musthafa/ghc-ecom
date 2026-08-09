@@ -133,9 +133,13 @@ describe('CatalogueService', () => {
   });
 
   it('regenerates the internal category slug when its name changes', async () => {
+    const previous = { id: 'category-id', name: 'Tea Sets', slug: 'tea-sets' };
     const category = { id: 'category-id', name: 'Dining Sets', slug: 'dining-sets' };
     const prisma = {
-      category: { update: jest.fn().mockResolvedValue(category) },
+      category: {
+        findUnique: jest.fn().mockResolvedValue(previous),
+        update: jest.fn().mockResolvedValue(category),
+      },
     };
     const service = new CatalogueService(
       prisma as never,
@@ -151,6 +155,19 @@ describe('CatalogueService', () => {
       where: { id: 'category-id' },
       data: expect.objectContaining({ name: 'Dining Sets', slug: 'dining-sets' }),
     });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: 'category',
+        entityId: 'category-id',
+        metadata: {
+          entityLabel: 'Dining Sets',
+          changes: {
+            name: { before: 'Tea Sets', after: 'Dining Sets' },
+            slug: { before: 'tea-sets', after: 'dining-sets' },
+          },
+        },
+      }),
+    );
   });
 
   it('rejects placeholder categories from the public catalogue', async () => {

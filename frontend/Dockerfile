@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/package.json
 COPY backend/package.json backend/package.json
-RUN npm ci --no-audit --no-fund
+RUN npm ci --workspace=frontend --include-workspace-root=false --no-audit --no-fund
 
 FROM node:24-alpine AS build
 WORKDIR /app

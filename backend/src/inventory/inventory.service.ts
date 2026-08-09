@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InventoryLevel, StockMovementType, Warehouse } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { auditChangeMetadata } from '../audit/audit-change';
 import { PUBLIC_CATALOGUE_CACHE_VERSION_KEY } from '../catalogue/catalogue.service';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -36,6 +37,7 @@ export class InventoryService {
       action: 'inventory.warehouse.created',
       entityType: 'warehouse',
       entityId: warehouse.id,
+      metadata: auditChangeMetadata(warehouse.name, {}, warehouse, ['code', 'name', 'isActive']),
     });
     await this.invalidateCatalogue();
     return warehouse;
@@ -46,7 +48,7 @@ export class InventoryService {
     warehouseId: string,
     input: SetInventoryDto,
   ): Promise<InventoryLevel> {
-    const level = await this.prisma.$transaction(async (transaction) => {
+    const { level, previous } = await this.prisma.$transaction(async (transaction) => {
       const existing = await transaction.inventoryLevel.findUnique({
         where: {
           warehouseId_variantId: {
@@ -90,7 +92,7 @@ export class InventoryService {
           },
         });
       }
-      return saved;
+      return { level: saved, previous: existing };
     });
     await this.audit.record({
       actorId,
@@ -98,10 +100,14 @@ export class InventoryService {
       entityType: 'inventory_level',
       entityId: level.id,
       metadata: {
+        ...auditChangeMetadata(
+          `Variant ${input.variantId} · Warehouse ${warehouseId}`,
+          previous ?? {},
+          level,
+          ['onHand', 'reserved', 'lowStockThreshold'],
+        ),
         warehouseId,
         variantId: input.variantId,
-        onHand: input.onHand,
-        lowStockThreshold: input.lowStockThreshold,
       },
     });
     await this.invalidateCatalogue();

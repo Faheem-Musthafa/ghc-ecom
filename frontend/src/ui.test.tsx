@@ -218,6 +218,45 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     if (/\/admin\/catalogue\/categories\/[^/]+$/.test(url) && init?.method === 'DELETE') {
         return new Response(null, { status: 204 });
     }
+    if (url.endsWith('/admin/audit-logs')) {
+        return json([
+            {
+                id: 'audit-1',
+                actorId: 'user-1',
+                actorLabel: 'admin@example.com',
+                action: 'catalogue.variant.updated',
+                entityType: 'product_variant',
+                entityId: product.variants[0].id,
+                metadata: {
+                    entityLabel: `${product.name} · ${product.variants[0].sku}`,
+                    changes: {
+                        pricePaise: { before: 249_900, after: 259_900 },
+                        isActive: { before: true, after: false },
+                    },
+                },
+                ipAddress: '127.0.0.1',
+                createdAt: '2026-08-09T08:00:00.000Z',
+            },
+        ]);
+    }
+    if (url.endsWith('/admin/users') && (!init?.method || init.method === 'GET')) {
+        return json([
+            {
+                id: 'user-1',
+                email: 'admin@example.com',
+                fullName: 'Faheem Admin',
+                roles: ['ADMIN'],
+                createdAt: '2026-07-01T08:00:00.000Z',
+            },
+            {
+                id: 'staff-1',
+                email: 'sana@example.com',
+                fullName: 'Sana Khan',
+                roles: ['SUPPORT_AGENT', 'CATALOGUE_MANAGER'],
+                createdAt: '2026-08-01T08:00:00.000Z',
+            },
+        ]);
+    }
     if (url.endsWith('/admin/catalogue/categories')) return json([currentProduct.category]);
     if (url.endsWith('/admin/catalogue/products')) return json([currentProduct]);
     if (url.includes('/admin/orders')) return json([], 403);
@@ -473,6 +512,39 @@ describe('black and gold commerce UI', () => {
             expect.objectContaining({ method: 'DELETE' }),
         );
         expect(container.textContent).toContain('All changes from this file were rolled back');
+    });
+
+    it('shows who changed which record and the before/after values', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/audit-logs');
+
+        expect(container.textContent).toContain('admin@example.com');
+        expect(container.textContent).toContain('Noir Gold Serving Set · GHC-NOIR-GOLD');
+        expect(container.textContent).toContain('Price');
+        expect(container.textContent).toMatch(/₹2,499\s*→\s*₹2,599/);
+        expect(container.textContent).toContain('Active');
+        expect(container.textContent).toMatch(/Yes\s*→\s*No/);
+    });
+
+    it('presents team access with readable role names and explicit editing', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/users');
+
+        expect(container.textContent).toContain('Team directory');
+        expect(container.textContent).toContain('Faheem Admin');
+        expect(container.textContent).toContain('Sana Khan');
+        expect(container.textContent).toContain('Catalogue manager');
+        expect(container.textContent).not.toContain('CATALOGUE_MANAGER');
+
+        const editButtons = Array.from(container.querySelectorAll('button')).filter((button) => button.textContent === 'Edit access');
+        await act(async () => editButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+        const ownAdminRole = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        expect(ownAdminRole?.checked).toBe(true);
+        expect(ownAdminRole?.disabled).toBe(true);
+        expect(container.textContent).toContain('Your own admin access is protected.');
     });
 
     it('escapes script-closing characters in product JSON-LD', () => {

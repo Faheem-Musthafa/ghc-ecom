@@ -343,6 +343,14 @@ textarea::placeholder {
   animation: admin-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.admin-role-scroll {
+  scrollbar-width: none;
+}
+
+.admin-role-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .admin-panel {
   border: 1px solid var(--admin-line);
   border-radius: 1rem;

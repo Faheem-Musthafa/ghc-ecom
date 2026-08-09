@@ -298,6 +298,7 @@ export interface CreateCouponInput {
 export interface AuditLog {
     id: string;
     actorId?: string | null;
+    actorLabel?: string | null;
     action: string;
     entityType: string;
     entityId?: string | null;

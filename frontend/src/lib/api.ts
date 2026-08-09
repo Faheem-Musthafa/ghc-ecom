@@ -384,6 +384,8 @@ export const api = {
     auditLogs: () => request<AuditLog[]>('/admin/audit-logs', {}, { auth: true }),
     assignRole: (userId: string, role: string) =>
         request<unknown>(`/admin/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ role }) }, { auth: true }),
+    removeRole: (userId: string, role: string) =>
+        request<void>(`/admin/users/${userId}/roles/${role}`, { method: 'DELETE' }, { auth: true }),
     staffUsers: () => request<StaffUser[]>('/admin/users', {}, { auth: true }),
     createStaffUser: (input: { email: string; role: string; fullName?: string }) =>
         request<CreatedStaffUser>('/admin/users', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),

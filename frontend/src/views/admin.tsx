@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
+import { auditActionLabel, auditChangeRows, auditEntityLabel, auditFactRows } from '../lib/audit-log';
 import {
     catalogueCsvExport,
     catalogueCsvTemplate,
@@ -2666,26 +2667,66 @@ const AuditLogsAdmin = () => {
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
 
             <div className={`${box} overflow-x-auto`}>
-                <table className="w-full min-w-[750px] text-left text-xs">
+                <table className="w-full min-w-[1100px] text-left text-xs">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
-                            <th className="p-4">Timestamp</th>
-                            <th className="p-4">Action</th>
-                            <th className="p-4">Entity Type</th>
-                            <th className="p-4">Entity ID</th>
-                            <th className="p-4">IP Address</th>
+                            <th className="p-4">When</th>
+                            <th className="p-4">Staff</th>
+                            <th className="p-4">Action and record</th>
+                            <th className="p-4">What changed</th>
+                            <th className="p-4">Source</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gold-500/10 font-mono">
-                        {logs.map((log) => (
-                            <tr key={log.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                <td className="p-4 text-cream/50">{new Date(log.createdAt).toLocaleString('en-IN')}</td>
-                                <td className="p-4 text-gold-300 font-bold font-sans">{log.action}</td>
-                                <td className="p-4 text-cream/70">{log.entityType}</td>
-                                <td className="p-4 text-cream/40">{log.entityId || '—'}</td>
-                                <td className="p-4 text-cream/50">{log.ipAddress || 'Internal'}</td>
-                            </tr>
-                        ))}
+                    <tbody className="divide-y divide-gold-500/10">
+                        {logs.map((log) => {
+                            const changes = auditChangeRows(log);
+                            const facts = auditFactRows(log);
+                            return (
+                                <tr key={log.id} className="align-top transition-colors hover:bg-gold-400/[.03]">
+                                    <td className="p-4 text-cream/55">
+                                        <time dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleString('en-IN')}</time>
+                                    </td>
+                                    <td className="p-4">
+                                        <p className="font-medium text-cream">{log.actorLabel || (log.actorId ? 'Unknown staff member' : 'System')}</p>
+                                        {log.actorId && <p className="mt-1 font-mono text-[10px] text-cream/35">{log.actorId}</p>}
+                                    </td>
+                                    <td className="p-4">
+                                        <p className="font-semibold text-gold-300">{auditActionLabel(log)}</p>
+                                        <p className="mt-1 text-cream/75">{auditEntityLabel(log)}</p>
+                                        <p className="mt-1 font-mono text-[10px] text-cream/35">
+                                            {log.entityType}{log.entityId ? ` · ${log.entityId}` : ''}
+                                        </p>
+                                    </td>
+                                    <td className="p-4">
+                                        {changes.length > 0 || facts.length > 0 ? (
+                                            <div className="space-y-2.5">
+                                                {changes.map((change) => (
+                                                    <div key={change.field} className="grid grid-cols-[minmax(110px,0.45fr)_1fr] gap-3">
+                                                        <span className="text-cream/50">{change.field}</span>
+                                                        <span className="text-cream/80">
+                                                            <span className="text-cream/45 line-through decoration-cream/25">{change.before}</span>
+                                                            <span className="px-2 text-gold-400" aria-hidden="true">→</span>
+                                                            <span>{change.after}</span>
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {facts.map((fact) => (
+                                                    <p key={fact.field} className="text-cream/75">
+                                                        <span className="text-cream/45">{fact.field}:</span> {fact.value}
+                                                    </p>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <span className="text-cream/35">No field details recorded</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4 text-cream/55">
+                                        <p>{log.ipAddress || 'Internal'}</p>
+                                        {log.userAgent && <p className="mt-1 max-w-56 truncate text-[10px] text-cream/35" title={log.userAgent}>{log.userAgent}</p>}
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
                 {!logs.length && <p className="p-10 text-center text-sm text-cream/40">No audit log records found.</p>}
@@ -2778,20 +2819,156 @@ const OperationsAdmin = () => {
 // ----------------------------------------------------
 // 8. USER MANAGEMENT & ROLE ASSIGNMENT
 // ----------------------------------------------------
+type StaffRole = StaffUser['roles'][number];
+
+const staffRoleOptions: Array<{
+    value: StaffRole;
+    label: string;
+    summary: string;
+    access: string;
+}> = [
+    {
+        value: 'ADMIN',
+        label: 'Administrator',
+        summary: 'Full operational and security control.',
+        access: 'All areas, team access, activity log and system health',
+    },
+    {
+        value: 'CATALOGUE_MANAGER',
+        label: 'Catalogue manager',
+        summary: 'Owns products, categories and offers.',
+        access: 'Catalogue, product media, categories and promotions',
+    },
+    {
+        value: 'WAREHOUSE_MANAGER',
+        label: 'Warehouse manager',
+        summary: 'Keeps fulfilment and stock accurate.',
+        access: 'Orders, inventory, warehouses and stock adjustments',
+    },
+    {
+        value: 'SUPPORT_AGENT',
+        label: 'Support agent',
+        summary: 'Resolves customer order issues.',
+        access: 'Orders, returns, refunds and invoice lookup',
+    },
+];
+
+const roleLabel = (role: StaffRole) => staffRoleOptions.find((option) => option.value === role)?.label || role;
+
+const StaffRoleEditor = ({
+    user,
+    currentUserId,
+    onSaved,
+    onCancel,
+    onError,
+}: {
+    user: StaffUser;
+    currentUserId?: string;
+    onSaved: (success: boolean) => Promise<void>;
+    onCancel: () => void;
+    onError: (message: string) => void;
+}) => {
+    const [selectedRoles, setSelectedRoles] = useState<StaffRole[]>(user.roles);
+    const [saving, setSaving] = useState(false);
+    const isSelf = user.id === currentUserId;
+    const changed = staffRoleOptions.some(({ value }) => selectedRoles.includes(value) !== user.roles.includes(value));
+
+    useEffect(() => {
+        setSelectedRoles(user.roles);
+    }, [user.roles.join('|')]);
+
+    const toggleRole = (role: StaffRole) => {
+        setSelectedRoles((current) => current.includes(role) ? current.filter((item) => item !== role) : [...current, role]);
+    };
+
+    const save = async () => {
+        setSaving(true);
+        onError('');
+        const rolesToAdd = selectedRoles.filter((role) => !user.roles.includes(role));
+        const rolesToRemove = user.roles.filter((role) => !selectedRoles.includes(role));
+        try {
+            // Grant replacement access before revoking anything so a failed request cannot lock a member out unexpectedly.
+            for (const role of rolesToAdd) await api.assignRole(user.id, role);
+            for (const role of rolesToRemove) await api.removeRole(user.id, role);
+            await onSaved(true);
+        } catch (caught) {
+            onError(caught instanceof Error ? caught.message : 'Access changes could not be saved.');
+            await onSaved(false);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="border-t border-[#e8e5dc] bg-[#fbfaf7] px-4 py-5 sm:px-6">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                <fieldset className="min-w-0 flex-1">
+                    <legend className="text-sm font-semibold text-[#252925]">Access for {user.fullName || user.email}</legend>
+                    <p className="mt-1 text-xs leading-5 text-[#747971]">A team member can hold more than one role. Changes take effect on their next authorized request.</p>
+                    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        {staffRoleOptions.map((option) => {
+                            const checked = selectedRoles.includes(option.value);
+                            const locked = isSelf && option.value === 'ADMIN';
+                            return (
+                                <label
+                                    key={option.value}
+                                    className={`flex min-h-20 items-start gap-3 rounded-xl border p-3 transition-colors ${checked ? 'border-[#d49a42] bg-[#fff8e9]' : 'border-[#dedbd2] bg-white hover:border-[#c9c5bb]'} ${locked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={locked || saving}
+                                        onChange={() => toggleRole(option.value)}
+                                        className="mt-0.5 size-4 accent-[#b87820]"
+                                    />
+                                    <span>
+                                        <span className="block text-xs font-semibold text-[#343934]">{option.label}</span>
+                                        <span className="mt-1 block text-[11px] leading-4 text-[#777c75]">{locked ? 'Your own admin access is protected.' : option.summary}</span>
+                                    </span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                    {!selectedRoles.length && <p className="mt-3 text-xs font-medium text-[#a44c36]">Saving with no roles will remove this account from the staff workspace.</p>}
+                </fieldset>
+                <div className="flex shrink-0 items-center gap-2">
+                    <button type="button" onClick={onCancel} disabled={saving} className="button-secondary">Cancel</button>
+                    <button type="button" onClick={() => void save()} disabled={!changed || saving} className="button-primary disabled:cursor-not-allowed disabled:opacity-45">
+                        {saving ? 'Saving…' : 'Save access'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const UsersAdmin = () => {
     const [email, setEmail] = useState('');
     const [fullName, setFullName] = useState('');
-    const [role, setRole] = useState('ADMIN');
+    const [role, setRole] = useState<StaffRole>('SUPPORT_AGENT');
     const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
     const [createdUser, setCreatedUser] = useState<CreatedStaffUser | null>(null);
     const [saving, setSaving] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [inviteOpen, setInviteOpen] = useState(false);
+    const [editingUserId, setEditingUserId] = useState<string | null>(null);
+    const [search, setSearch] = useState('');
+    const [roleFilter, setRoleFilter] = useState<'ALL' | StaffRole>('ALL');
+    const [passwordCopied, setPasswordCopied] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
+    const { session } = useAuth();
 
-    const load = () =>
-        api.staffUsers()
-            .then(setStaffUsers)
-            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load staff accounts.'));
+    const load = async () => {
+        try {
+            const users = await api.staffUsers();
+            setStaffUsers(users);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Unable to load staff accounts.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         void load();
@@ -2814,6 +2991,9 @@ const UsersAdmin = () => {
             setSuccessMsg(`${created.user.email} can now sign in with the generated temporary password.`);
             setEmail('');
             setFullName('');
+            setRole('SUPPORT_AGENT');
+            setPasswordCopied(false);
+            setInviteOpen(false);
             await load();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Staff account creation failed.');
@@ -2822,121 +3002,205 @@ const UsersAdmin = () => {
         }
     };
 
+    const normalizedSearch = search.trim().toLowerCase();
+    const visibleUsers = staffUsers.filter((user) => {
+        const matchesSearch = !normalizedSearch || `${user.fullName || ''} ${user.email}`.toLowerCase().includes(normalizedSearch);
+        const matchesRole = roleFilter === 'ALL' || user.roles.includes(roleFilter);
+        return matchesSearch && matchesRole;
+    });
+    const administratorCount = staffUsers.filter((user) => user.roles.includes('ADMIN')).length;
+
+    const copyTemporaryPassword = async () => {
+        if (!createdUser) return;
+        try {
+            if (!navigator.clipboard) throw new Error('Clipboard access is unavailable');
+            await navigator.clipboard.writeText(createdUser.temporaryPassword);
+            setPasswordCopied(true);
+        } catch {
+            setError('The password could not be copied. Select it and copy it manually.');
+        }
+    };
+
     return (
         <AdminShell
             title="Team & roles"
-            description="Create staff accounts, issue one-time passwords and assign only the access each person needs."
+            description="Invite staff and keep access aligned with each person’s responsibilities."
+            action={(
+                <button type="button" onClick={() => setInviteOpen((open) => !open)} className={inviteOpen ? 'button-secondary gap-2' : 'button-primary gap-2'}>
+                    {inviteOpen ? <IconClose size={16} /> : <IconPlus size={16} />}
+                    {inviteOpen ? 'Close invite' : 'Invite team member'}
+                </button>
+            )}
         >
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
 
-            <div className="grid gap-6 md:grid-cols-2">
-                <form onSubmit={handleCreateStaffUser} className={`${box} p-6 space-y-4`}>
-                    <h3 className="font-display text-2xl text-cream border-b border-gold-500/15 pb-3">Create Staff Account</h3>
-                    <p className="text-xs leading-5 text-cream/60">A secure password is generated automatically and shown once after the account is created.</p>
-                    <label className="block">
-                        <span className="mb-1.5 block text-xs text-cream/70">Work Email</span>
-                        <input
-                            type="email"
-                            autoComplete="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="staff@example.com"
-                            className={inputStyle}
-                            required
-                        />
-                    </label>
-                    <label className="block">
-                        <span className="mb-1.5 block text-xs text-cream/70">Staff Name <em className="not-italic text-cream/40">(optional)</em></span>
-                        <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Name for account records" className={inputStyle} />
-                    </label>
-                    <label className="block">
-                        <span className="mb-1.5 block text-xs text-cream/70">Access Role</span>
-                        <select value={role} onChange={(e) => setRole(e.target.value)} className={inputStyle}>
-                            <option value="ADMIN">ADMIN — Full System Operations Access</option>
-                            <option value="CATALOGUE_MANAGER">CATALOGUE_MANAGER — Products & Categories</option>
-                            <option value="WAREHOUSE_MANAGER">WAREHOUSE_MANAGER — Inventory Control</option>
-                            <option value="SUPPORT_AGENT">SUPPORT_AGENT — Customer & Orders Support</option>
-                        </select>
-                    </label>
-                    <button
-                        disabled={saving}
-                        className="mt-4 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300 rounded-sm"
-                    >
-                        {saving ? 'Creating Account…' : 'Create Staff Account'}
-                    </button>
-                </form>
-
-                <div className={`${box} p-6 space-y-4`}>
-                    <h3 className="font-display text-2xl text-gold-300 border-b border-gold-500/15 pb-3">Role Permissions Reference</h3>
-                    <div className="space-y-3 text-xs text-cream/70">
-                        <div>
-                            <strong className="text-gold-400">ADMIN:</strong> Unrestricted operational capabilities, financial telemetry, audit logs, and
-                            security governance.
-                        </div>
-                        <div>
-                            <strong className="text-gold-400">CATALOGUE_MANAGER:</strong> Product creation/editing, variant price adjustments, media derivative
-                            processing, category taxonomy.
-                        </div>
-                        <div>
-                            <strong className="text-gold-400">WAREHOUSE_MANAGER:</strong> Multi-warehouse stock level adjustments, low-stock threshold
-                            monitoring, SKU receipts.
-                        </div>
-                        <div>
-                            <strong className="text-gold-400">SUPPORT_AGENT:</strong> Order inspection, status transitions, guest order lookups, customer
-                            invoice generation.
-                        </div>
-                    </div>
+            <div className="mb-7 grid grid-cols-3 border-y border-[#dedbd2] bg-white">
+                <div className="border-r border-[#e5e2da] px-3 py-4 sm:px-5">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Team members</p>
+                    <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : staffUsers.length}</p>
+                </div>
+                <div className="border-r border-[#e5e2da] px-3 py-4 sm:px-5">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Administrators</p>
+                    <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : administratorCount}</p>
+                </div>
+                <div className="px-3 py-4 sm:px-5">
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Access model</p>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-[#343934] sm:text-sm">4 role-based levels</p>
                 </div>
             </div>
 
+            {inviteOpen && (
+                <form onSubmit={handleCreateStaffUser} className={`${box} mb-7 overflow-hidden`} aria-labelledby="invite-team-title">
+                    <div className="border-b border-[#e5e2da] px-5 py-5 sm:px-6">
+                        <h2 id="invite-team-title" className="text-lg font-bold text-[#252925]">Invite a team member</h2>
+                        <p className="mt-1 text-xs leading-5 text-[#747971]">We create the account now and show its temporary password once.</p>
+                    </div>
+                    <div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6 xl:grid-cols-[1fr_1fr_1.2fr_auto] xl:items-end">
+                        <label className="block">
+                            <span className="mb-1.5 block text-xs font-semibold text-[#555b54]">Full name <span className="font-normal text-[#8b8f89]">(optional)</span></span>
+                            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Sana Khan" className={inputStyle} />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1.5 block text-xs font-semibold text-[#555b54]">Work email</span>
+                            <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="sana@example.com" className={inputStyle} required />
+                        </label>
+                        <label className="block">
+                            <span className="mb-1.5 block text-xs font-semibold text-[#555b54]">Initial role</span>
+                            <select value={role} onChange={(e) => setRole(e.target.value as StaffRole)} className={inputStyle}>
+                                {staffRoleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                        </label>
+                        <button disabled={saving} className="button-primary h-12 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50">
+                            {saving ? 'Creating…' : 'Create account'}
+                        </button>
+                    </div>
+                </form>
+            )}
+
             {createdUser && (
-                <section className="mt-6 border border-emerald-500/35 bg-emerald-950/20 p-6" aria-labelledby="temporary-password-title">
+                <section className="mb-7 rounded-2xl border border-emerald-500/35 bg-emerald-950/20 p-5 sm:p-6" aria-labelledby="temporary-password-title">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Account created</p>
-                            <h3 id="temporary-password-title" className="mt-1 font-display text-2xl text-cream">Temporary sign-in password</h3>
-                            <p className="mt-2 text-xs text-cream/70">Share this securely with {createdUser.user.email}. It is not displayed again after leaving this page.</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-300">Account ready</p>
+                            <h2 id="temporary-password-title" className="mt-1 text-lg font-bold text-[#252925]">Copy the temporary password now</h2>
+                            <p className="mt-1 text-xs text-cream/70">Send it securely to {createdUser.user.email}. It disappears when you leave this page.</p>
                         </div>
-                        <button type="button" onClick={() => setCreatedUser(null)} className="text-xs text-cream/60 hover:text-cream">Dismiss</button>
+                        <button type="button" onClick={() => setCreatedUser(null)} className="grid size-10 place-items-center rounded-lg text-[#697069] hover:bg-white/60 hover:text-[#252925]" aria-label="Dismiss temporary password"><IconClose size={17} /></button>
                     </div>
                     <div className="mt-5 flex flex-wrap items-center gap-3">
-                        <code className="border border-emerald-500/30 bg-obsidian px-4 py-3 font-mono text-base tracking-wide text-emerald-200">{createdUser.temporaryPassword}</code>
+                        <code className="max-w-full overflow-x-auto rounded-lg border border-emerald-500/30 bg-white px-4 py-3 font-mono text-sm tracking-wide text-emerald-200 sm:text-base">{createdUser.temporaryPassword}</code>
                         <button
                             type="button"
-                            onClick={() => void navigator.clipboard?.writeText(createdUser.temporaryPassword)}
-                            className="border border-emerald-500/35 px-4 py-3 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/10"
+                            onClick={() => void copyTemporaryPassword()}
+                            className="button-secondary"
                         >
-                            Copy password
+                            {passwordCopied ? 'Copied' : 'Copy password'}
                         </button>
                     </div>
                 </section>
             )}
 
-            <section className={`${box} mt-6 overflow-x-auto`} aria-labelledby="staff-accounts-title">
-                <div className="flex items-center justify-between gap-4 border-b border-gold-500/15 p-5">
-                    <div>
-                        <h3 id="staff-accounts-title" className="font-display text-2xl text-cream">Staff Accounts</h3>
-                        <p className="mt-1 text-xs text-cream/55">Accounts with administrative access. Customer-only accounts are not shown.</p>
-                    </div>
-                    <button type="button" onClick={() => void load()} className="text-xs font-semibold text-gold-300 hover:text-gold-100">Refresh</button>
+            <section className="mb-7" aria-labelledby="role-guide-title">
+                <div className="mb-4">
+                    <h2 id="role-guide-title" className="text-base font-bold text-[#252925]">Role guide</h2>
+                    <p className="mt-1 text-xs text-[#747971]">Use the narrowest access that covers the person’s day-to-day work.</p>
                 </div>
-                <table className="w-full min-w-[640px] text-left text-sm">
-                    <thead className="border-b border-gold-500/15 bg-obsidian/50 text-[10px] uppercase tracking-[0.18em] text-gold-400">
-                        <tr><th className="p-4">Staff Member</th><th className="p-4">Email</th><th className="p-4">Roles</th><th className="p-4">Created</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-gold-500/10">
-                        {staffUsers.map((user) => (
-                            <tr key={user.id}>
-                                <td className="p-4 text-cream">{user.fullName || 'Staff account'}</td>
-                                <td className="p-4 text-cream/70">{user.email}</td>
-                                <td className="p-4"><div className="flex flex-wrap gap-2">{user.roles.map((item) => <span key={item} className="border border-gold-500/30 px-2 py-1 text-[10px] font-bold tracking-wide text-gold-300">{item}</span>)}<select aria-label={`Add role for ${user.email}`} defaultValue="" onChange={(event) => void (async () => { if (!event.target.value) return; try { await api.assignRole(user.id, event.target.value); await load(); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Role assignment failed.'); } })()} className="bg-obsidian px-2 py-1 text-[10px] text-cream"><option value="">Add role…</option>{['ADMIN', 'CATALOGUE_MANAGER', 'WAREHOUSE_MANAGER', 'SUPPORT_AGENT'].filter((item) => !user.roles.includes(item as StaffUser['roles'][number])).map((item) => <option key={item}>{item}</option>)}</select></div></td>
-                                <td className="p-4 text-xs text-cream/55">{shortDate(user.createdAt)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-                {!staffUsers.length && <p className="p-8 text-center text-sm text-cream/45">No staff accounts have been created yet.</p>}
+                <div className="admin-role-scroll flex snap-x snap-mandatory overflow-x-auto rounded-2xl border border-[#dedbd2] bg-white md:grid md:grid-cols-2 md:overflow-hidden xl:grid-cols-4">
+                    {staffRoleOptions.map((option, index) => (
+                        <div
+                            key={option.value}
+                            className={`w-[78vw] max-w-[290px] shrink-0 snap-start border-r border-[#e8e5dc] p-5 last:border-r-0 md:w-auto md:max-w-none ${index === 1 ? 'md:border-r-0 xl:border-r' : ''} ${index === 2 ? 'md:border-t md:border-r xl:border-t-0' : ''} ${index === 3 ? 'md:border-t md:border-r-0 xl:border-t-0' : ''}`}
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="grid size-7 place-items-center rounded-lg bg-[#fff3da] text-[#9b671d]"><IconShield size={14} /></span>
+                                <h3 className="text-sm font-semibold text-[#303530]">{option.label}</h3>
+                            </div>
+                            <p className="mt-3 text-xs leading-5 text-[#747971]">{option.access}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <section className={`${box} overflow-hidden`} aria-labelledby="staff-accounts-title">
+                <div className="flex flex-col gap-4 border-b border-[#e5e2da] p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                        <h2 id="staff-accounts-title" className="text-base font-bold text-[#252925]">Team directory</h2>
+                        <p className="mt-1 text-xs text-[#747971]">Only accounts with staff access are shown.</p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <label className="relative block">
+                            <span className="sr-only">Search team members</span>
+                            <IconSearch size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8b8f89]" />
+                            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or email" className="admin-field h-11 w-full !pl-9 text-xs sm:w-56" />
+                        </label>
+                        <label>
+                            <span className="sr-only">Filter by role</span>
+                            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'ALL' | StaffRole)} className="admin-field h-11 w-full text-xs sm:w-48">
+                                <option value="ALL">All roles</option>
+                                {staffRoleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" onClick={() => void load()} className="button-secondary h-11 gap-2" aria-label="Refresh team directory"><IconRefresh size={15} /> Refresh</button>
+                    </div>
+                </div>
+
+                <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(200px,1fr)_minmax(260px,1.4fr)_120px_112px] gap-4 border-b border-[#e8e5dc] bg-[#f8f7f3] px-6 py-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#858a83] lg:grid">
+                    <span>Team member</span><span>Email</span><span>Access</span><span>Joined</span><span className="text-right">Action</span>
+                </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center gap-3 px-6 py-14 text-sm text-[#747971]" role="status"><span className="size-2 animate-pulse rounded-full bg-[#d3912e]" /> Loading team…</div>
+                ) : visibleUsers.length ? (
+                    <ul className="divide-y divide-[#ece9e2]">
+                        {visibleUsers.map((user) => {
+                            const isEditing = editingUserId === user.id;
+                            const initials = (user.fullName || user.email).split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+                            return (
+                                <li key={user.id}>
+                                    <div className="grid gap-4 px-5 py-5 sm:px-6 lg:grid-cols-[minmax(220px,1.2fr)_minmax(200px,1fr)_minmax(260px,1.4fr)_120px_112px] lg:items-center">
+                                        <div className="flex min-w-0 items-center gap-3">
+                                            <span className={`grid size-10 shrink-0 place-items-center rounded-xl text-xs font-bold ${user.roles.includes('ADMIN') ? 'bg-[#fff0ce] text-[#8d5a15]' : 'bg-[#eceee9] text-[#596059]'}`}>{initials}</span>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold text-[#303530]">{user.fullName || 'Unnamed staff member'}</p>
+                                                {user.id === session?.user?.id && <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9b671d]">You</p>}
+                                            </div>
+                                        </div>
+                                        <p className="break-all text-xs text-[#626861]"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[#969a94] lg:hidden">Email</span>{user.email}</p>
+                                        <div>
+                                            <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[#969a94] lg:hidden">Access</span>
+                                            <div className="flex flex-wrap gap-1.5">{user.roles.map((item) => <span key={item} className="rounded-md border border-[#dfd8c9] bg-[#fffaf0] px-2 py-1 text-[10px] font-semibold text-[#82581b]">{roleLabel(item)}</span>)}</div>
+                                        </div>
+                                        <p className="text-xs text-[#737871]"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[#969a94] lg:hidden">Joined</span>{shortDate(user.createdAt)}</p>
+                                        <button type="button" onClick={() => setEditingUserId(isEditing ? null : user.id)} className={`h-10 justify-center text-xs ${isEditing ? 'button-primary' : 'button-secondary'}`} aria-expanded={isEditing}>
+                                            {isEditing ? 'Editing' : 'Edit access'}
+                                        </button>
+                                    </div>
+                                    {isEditing && (
+                                        <StaffRoleEditor
+                                            user={user}
+                                            currentUserId={session?.user?.id}
+                                            onCancel={() => setEditingUserId(null)}
+                                            onError={setError}
+                                            onSaved={async (success) => {
+                                                await load();
+                                                if (success) {
+                                                    setEditingUserId(null);
+                                                    setSuccessMsg(`Access updated for ${user.fullName || user.email}.`);
+                                                }
+                                            }}
+                                        />
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                ) : (
+                    <div className="px-6 py-14 text-center">
+                        <p className="text-sm font-semibold text-[#434943]">{staffUsers.length ? 'No matching team members' : 'No staff accounts yet'}</p>
+                        <p className="mt-1 text-xs text-[#7a7f78]">{staffUsers.length ? 'Try a different search or role filter.' : 'Invite the first person to start building your team.'}</p>
+                    </div>
+                )}
             </section>
         </AdminShell>
     );

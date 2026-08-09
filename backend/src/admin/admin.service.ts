@@ -26,6 +26,10 @@ export interface CreatedStaffUser {
   temporaryPassword: string;
 }
 
+export interface AuditLogView extends AuditLog {
+  actorLabel: string | null;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -106,6 +110,9 @@ export class AdminService {
     role: AppRole,
     context: RequestContext,
   ): Promise<UserRole> {
+    if (role === AppRole.CUSTOMER) {
+      throw new BadRequestException('Customer access cannot be managed from the staff workspace');
+    }
     const assignment = await this.prisma.userRole.upsert({
       where: {
         userId_role: { userId, role },
@@ -137,7 +144,63 @@ export class AdminService {
     return assignment;
   }
 
-  listAuditLogs(): Promise<AuditLog[]> {
-    return this.audit.list();
+  async removeRole(
+    actorId: string,
+    userId: string,
+    role: AppRole,
+    context: RequestContext,
+  ): Promise<void> {
+    if (role === AppRole.CUSTOMER) {
+      throw new BadRequestException('Customer access cannot be managed from the staff workspace');
+    }
+    if (role === AppRole.ADMIN) {
+      if (actorId === userId) {
+        throw new BadRequestException('You cannot remove your own administrator access');
+      }
+      const administratorCount = await this.prisma.userRole.count({
+        where: { role: AppRole.ADMIN },
+      });
+      if (administratorCount <= 1) {
+        throw new BadRequestException('The final administrator cannot be removed');
+      }
+    }
+
+    const result = await this.prisma.userRole.deleteMany({
+      where: { userId, role },
+    });
+    if (!result.count) return;
+
+    await this.audit.record({
+      actorId,
+      action: 'user.role.removed',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { role },
+      ...context,
+    });
+    try {
+      await this.redis?.delete(rolesCacheKey(userId));
+    } catch {
+      // The short TTL bounds stale role cache entries if Redis is unavailable.
+    }
+  }
+
+  async listAuditLogs(): Promise<AuditLogView[]> {
+    const logs = await this.audit.list();
+    try {
+      const users = await this.supabase.listAdminUsers();
+      const actorLabels = new Map(users.map((user) => [
+        user.id,
+        typeof user.user_metadata.full_name === 'string' && user.user_metadata.full_name.trim()
+          ? `${user.user_metadata.full_name.trim()}${user.email ? ` · ${user.email}` : ''}`
+          : user.email || user.id,
+      ]));
+      return logs.map((log) => ({
+        ...log,
+        actorLabel: log.actorId ? actorLabels.get(log.actorId) ?? null : 'System',
+      }));
+    } catch {
+      return logs.map((log) => ({ ...log, actorLabel: log.actorId ? null : 'System' }));
+    }
   }
 }
