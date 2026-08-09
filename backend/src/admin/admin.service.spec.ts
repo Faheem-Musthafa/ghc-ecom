@@ -2,6 +2,35 @@ import { AppRole } from '@prisma/client';
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
+  it('adds a human actor label to audit log records', async () => {
+    const auditLog = {
+      id: 'audit-id',
+      actorId: 'admin-id',
+      action: 'catalogue.product.updated',
+      entityType: 'product',
+      entityId: 'product-id',
+      metadata: {},
+      ipAddress: null,
+      userAgent: null,
+      createdAt: new Date(),
+    };
+    const audit = { list: jest.fn().mockResolvedValue([auditLog]) };
+    const supabase = {
+      listAdminUsers: jest.fn().mockResolvedValue([
+        {
+          id: 'admin-id',
+          email: 'admin@example.com',
+          user_metadata: { full_name: 'Faheem' },
+        },
+      ]),
+    };
+    const service = new AdminService({} as never, audit as never, supabase as never);
+
+    await expect(service.listAuditLogs()).resolves.toEqual([
+      expect.objectContaining({ actorLabel: 'Faheem · admin@example.com' }),
+    ]);
+  });
+
   it('records actor, action, target, and role for an admin role assignment', async () => {
     const assignment = {
       userId: 'target-id',
@@ -40,6 +69,56 @@ describe('AdminService', () => {
       ipAddress: '127.0.0.1',
       userAgent: 'test-agent',
     });
+  });
+
+  it('removes staff access, records the change, and clears the cached roles', async () => {
+    const prisma = {
+      userRole: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
+    const redis = { delete: jest.fn().mockResolvedValue(1) };
+    const service = new AdminService(prisma as never, audit as never, {} as never, redis as never);
+
+    await service.removeRole('admin-id', 'staff-id', AppRole.SUPPORT_AGENT, {
+      ipAddress: '127.0.0.1',
+      userAgent: 'test-agent',
+    });
+
+    expect(prisma.userRole.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'staff-id', role: AppRole.SUPPORT_AGENT },
+    });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      actorId: 'admin-id',
+      action: 'user.role.removed',
+      entityId: 'staff-id',
+      metadata: { role: AppRole.SUPPORT_AGENT },
+    }));
+    expect(redis.delete).toHaveBeenCalledWith('auth:roles:staff-id');
+  });
+
+  it('does not let an administrator remove their own administrator access', async () => {
+    const prisma = { userRole: { count: jest.fn(), deleteMany: jest.fn() } };
+    const service = new AdminService(prisma as never, {} as never, {} as never);
+
+    await expect(service.removeRole('admin-id', 'admin-id', AppRole.ADMIN, {}))
+      .rejects.toThrow('You cannot remove your own administrator access');
+    expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('protects the final administrator from removal', async () => {
+    const prisma = {
+      userRole: {
+        count: jest.fn().mockResolvedValue(1),
+        deleteMany: jest.fn(),
+      },
+    };
+    const service = new AdminService(prisma as never, {} as never, {} as never);
+
+    await expect(service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {}))
+      .rejects.toThrow('The final administrator cannot be removed');
+    expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
   });
 
   it('creates a confirmed staff account with a generated password and selected role', async () => {

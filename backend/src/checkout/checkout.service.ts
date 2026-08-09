@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CheckoutQuote, Coupon, DiscountType, Prisma, QuoteStatus } from '@prisma/client';
+import { CheckoutQuote, Coupon, DiscountType, OrderStatus, Prisma, QuoteStatus } from '@prisma/client';
 import { CartService, CartWithItems } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
@@ -48,6 +48,20 @@ export class CheckoutService {
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw`select pg_advisory_xact_lock(
+          hashtextextended(${cart.id}::text, 0)
+        )`;
+        const pending = await transaction.order.findFirst({
+          where: {
+            cartId: cart.id,
+            status: OrderStatus.PAYMENT_PENDING,
+            paymentExpiresAt: { gt: new Date() },
+            quote: { status: QuoteStatus.ACTIVE, expiresAt: { gt: new Date() } },
+          },
+          include: { quote: true },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (pending) return pending.quote;
         await transaction.checkoutQuote.updateMany({
           where: { cartId: cart.id, status: QuoteStatus.ACTIVE },
           data: { status: QuoteStatus.EXPIRED },
@@ -139,8 +153,7 @@ export class CheckoutService {
       productDescription:
         item.variant.product.shortDescription ?? item.variant.product.description ?? null,
       productMaterial: item.variant.product.material ?? null,
-      productDimensions: item.variant.product.dimensions ?? null,
-      variantName: item.variant.name,
+      color: this.variantColor(item.variant.attributes),
       imageUrl:
         item.variant.images?.[0]?.thumbnailUrl ??
         item.variant.product.images?.[0]?.thumbnailUrl ??
@@ -150,6 +163,12 @@ export class CheckoutService {
       lineTotalPaise: item.variant.pricePaise * item.quantity,
       attributes: item.variant.attributes,
     })) as Prisma.InputJsonArray;
+  }
+
+  private variantColor(attributes: Prisma.JsonValue): string | null {
+    if (!attributes || Array.isArray(attributes) || typeof attributes !== 'object') return null;
+    const color = (attributes as Prisma.JsonObject).color;
+    return typeof color === 'string' && color.trim() ? color.trim() : null;
   }
 
   private async validateCoupon(

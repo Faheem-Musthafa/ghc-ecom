@@ -8,7 +8,7 @@ import { SupabaseService } from '../supabase/supabase.service';
 interface InvoiceLine {
   sku?: string;
   productName?: string;
-  variantName?: string;
+  color?: string;
   quantity?: number;
   unitPricePaise?: number;
   lineTotalPaise?: number;
@@ -76,7 +76,7 @@ export class InvoiceService {
     page.drawText('Items', { x: 48, y, size: 13, font: bold });
     y -= 22;
     for (const line of lines) {
-      const name = `${line.productName ?? 'Product'}${line.variantName ? ` — ${line.variantName}` : ''}`;
+      const name = `${line.productName ?? 'Product'}${line.color ? ` — ${line.color}` : ''}`;
       const quantity = line.quantity ?? 0;
       const total = line.lineTotalPaise ?? (line.unitPricePaise ?? 0) * quantity;
       page.drawText(name.slice(0, 65), { x: 48, y, size: 9, font: regular });

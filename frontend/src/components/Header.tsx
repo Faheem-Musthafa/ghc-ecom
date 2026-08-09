@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, NavLink, useLocation } from '../lib/router';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
-import instaLogo from '/img/blackLogo.png';
 import {
     IconClose,
     IconHeart,
@@ -46,8 +45,8 @@ const Header = () => {
                     </button>
 
                     <Link to="/" className="shrink-0 leading-none text-cream" aria-label="Glockery Home Centre, Vengara">
-                        {/* <span className="block text-base font-bold tracking-[0.18em]">GLOCKERY</span>
-                        <span className="mt-1 block text-[8px] font-semibold uppercase tracking-[0.2em] text-cream/60">Home Centre · Vengara</span> */}
+                        <span className="block text-base font-bold tracking-[0.18em]">GLOCKERY</span>
+                        <span className="mt-1 block text-[8px] font-semibold uppercase tracking-[0.2em] text-cream/60">Home Centre · Vengara</span>
                     </Link>
 
                     <nav className="ml-12 hidden items-center gap-8 lg:flex" aria-label="Primary navigation">
@@ -80,7 +79,7 @@ const Header = () => {
                             rel="noreferrer"
                             aria-label="Visit Instagram"
                         >
-                            <img src={instaLogo} alt="Instagram" className="h-6 w-6 object-contain" />
+                            <img src="/img/blackLogo.png" alt="Instagram" className="h-6 w-6 object-contain" />
                         </a>
                   
                     </div>

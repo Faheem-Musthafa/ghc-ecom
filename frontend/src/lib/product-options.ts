@@ -5,7 +5,7 @@ const attributeText = (variant: ProductVariant, key: string): string | undefined
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 };
 
-export const variantOptionName = (variant: ProductVariant): string => attributeText(variant, 'color') || variant.name;
+export const variantOptionLabel = (variant: ProductVariant): string => attributeText(variant, 'color') || variant.sku;
 
 export const variantColorHex = (variant: ProductVariant): string | undefined => {
     const value = attributeText(variant, 'colorHex');

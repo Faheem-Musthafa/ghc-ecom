@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import Image from 'next/image';
+import { Link } from '../lib/router';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import { fallbackImage, rupees } from '../lib/commerce';
@@ -38,13 +39,13 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
     return (
         <article className="group min-w-0">
             <div className="relative aspect-[4/5] overflow-hidden bg-panel">
-                <Link to={`/product/${product.slug}`} className="block h-full" aria-label={`View ${product.name}`}>
-                    <img
+                <Link to={`/product/${product.slug}`} className="relative block h-full" aria-label={`View ${product.name}`}>
+                    <Image
                         src={image}
                         alt={product.images?.[0]?.altText || product.name}
-                        loading={priority ? 'eager' : 'lazy'}
-                        width={640}
-                        height={800}
+                        fill
+                        priority={priority}
+                        sizes="(min-width: 1024px) 25vw, 50vw"
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                         onError={(event) => {
                             event.currentTarget.src = fallbackImage;

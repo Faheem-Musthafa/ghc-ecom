@@ -1,5 +1,6 @@
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api, ApiError, getCartIdentity, getSession, saveCartIdentity } from '../lib/api';
+import { variantOptionLabel } from '../lib/product-options';
 import { Cart, ProductVariant } from '../types';
 
 interface CartContextValue {
@@ -133,7 +134,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         const current = cart?.items.find((item) => item.variantId === variant.id)?.quantity || 0;
         setCartOpen(true);
         await mutate((active) => api.setCartItem(active.id, variant.id, Math.min(99, current + quantity)));
-        setToast(`${variant.name} added to your cart`);
+        setToast(`${variantOptionLabel(variant)} added to your cart`);
     };
 
     const updateQuantity = async (variantId: string, quantity: number) => {

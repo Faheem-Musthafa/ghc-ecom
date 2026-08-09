@@ -27,12 +27,14 @@ import {
 } from '../types';
 import { resolveApiBaseUrl } from './api-url';
 
-export const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
+export const API_BASE_URL = resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 const CART_KEY = 'ghc_cart';
+const GUEST_ORDER_KEY = 'ghc_guest_orders';
 const REQUEST_TIMEOUT_MS = 15_000;
 let currentSession: Session | null = null;
 let csrfToken: string | null = null;
 let csrfRefreshInFlight: Promise<void> | null = null;
+let sessionInitializationInFlight: Promise<Session | null> | null = null;
 
 export class ApiError extends Error {
     constructor(
@@ -54,7 +56,7 @@ export const saveSession = (session: Session | null) => {
 
 const normalizeAuth = (result: AuthResult): Session | null => {
     if (result.csrfToken) csrfToken = result.csrfToken;
-    return result.authenticated ? { user: result.user } : null;
+    return result.authenticated ? { user: result.user, roles: result.roles || [] } : null;
 };
 
 export interface CartIdentity {
@@ -76,12 +78,25 @@ export const saveCartIdentity = (identity: CartIdentity | null) => {
     else localStorage.removeItem(CART_KEY);
 };
 
+const guestOrderTokens = (): Record<string, string> => {
+    try {
+        return JSON.parse(localStorage.getItem(GUEST_ORDER_KEY) || '{}') as Record<string, string>;
+    } catch {
+        return {};
+    }
+};
+
+export const saveGuestOrderAccess = (orderId: string, guestToken: string) => {
+    localStorage.setItem(GUEST_ORDER_KEY, JSON.stringify({ ...guestOrderTokens(), [orderId]: guestToken }));
+};
+
 type RequestOptions = {
     auth?: boolean;
     cart?: boolean;
     retry?: boolean;
     csrfRetry?: boolean;
     timeoutMs?: number;
+    guestToken?: string;
 };
 
 const unsafeMethod = (method: string) => !['GET', 'HEAD', 'OPTIONS'].includes(method);
@@ -112,7 +127,8 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     const cart = getCartIdentity();
     const headers = new Headers(init.headers);
     if (init.body && !(init.body instanceof FormData)) headers.set('content-type', 'application/json');
-    if (options.cart && cart?.guestToken && !session) headers.set('x-cart-token', cart.guestToken);
+    const guestToken = options.guestToken || (options.cart ? cart?.guestToken : undefined);
+    if (guestToken && !session) headers.set('x-cart-token', guestToken);
     const method = (init.method ?? 'GET').toUpperCase();
     if (unsafeMethod(method) && csrfToken) {
         headers.set('x-csrf-token', csrfToken);
@@ -189,17 +205,25 @@ const cartOptions = (): RequestOptions => ({
 });
 
 export const api = {
-    async initializeSession() {
-        try {
-            await refreshCsrfToken();
-            const result = await request<AuthResult>('/auth/session', {}, { retry: false });
-            const session = normalizeAuth(result);
-            saveSession(session);
-            return session;
-        } catch {
-            saveSession(null);
-            return null;
-        }
+    initializeSession() {
+        if (sessionInitializationInFlight) return sessionInitializationInFlight;
+        const task = (async () => {
+            try {
+                await refreshCsrfToken();
+                const result = await request<AuthResult>('/auth/session', {}, { retry: false });
+                const session = normalizeAuth(result);
+                saveSession(session);
+                return session;
+            } catch {
+                saveSession(null);
+                return null;
+            }
+        })();
+        sessionInitializationInFlight = task;
+        void task.finally(() => {
+            if (sessionInitializationInFlight === task) sessionInitializationInFlight = null;
+        });
+        return task;
     },
     async login(email: string, password: string) {
         const result = await request<AuthResult>('/auth/login', {
@@ -284,9 +308,13 @@ export const api = {
         request<Address>(`/me/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteAddress: (id: string) => request<void>(`/me/addresses/${id}`, { method: 'DELETE' }, { auth: true }),
     orders: () => request<Order[]>('/orders', {}, { auth: true }),
-    order: (id: string) => request<Order>(`/orders/${id}`, {}, { auth: true }),
+    order: (id: string) => getSession()
+        ? request<Order>(`/orders/${id}`, {}, { auth: true })
+        : request<Order>(`/guest/orders/${id}`, {}, { guestToken: guestOrderTokens()[id] }),
     shipments: (orderId: string) => request<Shipment[]>(`/orders/${orderId}/shipments`, {}, { auth: true }),
-    invoice: (id: string) => request<{ url: string; expiresIn: number }>(`/orders/${id}/invoice`, {}, { auth: true }),
+    invoice: (id: string) => getSession()
+        ? request<{ url: string; expiresIn: number }>(`/orders/${id}/invoice`, {}, { auth: true })
+        : request<{ url: string; expiresIn: number }>(`/guest/orders/${id}/invoice`, {}, { guestToken: guestOrderTokens()[id] }),
     cancelOrder: (id: string) => request<Order>(`/orders/${id}/cancel`, { method: 'POST' }, { auth: true }),
     createReturn: (id: string, reason: string) =>
         request<unknown>(`/orders/${id}/returns`, { method: 'POST', body: JSON.stringify({ reason }) }, { auth: true }),
@@ -297,9 +325,9 @@ export const api = {
     updateProduct: (id: string, input: unknown) =>
         request<Product>(`/admin/catalogue/products/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteProduct: (id: string) => request<void>(`/admin/catalogue/products/${id}`, { method: 'DELETE' }, { auth: true }),
-    createCategory: (input: { name: string; slug: string; description?: string; isPublished?: boolean }) =>
+    createCategory: (input: { name: string; description?: string; isPublished?: boolean }) =>
         request<Category>('/admin/catalogue/categories', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
-    updateCategory: (id: string, input: Partial<Category>) =>
+    updateCategory: (id: string, input: Partial<Omit<Category, 'id' | 'slug'>>) =>
         request<Category>(`/admin/catalogue/categories/${id}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteCategory: (id: string) => request<void>(`/admin/catalogue/categories/${id}`, { method: 'DELETE' }, { auth: true }),
     createVariant: (productId: string, input: unknown) =>
@@ -332,8 +360,18 @@ export const api = {
         request<void>(`/admin/catalogue/products/${productId}/videos/${videoId}`, { method: 'DELETE' }, { auth: true }),
     adminOrders: (params = '', signal?: AbortSignal) =>
         request<Order[]>(`/admin/orders${params ? `?${params}` : ''}`, { signal }, { auth: true }),
+    adminInvoice: (id: string) => request<{ url: string; expiresIn: number }>(`/admin/orders/${id}/invoice`, {}, { auth: true }),
     transitionOrder: (id: string, status: string) =>
         request<Order>(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }, { auth: true }),
+    createShipment: (orderId: string, carrier?: string) =>
+        request<Shipment>(`/admin/orders/${orderId}/shipments`, { method: 'POST', body: JSON.stringify({ carrier: carrier || undefined }) }, { auth: true }),
+    addTrackingEvent: (shipmentId: string, input: { providerEventId: string; status: string; message?: string; location?: string; occurredAt: string }) =>
+        request<Shipment>(`/admin/shipments/${shipmentId}/events`, { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
+    reviewReturn: (returnId: string, status: string, note?: string) =>
+        request<unknown>(`/admin/returns/${returnId}`, { method: 'PATCH', body: JSON.stringify({ status, note }) }, { auth: true }),
+    createRefund: (input: { paymentId: string; returnRequestId?: string; amountPaise: number; idempotencyKey: string; reason?: string }) =>
+        request<unknown>('/admin/refunds', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
+    reconcileRefunds: () => request<unknown>('/admin/refunds/reconcile', { method: 'POST' }, { auth: true }),
     inventory: () => request<InventoryLevel[]>('/admin/inventory/levels', {}, { auth: true }),
     warehouses: () => request<Warehouse[]>('/admin/inventory/warehouses', {}, { auth: true }),
     setInventory: (warehouseId: string, input: { variantId: string; onHand: number; lowStockThreshold?: number }) =>
@@ -346,6 +384,8 @@ export const api = {
     auditLogs: () => request<AuditLog[]>('/admin/audit-logs', {}, { auth: true }),
     assignRole: (userId: string, role: string) =>
         request<unknown>(`/admin/users/${userId}/roles`, { method: 'PUT', body: JSON.stringify({ role }) }, { auth: true }),
+    removeRole: (userId: string, role: string) =>
+        request<void>(`/admin/users/${userId}/roles/${role}`, { method: 'DELETE' }, { auth: true }),
     staffUsers: () => request<StaffUser[]>('/admin/users', {}, { auth: true }),
     createStaffUser: (input: { email: string; role: string; fullName?: string }) =>
         request<CreatedStaffUser>('/admin/users', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),

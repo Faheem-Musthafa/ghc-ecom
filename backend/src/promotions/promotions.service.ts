@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Coupon, DiscountType } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { auditChangeMetadata } from '../audit/audit-change';
 import { PrismaService } from '../database/prisma.service';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -26,7 +27,7 @@ export class PromotionsService {
         endsAt: new Date(input.endsAt),
       },
     });
-    await this.auditCoupon(actorId, 'promotion.coupon.created', coupon);
+    await this.auditCoupon(actorId, 'promotion.coupon.created', {}, coupon);
     return coupon;
   }
 
@@ -49,7 +50,7 @@ export class PromotionsService {
         endsAt: input.endsAt ? new Date(input.endsAt) : undefined,
       },
     });
-    await this.auditCoupon(actorId, 'promotion.coupon.updated', coupon);
+    await this.auditCoupon(actorId, 'promotion.coupon.updated', existing, coupon);
     return coupon;
   }
 
@@ -67,13 +68,24 @@ export class PromotionsService {
     }
   }
 
-  private async auditCoupon(actorId: string, action: string, coupon: Coupon): Promise<void> {
+  private async auditCoupon(actorId: string, action: string, before: object, coupon: Coupon): Promise<void> {
     await this.audit.record({
       actorId,
       action,
       entityType: 'coupon',
       entityId: coupon.id,
-      metadata: { code: coupon.code },
+      metadata: auditChangeMetadata(coupon.code, before, coupon, [
+        'code',
+        'type',
+        'value',
+        'minimumSubtotalPaise',
+        'maximumDiscountPaise',
+        'usageLimit',
+        'perUserLimit',
+        'startsAt',
+        'endsAt',
+        'isActive',
+      ]),
     });
   }
 }

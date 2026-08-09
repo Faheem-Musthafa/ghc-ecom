@@ -17,7 +17,9 @@ import {
   ProductVideo,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { auditChangeMetadata } from '../audit/audit-change';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -82,24 +84,48 @@ interface StoredProductImage {
   derivatives: StoredDerivative[];
 }
 
+export const PUBLIC_CATALOGUE_CACHE_VERSION_KEY = 'catalogue:version';
+const PUBLIC_CATALOGUE_CACHE_TTL_SECONDS = 30;
+const CATEGORY_AUDIT_FIELDS = ['name', 'slug', 'description', 'isPublished', 'sortOrder', 'parentId'] as const;
+const PRODUCT_AUDIT_FIELDS = ['name', 'category', 'status', 'description', 'material'] as const;
+const VARIANT_AUDIT_FIELDS = ['sku', 'barcode', 'color', 'colorHex', 'pricePaise', 'compareAtPricePaise', 'isActive'] as const;
+const IMAGE_AUDIT_FIELDS = ['altText', 'variantId', 'sortOrder', 'sourceFilename'] as const;
+const VIDEO_AUDIT_FIELDS = ['altText', 'sortOrder', 'sourceFilename'] as const;
+
 @Injectable()
 export class CatalogueService {
+  private readonly publicLoads = new Map<string, Promise<unknown>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly supabase: SupabaseService,
     private readonly imageProcessor: ImageProcessorService,
     private readonly videoProcessor: VideoProcessorService = new VideoProcessorService(),
+    private readonly redis?: RedisService,
   ) {}
 
   listPublicCategories(): Promise<Category[]> {
-    return this.prisma.category.findMany({
-      where: { isPublished: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
+    return this.cachedPublic('categories', () =>
+      this.prisma.category.findMany({
+        where: { isPublished: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
+    );
   }
 
   async listPublicProducts(query: ListProductsDto): Promise<PaginatedProducts> {
+    const cacheKey = [
+      'products',
+      query.page,
+      query.limit,
+      query.category ?? '',
+      query.q?.trim().toLowerCase() ?? '',
+    ].join(':');
+    return this.cachedPublic(cacheKey, () => this.loadPublicProducts(query));
+  }
+
+  private async loadPublicProducts(query: ListProductsDto): Promise<PaginatedProducts> {
     const where: Prisma.ProductWhereInput = {
       status: ProductStatus.PUBLISHED,
       publishedAt: { lte: new Date() },
@@ -117,8 +143,9 @@ export class CatalogueService {
         : {}),
     };
     const skip = (query.page - 1) * query.limit;
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.product.findMany({
+        relationLoadStrategy: 'join',
         where,
         include: {
           ...productInclude,
@@ -142,7 +169,14 @@ export class CatalogueService {
   }
 
   async getPublicProduct(slug: string): Promise<CatalogueProduct> {
+    return this.cachedPublic(`product:${slug.toLowerCase()}`, () =>
+      this.loadPublicProduct(slug),
+    );
+  }
+
+  private async loadPublicProduct(slug: string): Promise<CatalogueProduct> {
     const product = await this.prisma.product.findFirst({
+      relationLoadStrategy: 'join',
       where: {
         slug,
         status: ProductStatus.PUBLISHED,
@@ -171,6 +205,7 @@ export class CatalogueService {
 
   async listAdminProducts(): Promise<CatalogueProduct[]> {
     const products = await this.prisma.product.findMany({
+      relationLoadStrategy: 'join',
       include: productInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -179,6 +214,7 @@ export class CatalogueService {
 
   async getAdminProduct(productId: string): Promise<CatalogueProduct> {
     const product = await this.prisma.product.findUnique({
+      relationLoadStrategy: 'join',
       where: { id: productId },
       include: productInclude,
     });
@@ -200,7 +236,7 @@ export class CatalogueService {
         data: {
           ...input,
           name,
-          slug: input.slug.toLowerCase(),
+          slug: this.categorySlug(name),
         },
       }),
     );
@@ -210,6 +246,7 @@ export class CatalogueService {
       'category',
       category.id,
       context,
+      auditChangeMetadata(category.name, {}, category, CATEGORY_AUDIT_FIELDS),
     );
     return category;
   }
@@ -223,13 +260,10 @@ export class CatalogueService {
     if (input.parentId === categoryId) {
       throw new BadRequestException('A category cannot be its own parent');
     }
+    const existing = await this.prisma.category.findUnique({ where: { id: categoryId } });
+    if (!existing) throw new NotFoundException('Category not found');
     let name = input.name ? this.normalizedCategoryName(input.name) : undefined;
     if (input.isPublished && !name) {
-      const existing = await this.prisma.category.findUnique({
-        where: { id: categoryId },
-        select: { name: true },
-      });
-      if (!existing) throw new NotFoundException('Category not found');
       name = existing.name;
     }
     this.assertPublishableCategory(name, input.isPublished);
@@ -240,7 +274,7 @@ export class CatalogueService {
           data: {
             ...input,
             name,
-            slug: input.slug?.toLowerCase(),
+            ...(name ? { slug: this.categorySlug(name) } : {}),
           },
         }),
       'Category',
@@ -251,6 +285,7 @@ export class CatalogueService {
       'category',
       category.id,
       context,
+      auditChangeMetadata(category.name, existing, category, CATEGORY_AUDIT_FIELDS),
     );
     return category;
   }
@@ -260,13 +295,14 @@ export class CatalogueService {
     categoryId: string,
     context: RequestContext,
   ): Promise<void> {
-    await this.mutate(() => this.prisma.category.delete({ where: { id: categoryId } }), 'Category');
+    const category = await this.mutate(() => this.prisma.category.delete({ where: { id: categoryId } }), 'Category');
     await this.auditMutation(
       actorId,
       'catalogue.category.deleted',
       'category',
       categoryId,
       context,
+      auditChangeMetadata(category.name, category, {}, CATEGORY_AUDIT_FIELDS),
     );
   }
 
@@ -281,7 +317,14 @@ export class CatalogueService {
         include: productInclude,
       }),
     );
-    await this.auditMutation(actorId, 'catalogue.product.created', 'product', product.id, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.product.created',
+      'product',
+      product.id,
+      context,
+      auditChangeMetadata(product.name, {}, this.productAuditSnapshot(product), PRODUCT_AUDIT_FIELDS),
+    );
     return this.withAvailableStock(product);
   }
 
@@ -291,6 +334,11 @@ export class CatalogueService {
     input: UpdateProductDto,
     context: RequestContext,
   ): Promise<CatalogueProduct> {
+    const previous = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: { category: true },
+    });
+    if (!previous) throw new NotFoundException('Product not found');
     const product = await this.mutate(
       () =>
         this.prisma.product.update({
@@ -300,7 +348,19 @@ export class CatalogueService {
         }),
       'Product',
     );
-    await this.auditMutation(actorId, 'catalogue.product.updated', 'product', product.id, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.product.updated',
+      'product',
+      product.id,
+      context,
+      auditChangeMetadata(
+        product.name,
+        this.productAuditSnapshot(previous),
+        this.productAuditSnapshot(product),
+        PRODUCT_AUDIT_FIELDS,
+      ),
+    );
     return this.withAvailableStock(product);
   }
 
@@ -309,10 +369,41 @@ export class CatalogueService {
       this.prisma.productImage.findMany({ where: { productId } }),
       this.prisma.productVideo.findMany({ where: { productId } }),
     ]);
-    await this.mutate(() => this.prisma.product.delete({ where: { id: productId } }), 'Product');
+    const deletedProduct = await this.prisma.$transaction(async (transaction) => {
+      const product = await transaction.product.findUnique({
+        where: { id: productId },
+        select: {
+          name: true,
+          categoryId: true,
+          status: true,
+          description: true,
+          material: true,
+          category: { select: { name: true } },
+          variants: { select: { id: true } },
+        },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+      const variantIds = product.variants.map((variant) => variant.id);
+      await this.requireUnusedVariants(transaction, variantIds);
+      await transaction.inventoryLevel.deleteMany({ where: { variantId: { in: variantIds } } });
+      await transaction.product.delete({ where: { id: productId } });
+      return product;
+    });
     await this.removeStoredImages(images);
     await this.removeStoredVideos(videos);
-    await this.auditMutation(actorId, 'catalogue.product.deleted', 'product', productId, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.product.deleted',
+      'product',
+      productId,
+      context,
+      auditChangeMetadata(
+        deletedProduct.name,
+        this.productAuditSnapshot(deletedProduct),
+        {},
+        PRODUCT_AUDIT_FIELDS,
+      ),
+    );
   }
 
   async createVariant(
@@ -352,6 +443,12 @@ export class CatalogueService {
       'product_variant',
       variant.id,
       context,
+      auditChangeMetadata(
+        this.variantAuditLabel(variant),
+        {},
+        this.variantAuditSnapshot(variant),
+        VARIANT_AUDIT_FIELDS,
+      ),
     );
     return variant;
   }
@@ -369,7 +466,7 @@ export class CatalogueService {
     this.validateVariantPrices(
       input.pricePaise ?? existing.pricePaise,
       input.compareAtPricePaise === undefined
-        ? (existing.compareAtPricePaise ?? undefined)
+        ? existing.compareAtPricePaise
         : input.compareAtPricePaise,
     );
     const variant = await this.mutate(() => {
@@ -390,22 +487,54 @@ export class CatalogueService {
       'product_variant',
       variant.id,
       context,
+      auditChangeMetadata(
+        this.variantAuditLabel(variant),
+        this.variantAuditSnapshot(existing),
+        this.variantAuditSnapshot(variant),
+        VARIANT_AUDIT_FIELDS,
+      ),
     );
     return variant;
   }
 
   async deleteVariant(actorId: string, variantId: string, context: RequestContext): Promise<void> {
-    await this.mutate(
-      () => this.prisma.productVariant.delete({ where: { id: variantId } }),
-      'Product variant',
-    );
+    const variant = await this.prisma.$transaction(async (transaction) => {
+      const existing = await transaction.productVariant.findUnique({ where: { id: variantId } });
+      if (!existing) throw new NotFoundException('Product variant not found');
+      await this.requireUnusedVariants(transaction, [variantId]);
+      await transaction.inventoryLevel.deleteMany({ where: { variantId } });
+      await transaction.productVariant.delete({ where: { id: variantId } });
+      return existing;
+    });
     await this.auditMutation(
       actorId,
       'catalogue.variant.deleted',
       'product_variant',
       variantId,
       context,
+      auditChangeMetadata(
+        this.variantAuditLabel(variant),
+        this.variantAuditSnapshot(variant),
+        {},
+        VARIANT_AUDIT_FIELDS,
+      ),
     );
+  }
+
+  private async requireUnusedVariants(transaction: Prisma.TransactionClient, variantIds: string[]): Promise<void> {
+    if (!variantIds.length) return;
+    const [stock, cartItems, reservations, movements] = await Promise.all([
+      transaction.inventoryLevel.findFirst({
+        where: { variantId: { in: variantIds }, OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }] },
+        select: { id: true },
+      }),
+      transaction.cartItem.count({ where: { variantId: { in: variantIds } } }),
+      transaction.inventoryReservation.count({ where: { variantId: { in: variantIds } } }),
+      transaction.stockMovement.count({ where: { variantId: { in: variantIds } } }),
+    ]);
+    if (stock || cartItems || reservations || movements) {
+      throw new ConflictException('Product variant has stock or order history and must be archived instead');
+    }
   }
 
   async addProductImage(
@@ -428,6 +557,7 @@ export class CatalogueService {
         'product_image',
         record.id,
         context,
+        auditChangeMetadata(record.altText, {}, record, IMAGE_AUDIT_FIELDS),
       );
       return record;
     } catch (error) {
@@ -479,7 +609,10 @@ export class CatalogueService {
       'product_image',
       replacement.id,
       context,
-      { replacedImageId: previous.id },
+      {
+        ...auditChangeMetadata(replacement.altText, previous, replacement, IMAGE_AUDIT_FIELDS),
+        replacedImageId: previous.id,
+      },
     );
     return replacement;
   }
@@ -502,7 +635,14 @@ export class CatalogueService {
       where: { id: imageId },
       data: input,
     });
-    await this.auditMutation(actorId, 'catalogue.image.updated', 'product_image', imageId, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.image.updated',
+      'product_image',
+      imageId,
+      context,
+      auditChangeMetadata(updated.altText, image, updated, IMAGE_AUDIT_FIELDS),
+    );
     return updated;
   }
 
@@ -520,7 +660,14 @@ export class CatalogueService {
     }
     await this.prisma.productImage.delete({ where: { id: image.id } });
     await this.removeImages(this.imagePaths(image));
-    await this.auditMutation(actorId, 'catalogue.image.deleted', 'product_image', imageId, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.image.deleted',
+      'product_image',
+      imageId,
+      context,
+      auditChangeMetadata(image.altText, image, {}, IMAGE_AUDIT_FIELDS),
+    );
   }
 
   async uploadProductVideo(
@@ -559,6 +706,7 @@ export class CatalogueService {
         video.id,
         context,
         {
+          ...auditChangeMetadata(video.altText, {}, video, VIDEO_AUDIT_FIELDS),
           source: 'upload',
         },
       );
@@ -585,7 +733,67 @@ export class CatalogueService {
     if (video.storagePath) {
       await this.removeStoredVideos([video]);
     }
-    await this.auditMutation(actorId, 'catalogue.video.deleted', 'product_video', videoId, context);
+    await this.auditMutation(
+      actorId,
+      'catalogue.video.deleted',
+      'product_video',
+      videoId,
+      context,
+      auditChangeMetadata(video.altText, video, {}, VIDEO_AUDIT_FIELDS),
+    );
+  }
+
+  private productAuditSnapshot(product: {
+    name: string;
+    categoryId: string;
+    category?: { name: string } | null;
+    status: ProductStatus;
+    description: string | null;
+    material: string | null;
+  }): Record<string, string | null> {
+    return {
+      name: product.name,
+      category: product.category?.name ?? product.categoryId,
+      status: product.status,
+      description: product.description,
+      material: product.material,
+    };
+  }
+
+  private variantAuditSnapshot(variant: {
+    sku: string;
+    barcode: string | null;
+    pricePaise: number;
+    compareAtPricePaise: number | null;
+    isActive: boolean;
+    attributes: Prisma.JsonValue;
+  }): Record<string, string | number | boolean | null> {
+    const attributes = variant.attributes && typeof variant.attributes === 'object' && !Array.isArray(variant.attributes)
+      ? variant.attributes as Record<string, Prisma.JsonValue>
+      : {};
+    return {
+      sku: variant.sku,
+      barcode: variant.barcode,
+      color: typeof attributes.color === 'string' ? attributes.color : null,
+      colorHex: typeof attributes.colorHex === 'string' ? attributes.colorHex : null,
+      pricePaise: variant.pricePaise,
+      compareAtPricePaise: variant.compareAtPricePaise,
+      isActive: variant.isActive,
+    };
+  }
+
+  private variantAuditLabel(variant: {
+    sku: string;
+    attributes: Prisma.JsonValue;
+  }): string {
+    const snapshot = this.variantAuditSnapshot({
+      ...variant,
+      barcode: null,
+      pricePaise: 0,
+      compareAtPricePaise: null,
+      isActive: true,
+    });
+    return snapshot.color ? `${snapshot.color} · ${variant.sku}` : variant.sku;
   }
 
   private productData(
@@ -597,21 +805,30 @@ export class CatalogueService {
       name: input.name as string,
       slug: input.slug?.toLowerCase() as string,
       material: input.material === undefined ? undefined : input.material.trim() || null,
-      dimensions: input.dimensions === undefined ? undefined : input.dimensions.trim() || null,
       attributes: input.attributes as Prisma.InputJsonValue | undefined,
       publishedAt:
         input.status === ProductStatus.PUBLISHED ? new Date() : input.status ? null : undefined,
     };
   }
 
-  private validateVariantPrices(pricePaise: number, compareAtPricePaise?: number): void {
-    if (compareAtPricePaise !== undefined && compareAtPricePaise < pricePaise) {
+  private validateVariantPrices(pricePaise: number, compareAtPricePaise?: number | null): void {
+    if (compareAtPricePaise != null && compareAtPricePaise < pricePaise) {
       throw new BadRequestException('compareAtPricePaise cannot be lower than pricePaise');
     }
   }
 
   private normalizedCategoryName(name: string): string {
     return name.trim().replace(/\s+/g, ' ');
+  }
+
+  private categorySlug(name: string): string {
+    return name
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'category';
   }
 
   private assertPublishableCategory(name?: string, isPublished?: boolean): void {
@@ -798,6 +1015,7 @@ export class CatalogueService {
     context: RequestContext,
     metadata: Prisma.InputJsonValue = {},
   ): Promise<void> {
+    await this.invalidatePublicCache();
     await this.audit.record({
       actorId,
       action,
@@ -806,6 +1024,45 @@ export class CatalogueService {
       metadata,
       ...context,
     });
+  }
+
+  private async cachedPublic<T>(suffix: string, load: () => Promise<T>): Promise<T> {
+    if (!this.redis) return load();
+
+    let key: string;
+    try {
+      const version = (await this.redis.get(PUBLIC_CATALOGUE_CACHE_VERSION_KEY)) ?? '0';
+      key = `catalogue:${version}:${suffix}`;
+      const cached = await this.redis.getJson<T>(key);
+      if (cached !== null) return cached;
+    } catch {
+      return load();
+    }
+
+    const existing = this.publicLoads.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const pending = load().then(async (value) => {
+      try {
+        await this.redis?.setJson(key, value, PUBLIC_CATALOGUE_CACHE_TTL_SECONDS);
+      } catch {
+        // Redis is an optimization; public catalogue reads must still succeed without it.
+      }
+      return value;
+    });
+    this.publicLoads.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.publicLoads.get(key) === pending) this.publicLoads.delete(key);
+    }
+  }
+
+  private async invalidatePublicCache(): Promise<void> {
+    try {
+      await this.redis?.increment(PUBLIC_CATALOGUE_CACHE_VERSION_KEY);
+    } catch {
+      // The short TTL still bounds staleness if Redis is temporarily unavailable.
+    }
   }
 
   private async mutate<T>(operation: () => Promise<T>, label = 'Record'): Promise<T> {

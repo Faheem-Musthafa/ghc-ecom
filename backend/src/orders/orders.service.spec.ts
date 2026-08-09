@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { InvoiceService } from './invoice.service';
 import { OrdersService } from './orders.service';
+import { CartService } from '../cart/cart.service';
 
 describe('OrdersService', () => {
   const order = {
@@ -25,6 +26,7 @@ describe('OrdersService', () => {
   };
   let audit: { record: jest.Mock };
   let invoices: { signedUrl: jest.Mock };
+  let carts: { requireOwnedCart: jest.Mock };
   let service: OrdersService;
 
   beforeEach(() => {
@@ -41,11 +43,24 @@ describe('OrdersService', () => {
     };
     audit = { record: jest.fn().mockResolvedValue({}) };
     invoices = { signedUrl: jest.fn().mockResolvedValue('https://signed.example/invoice') };
+    carts = { requireOwnedCart: jest.fn().mockResolvedValue({ id: 'guest-cart' }) };
     service = new OrdersService(
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
       invoices as unknown as InvoiceService,
+      carts as unknown as CartService,
     );
+  });
+
+  it('allows a guest to retrieve only an order belonging to their cart token', async () => {
+    const guestOrder = { ...order, userId: null, cartId: 'guest-cart' };
+    prisma.order.findUnique.mockResolvedValue(guestOrder);
+
+    await expect(service.getGuest(guestOrder.id, 'guest-token')).resolves.toBe(guestOrder);
+    expect(carts.requireOwnedCart).toHaveBeenCalledWith('guest-cart', undefined, 'guest-token', false);
+
+    carts.requireOwnedCart.mockRejectedValueOnce(new Error('Cart access denied'));
+    await expect(service.getGuest(guestOrder.id, 'wrong-token')).rejects.toThrow('Cart access denied');
   });
 
   it('scopes customer order detail to the authenticated owner', async () => {

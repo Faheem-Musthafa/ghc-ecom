@@ -1,5 +1,8 @@
 import fallbackImageUrl from '../img/canister.webp';
 
+const staticImageUrl = (image: string | { src: string }): string =>
+    typeof image === 'string' ? image : image.src;
+
 export const rupees = (paise: number) =>
     new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -23,4 +26,4 @@ export const slugify = (value: string) =>
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '') || 'item';
 
-export const fallbackImage = fallbackImageUrl;
+export const fallbackImage = staticImageUrl(fallbackImageUrl);

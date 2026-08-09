@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../lib/router';
 
 const StoreFooter = () => (
     <footer className="border-t border-line bg-carbon text-cream">

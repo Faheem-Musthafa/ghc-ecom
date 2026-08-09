@@ -15,7 +15,7 @@ describe('OutboxService', () => {
     itemsSnapshot: [
       {
         productName: 'Noir Gold Tea Set',
-        variantName: 'Six cup set',
+        color: 'Gold',
         sku: 'GHC-TEA-006',
         quantity: 1,
         lineTotalPaise: 11_198,

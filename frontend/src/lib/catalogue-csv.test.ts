@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    catalogueCsvHeaders,
     catalogueCsvExport,
     catalogueCsvTemplate,
     driveLinksFromCsvCell,
@@ -14,7 +15,9 @@ const product: Product = {
     categoryId: 'category-id',
     name: 'Noir, Gold Set',
     slug: 'noir-gold-set',
+    shortDescription: 'Legacy short summary',
     description: 'Quoted "description"',
+    material: 'Stoneware',
     status: 'PUBLISHED',
     category: {
         id: 'category-id',
@@ -28,7 +31,6 @@ const product: Product = {
             id: 'variant-id',
             sku: 'GHC-NOIR-GOLD',
             barcode: '8901234567890',
-            name: 'Gold',
             pricePaise: 129_950,
             compareAtPricePaise: 149_900,
             attributes: { color: 'Gold', colorHex: '#C5A059' },
@@ -41,16 +43,40 @@ const product: Product = {
 };
 
 describe('catalogue CSV', () => {
+    it('matches every editable text field in Add Product without stale columns', () => {
+        expect(catalogueCsvHeaders).toEqual([
+            'product_name',
+            'category_name',
+            'status',
+            'description',
+            'material',
+            'color',
+            'color_hex',
+            'sku',
+            'barcode',
+            'price_rupees',
+            'compare_at_price_rupees',
+            'is_active',
+            'option_google_drive_image_links',
+            'shared_google_drive_image_links',
+        ]);
+    });
+
     it('exports existing products and parses them back without losing rupee prices or quoted text', () => {
         const [row] = parseCatalogueCsv(catalogueCsvExport([product]));
 
         expect(row).toMatchObject({
             product_name: 'Noir, Gold Set',
+            category_name: 'Tea Sets',
             description: 'Quoted "description"',
+            material: 'Stoneware',
+            color: 'Gold',
+            color_hex: '#C5A059',
             sku: 'GHC-NOIR-GOLD',
             barcode: '8901234567890',
             price_rupees: '1299.5',
             compare_at_price_rupees: '1499',
+            is_active: 'TRUE',
         });
     });
 
@@ -65,18 +91,25 @@ describe('catalogue CSV', () => {
         });
         expect(rows[2]).toMatchObject({
             product_name: 'Handcrafted Serving Bowl',
-            category_slug: 'serveware',
+            category_name: 'Serveware',
         });
-        expect(validateCatalogueCsvRows(rows, new Set(['tea-sets', 'serveware']))).toEqual([]);
+        expect(validateCatalogueCsvRows(rows)).toEqual([]);
     });
 
-    it('validates categories, duplicate SKUs, prices, and booleans before import', () => {
+    it('allows a new category name so import can create it', () => {
         const rows = parseCatalogueCsv(catalogueCsvExport([product]));
-        rows.push({ ...rows[0], sourceRow: 3, category_slug: 'missing', price_rupees: '12.999', is_active: 'maybe' });
+        rows[0].category_name = 'Brand New Category';
 
-        expect(validateCatalogueCsvRows(rows, new Set(['tea-sets']))).toEqual(
+        expect(validateCatalogueCsvRows(rows)).toEqual([]);
+    });
+
+    it('validates required category names, duplicate SKUs, prices, and booleans before import', () => {
+        const rows = parseCatalogueCsv(catalogueCsvExport([product]));
+        rows.push({ ...rows[0], sourceRow: 3, category_name: '', price_rupees: '12.999', is_active: 'maybe' });
+
+        expect(validateCatalogueCsvRows(rows)).toEqual(
             expect.arrayContaining([
-                'Row 3: category_slug “missing” does not exist.',
+                'Row 3: category_name is required.',
                 'Row 3: sku duplicates row 2.',
                 'Row 3: price_rupees must be a non-negative amount with at most two decimals.',
                 'Row 3: is_active must be TRUE or FALSE.',

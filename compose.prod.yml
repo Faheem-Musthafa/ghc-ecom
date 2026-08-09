@@ -1,9 +1,12 @@
 services:
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
-        VITE_API_URL: /api/v1
+        NEXT_PUBLIC_API_URL: /api/v1
+        NEXT_PUBLIC_SITE_URL: ${APP_ORIGIN:-http://localhost:8080}
+        BACKEND_ORIGIN: http://backend:3001
     depends_on:
       backend:
         condition: service_healthy
@@ -13,8 +16,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /var/cache/nginx
-      - /var/run
+      - /app/frontend/.next/cache
     security_opt:
       - no-new-privileges:true
 

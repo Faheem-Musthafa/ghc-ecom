@@ -3,21 +3,18 @@ import { slugify } from './commerce';
 
 export const catalogueCsvHeaders = [
     'product_name',
-    'category_slug',
+    'category_name',
     'status',
-    'short_description',
     'description',
     'material',
-    'dimensions',
-    'variant_name',
+    'color',
+    'color_hex',
     'sku',
     'barcode',
     'price_rupees',
     'compare_at_price_rupees',
-    'color',
-    'color_hex',
     'is_active',
-    'google_drive_image_links',
+    'option_google_drive_image_links',
     'shared_google_drive_image_links',
 ] as const;
 
@@ -26,9 +23,8 @@ export type CatalogueCsvRow = Record<CatalogueCsvHeader, string> & { product_slu
 
 const requiredHeaders = [
     'product_name',
-    'category_slug',
+    'category_name',
     'status',
-    'variant_name',
     'sku',
     'price_rupees',
 ] as const;
@@ -43,57 +39,48 @@ export const catalogueCsvTemplate = (): string => csv([
     catalogueCsvHeaders.slice(),
     [
         'Noir Gold Tea Set',
-        'tea-sets',
+        'Tea Sets',
         'DRAFT',
-        'Elegant tea set for everyday hosting.',
         'A six-piece tea set with a refined gold finish.',
         'Ceramic',
-        '6 pieces',
         'Gold',
+        '#C9A35B',
         'EXAMPLE-TEA-GOLD',
         '',
         '1299',
         '1499',
-        'Gold',
-        '#C9A35B',
         'TRUE',
         '',
         '',
     ],
     [
         'Noir Gold Tea Set',
-        'tea-sets',
+        'Tea Sets',
         'DRAFT',
-        'Elegant tea set for everyday hosting.',
         'A six-piece tea set with a refined gold finish.',
         'Ceramic',
-        '6 pieces',
-        'Sage',
+        'Sage Green',
+        '#9CAF88',
         'EXAMPLE-TEA-SAGE',
         '',
         '1349',
         '1549',
-        'Sage Green',
-        '#9CAF88',
         'TRUE',
         '',
         '',
     ],
     [
         'Handcrafted Serving Bowl',
-        'serveware',
+        'Serveware',
         'DRAFT',
-        'A versatile bowl for serving and sharing.',
         'Hand-finished serving bowl for dining tables and celebrations.',
         'Stoneware',
-        '24 cm diameter',
         'Natural',
+        '#D8C3A5',
         'EXAMPLE-BOWL-NATURAL',
         '',
         '899',
         '',
-        'Natural',
-        '#D8C3A5',
         'TRUE',
         '',
         '',
@@ -111,19 +98,16 @@ export const catalogueCsvExport = (products: Product[]): string => {
         for (const variant of product.variants) {
             rows.push([
                 product.name,
-                product.category.slug,
+                product.category.name,
                 product.status,
-                product.shortDescription || '',
-                product.description || '',
+                product.description || product.shortDescription || '',
                 product.material || '',
-                product.dimensions || '',
-                variant.name,
+                attributeText(variant.attributes, 'color'),
+                attributeText(variant.attributes, 'colorHex'),
                 variant.sku,
                 variant.barcode || '',
                 String(variant.pricePaise / 100),
                 variant.compareAtPricePaise == null ? '' : String(variant.compareAtPricePaise / 100),
-                attributeText(variant.attributes, 'color'),
-                attributeText(variant.attributes, 'colorHex'),
                 variant.isActive ? 'TRUE' : 'FALSE',
                 '',
                 '',
@@ -216,7 +200,7 @@ export const driveLinksFromCsvCell = (value: string): string[] =>
         .map((link) => link.trim())
         .filter(Boolean);
 
-export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs: Set<string>): string[] => {
+export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
     const errors: string[] = [];
     const seenSkus = new Map<string, number>();
     const seenBarcodes = new Map<string, number>();
@@ -226,9 +210,8 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs:
     for (const row of rows) {
         const prefix = `Row ${row.sourceRow}`;
         if (!row.product_name) errors.push(`${prefix}: product_name is required.`);
-        if (!categorySlugs.has(row.category_slug)) errors.push(`${prefix}: category_slug “${row.category_slug}” does not exist.`);
+        if (!row.category_name) errors.push(`${prefix}: category_name is required.`);
         if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(row.status.toUpperCase())) errors.push(`${prefix}: status must be DRAFT, PUBLISHED, or ARCHIVED.`);
-        if (!row.variant_name) errors.push(`${prefix}: variant_name is required.`);
         const sku = row.sku.toUpperCase();
         if (!/^[A-Z0-9][A-Z0-9._-]*$/.test(sku)) errors.push(`${prefix}: sku is invalid.`);
         if (seenSkus.has(sku)) errors.push(`${prefix}: sku duplicates row ${seenSkus.get(sku)}.`);
@@ -248,7 +231,7 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs:
         if (row.color_hex && !/^#[0-9A-Fa-f]{6}$/.test(row.color_hex)) errors.push(`${prefix}: color_hex must look like #C5A059.`);
         if (row.is_active && importBoolean(row.is_active) === undefined) errors.push(`${prefix}: is_active must be TRUE or FALSE.`);
 
-        for (const link of [...driveLinksFromCsvCell(row.google_drive_image_links), ...driveLinksFromCsvCell(row.shared_google_drive_image_links)]) {
+        for (const link of [...driveLinksFromCsvCell(row.option_google_drive_image_links), ...driveLinksFromCsvCell(row.shared_google_drive_image_links)]) {
             try {
                 const url = new URL(link);
                 if (url.protocol !== 'https:' || url.hostname !== 'drive.google.com') throw new Error();
@@ -259,12 +242,10 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[], categorySlugs:
 
         const signature = JSON.stringify([
             row.product_name,
-            row.category_slug,
+            row.category_name.toLowerCase(),
             row.status.toUpperCase(),
-            row.short_description,
             row.description,
             row.material,
-            row.dimensions,
         ]);
         const previousSignature = productSignatures.get(row.product_slug);
         if (previousSignature && previousSignature !== signature) errors.push(`${prefix}: product fields conflict with another row for slug “${row.product_slug}”.`);

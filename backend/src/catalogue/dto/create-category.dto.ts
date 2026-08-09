@@ -5,7 +5,6 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   MaxLength,
   Min,
   MinLength,
@@ -17,10 +16,6 @@ export class CreateCategoryDto {
   @MinLength(2)
   @MaxLength(120)
   name!: string;
-
-  @IsString()
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  slug!: string;
 
   @IsOptional()
   @IsString()

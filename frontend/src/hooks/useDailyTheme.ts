@@ -30,63 +30,66 @@ export interface DailyTheme {
     subtitle: string;
 }
 
+const imageSrc = (image: string | { src: string }): string =>
+    typeof image === 'string' ? image : image.src;
+
 const themes: DailyTheme[] = [
     {
-        hero: heroCutleryGold,
+        hero: imageSrc(heroCutleryGold),
         heroAlt: 'Gold cutlery set in velvet case on dark obsidian marble',
-        story: heroJugSet,
+        story: imageSrc(heroJugSet),
         storyAlt: 'Ceramic tea set with gold rim accents',
-        detail: heroCupSaucer,
+        detail: imageSrc(heroCupSaucer),
         detailAlt: 'Black marble cups with gold veining on walnut board',
         tagline: 'Set the table.',
         subtitle: 'Own the room.',
     },
     {
-        hero: heroKettleDark,
+        hero: imageSrc(heroKettleDark),
         heroAlt: 'Borosilicate glass kettle with walnut handle in candlelight',
-        story: heroCanisterDark,
+        story: imageSrc(heroCanisterDark),
         storyAlt: 'Ceramic canisters with bamboo lids on dark marble',
-        detail: heroNutsTray,
+        detail: imageSrc(heroNutsTray),
         detailAlt: 'Leaf-shaped serving tray surrounded by golden candlelight',
         tagline: 'Craft the moment.',
         subtitle: 'Elevate every detail.',
     },
     {
-        hero: heroJugSet,
+        hero: imageSrc(heroJugSet),
         heroAlt: 'Ceramic tea set with gold rim accents',
-        story: heroCutleryGold,
+        story: imageSrc(heroCutleryGold),
         storyAlt: 'Gold cutlery set in velvet case on dark obsidian marble',
-        detail: heroKettleDark,
+        detail: imageSrc(heroKettleDark),
         detailAlt: 'Borosilicate glass kettle with walnut handle in candlelight',
         tagline: 'Pour with intention.',
         subtitle: 'Gather with grace.',
     },
     {
-        hero: heroCupSaucer,
+        hero: imageSrc(heroCupSaucer),
         heroAlt: 'Black marble cups with gold veining on walnut board',
-        story: heroNutsTray,
+        story: imageSrc(heroNutsTray),
         storyAlt: 'Leaf-shaped serving tray surrounded by golden candlelight',
-        detail: heroCutleryGold,
+        detail: imageSrc(heroCutleryGold),
         detailAlt: 'Gold cutlery set in velvet case on dark obsidian marble',
         tagline: 'Morning ritual.',
         subtitle: 'Evening ceremony.',
     },
     {
-        hero: heroCanisterDark,
+        hero: imageSrc(heroCanisterDark),
         heroAlt: 'Ceramic canisters with bamboo lids on dark marble',
-        story: heroKettleDark,
+        story: imageSrc(heroKettleDark),
         storyAlt: 'Borosilicate glass kettle with walnut handle in candlelight',
-        detail: heroJugSet,
+        detail: imageSrc(heroJugSet),
         detailAlt: 'Ceramic tea set with gold rim accents',
         tagline: 'Store the essential.',
         subtitle: 'Serve the remarkable.',
     },
     {
-        hero: heroNutsTray,
+        hero: imageSrc(heroNutsTray),
         heroAlt: 'Leaf-shaped serving tray surrounded by golden candlelight',
-        story: heroCupSaucer,
+        story: imageSrc(heroCupSaucer),
         storyAlt: 'Black marble cups with gold veining on walnut board',
-        detail: heroCanisterDark,
+        detail: imageSrc(heroCanisterDark),
         detailAlt: 'Ceramic canisters with bamboo lids on dark marble',
         tagline: 'Host beautifully.',
         subtitle: 'Leave nothing ordinary.',
@@ -95,8 +98,9 @@ const themes: DailyTheme[] = [
 
 /** Returns the day-of-year (0–365). */
 const dayOfYear = (d: Date): number => {
-    const start = new Date(d.getFullYear(), 0, 0);
-    const diff = d.getTime() - start.getTime();
+    const start = Date.UTC(d.getUTCFullYear(), 0, 0);
+    const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const diff = today - start;
     return Math.floor(diff / 86_400_000);
 };
 

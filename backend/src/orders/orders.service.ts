@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Order, OrderStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { CartService } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { ListAdminOrdersDto } from './dto/list-admin-orders.dto';
 import { InvoiceService } from './invoice.service';
@@ -30,6 +31,11 @@ const orderInclude = {
     },
   },
   invoice: true,
+  shipments: {
+    include: { items: true, events: { orderBy: { occurredAt: 'asc' as const } } },
+    orderBy: { createdAt: 'asc' as const },
+  },
+  returns: { orderBy: { createdAt: 'desc' as const } },
 } satisfies Prisma.OrderInclude;
 
 export type OrderDetail = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
@@ -40,18 +46,37 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly invoices: InvoiceService,
+    private readonly carts: CartService,
   ) {}
 
   listMine(userId: string): Promise<OrderDetail[]> {
     return this.prisma.order.findMany({
+      relationLoadStrategy: 'join',
       where: { userId },
       include: orderInclude,
       orderBy: { createdAt: 'desc' },
     });
   }
 
+  async getGuest(orderId: string, guestToken: string): Promise<OrderDetail> {
+    const order = await this.prisma.order.findUnique({
+      relationLoadStrategy: 'join',
+      where: { id: orderId },
+      include: orderInclude,
+    });
+    if (!order || order.userId) throw new NotFoundException('Order not found');
+    await this.carts.requireOwnedCart(order.cartId, undefined, guestToken, false);
+    return order;
+  }
+
+  async guestInvoiceUrl(orderId: string, guestToken: string): Promise<{ url: string; expiresIn: number }> {
+    const order = await this.getGuest(orderId, guestToken);
+    return this.invoiceFor(order);
+  }
+
   async getMine(userId: string, orderId: string): Promise<OrderDetail> {
     const order = await this.prisma.order.findFirst({
+      relationLoadStrategy: 'join',
       where: { id: orderId, userId },
       include: orderInclude,
     });
@@ -63,6 +88,20 @@ export class OrdersService {
 
   async invoiceUrl(userId: string, orderId: string): Promise<{ url: string; expiresIn: number }> {
     const order = await this.getMine(userId, orderId);
+    return this.invoiceFor(order);
+  }
+
+  async adminInvoiceUrl(orderId: string): Promise<{ url: string; expiresIn: number }> {
+    const order = await this.prisma.order.findUnique({
+      relationLoadStrategy: 'join',
+      where: { id: orderId },
+      include: orderInclude,
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.invoiceFor(order);
+  }
+
+  private async invoiceFor(order: OrderDetail): Promise<{ url: string; expiresIn: number }> {
     if (!order.invoice) {
       throw new NotFoundException('Invoice is not ready');
     }
@@ -91,6 +130,7 @@ export class OrdersService {
           }
         : undefined;
     return this.prisma.order.findMany({
+      relationLoadStrategy: 'join',
       where: {
         status: input.status,
         userId: input.userId,

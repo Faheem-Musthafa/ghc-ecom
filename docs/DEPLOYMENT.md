@@ -58,11 +58,11 @@ forward migration, never edited migration history.
   `SameSite=Lax`, `Path=/`, and the `__Host-` prefix.
 - Secret manager and rotation owner.
 - `ENABLE_SWAGGER=false`.
-- CSP/security headers from `frontend/nginx.conf` or equivalent CDN config.
-- Public source maps disabled; Vite default build currently does not emit them.
+- CSP/security headers from `frontend/next.config.mjs` or equivalent CDN config.
+- Public source maps disabled; the Next.js production build does not emit browser source maps by default.
 - Central JSON logs, request ID, uptime checks, error/latency/queue/payment alerts.
 - Daily backups/PITR and tested restore.
-- CDN caching only for hashed `/assets/`; never cache API or `index.html` long-term.
+- CDN caching for immutable `/_next/static/` assets; catalogue data uses bounded Next.js server-cache revalidation.
 - Never cache `/api/v1/auth/*`; the API emits `Cache-Control: private, no-store`.
 - Preserve `Set-Cookie`, `Cookie`, `x-csrf-token`, and credentialed CORS behavior
   through every proxy/CDN layer.

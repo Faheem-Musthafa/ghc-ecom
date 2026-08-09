@@ -15,13 +15,44 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async ping(): Promise<string> {
-    if (this.client.status === 'wait') {
-      await this.client.connect();
-    }
+    await this.ensureConnected();
     return this.client.ping();
   }
 
+  async get(key: string): Promise<string | null> {
+    await this.ensureConnected();
+    return this.client.get(key);
+  }
+
+  async getJson<T>(key: string): Promise<T | null> {
+    const value = await this.get(key);
+    return value === null ? null : (JSON.parse(value) as T);
+  }
+
+  async setJson(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    await this.ensureConnected();
+    await this.client.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+  }
+
+  async increment(key: string): Promise<number> {
+    await this.ensureConnected();
+    return this.client.incr(key);
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.ensureConnected();
+    await this.client.del(key);
+  }
+
   async onModuleDestroy(): Promise<void> {
-    await this.client.quit();
+    if (this.client.status === 'ready') {
+      await this.client.quit();
+      return;
+    }
+    this.client.disconnect();
+  }
+
+  private async ensureConnected(): Promise<void> {
+    if (this.client.status === 'wait') await this.client.connect();
   }
 }

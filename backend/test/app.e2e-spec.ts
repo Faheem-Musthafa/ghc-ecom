@@ -21,6 +21,7 @@ describe('Application health (e2e)', () => {
     },
     userRole: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     webhookEvent: {
       findUnique: jest.fn(),
@@ -45,6 +46,7 @@ describe('Application health (e2e)', () => {
     prisma.$queryRaw.mockResolvedValue([{ '?column?': 1 }]);
     redis.ping.mockResolvedValue('PONG');
     prisma.userRole.findFirst.mockResolvedValue(null);
+    prisma.userRole.findMany.mockResolvedValue([{ role: 'CUSTOMER' }]);
     prisma.category.findMany.mockResolvedValue([
       {
         id: '0f8fad5b-d9cb-469f-a165-70867728950e',
@@ -200,7 +202,7 @@ describe('Application health (e2e)', () => {
   it('reports an anonymous browser session without expected 401 responses', async () => {
     const response = await request(app.getHttpServer()).get('/api/v1/auth/session').expect(200);
 
-    expect(response.body).toEqual({ authenticated: false, user: null });
+    expect(response.body).toEqual({ authenticated: false, user: null, roles: [] });
     expect(supabase.verifyAccessToken).not.toHaveBeenCalled();
     expect(supabase.refresh).not.toHaveBeenCalled();
   });
@@ -214,6 +216,7 @@ describe('Application health (e2e)', () => {
     expect(response.body).toMatchObject({
       authenticated: true,
       user: { id: 'customer-id', email: 'customer@example.com' },
+      roles: ['CUSTOMER'],
       csrfToken: expect.any(String),
     });
     expect(supabase.refresh).toHaveBeenCalledWith('server-only-refresh-token');
@@ -235,6 +238,7 @@ describe('Application health (e2e)', () => {
     expect(login.body).toMatchObject({
       authenticated: true,
       user: { id: 'customer-id', email: 'customer@example.com' },
+      roles: ['CUSTOMER'],
       csrfToken: expect.any(String),
     });
     expect(JSON.stringify(login.body)).not.toContain('server-only-access-token');
@@ -256,6 +260,7 @@ describe('Application health (e2e)', () => {
           id: 'customer-id',
           email: 'customer@example.com',
         },
+        roles: ['CUSTOMER'],
       });
 
     await browser.post('/api/v1/auth/logout').expect(403);

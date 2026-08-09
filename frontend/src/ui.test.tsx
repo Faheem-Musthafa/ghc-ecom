@@ -1,21 +1,55 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
-import { act } from 'react-dom/test-utils';
-import { MemoryRouter, Route } from 'react-router-dom';
+import { act } from 'react';
+import { createRoot, Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from './contexts/AuthContext';
 import { CartProvider } from './contexts/CartContext';
 import CartDrawer from './components/CartDrawer';
 import Toast from './components/Toast';
-import HomePage from './pages';
-import AccountPage from './pages/account';
-import AdminPage from './pages/admin';
-import AuthPage from './pages/auth';
-import CartPage from './pages/cart';
-import ProductDetailPage from './pages/product';
+import HomePage from './views';
+import AccountPage from './views/account';
+import AdminPage from './views/admin';
+import AdminLoginPage from './views/admin-login';
+import AuthPage from './views/auth';
+import CartPage from './views/cart';
+import ProductDetailPage from './views/product';
 import { serializeJsonLd } from './components/SEOHead';
 import { saveSession } from './lib/api';
+import { catalogueCsvHeaders } from './lib/catalogue-csv';
 import { Product } from './types';
+
+const routerState = vi.hoisted(() => ({ path: '/' }));
+
+vi.mock('next/navigation', () => ({
+    usePathname: () => new URL(routerState.path, 'http://localhost').pathname,
+    useSearchParams: () => new URL(routerState.path, 'http://localhost').searchParams,
+    useParams: () => {
+        const segments = new URL(routerState.path, 'http://localhost').pathname.split('/').filter(Boolean);
+        return {
+            productId: segments[0] === 'product' ? segments[1] : undefined,
+            orderId: segments.includes('orders') || segments[0] === 'order-confirmation' ? segments.at(-1) : undefined,
+            trackingNumber: segments[0] === 'tracking' ? segments[1] : undefined,
+        };
+    },
+    useRouter: () => ({
+        push: (href: string) => { routerState.path = href; },
+        replace: (href: string) => { routerState.path = href; },
+        back: vi.fn(),
+    }),
+    notFound: () => { throw new Error('NEXT_NOT_FOUND'); },
+}));
+
+vi.mock('next/link', () => ({
+    default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+        <a href={href} {...props}>{children}</a>
+    ),
+}));
+
+vi.mock('next/image', () => ({
+    default: ({ fill: _fill, priority: _priority, sizes: _sizes, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; priority?: boolean }) => (
+        <img {...props} />
+    ),
+}));
 
 const product: Product = {
     id: '22222222-2222-4222-8222-222222222222',
@@ -37,7 +71,6 @@ const product: Product = {
         {
             id: '33333333-3333-4333-8333-333333333333',
             sku: 'GHC-NOIR-GOLD',
-            name: 'Gold',
             pricePaise: 249900,
             attributes: { color: 'Gold', colorHex: '#C5A059' },
             isActive: true,
@@ -46,7 +79,6 @@ const product: Product = {
         {
             id: '33333333-3333-4333-8333-333333333334',
             sku: 'GHC-NOIR-SAGE',
-            name: 'Sage Green',
             pricePaise: 259900,
             attributes: { color: 'Sage Green', colorHex: '#9CAF88' },
             isActive: true,
@@ -97,7 +129,9 @@ const json = (body: unknown, status = 200) =>
         headers: { 'content-type': 'application/json' },
     });
 let mockAuthenticated = false;
+let mockRoles: string[] = [];
 let currentProduct = product;
+let mockImportedProductFailure = false;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -107,8 +141,9 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
             ? json({
                   authenticated: true,
                   user: { id: 'user-1', email: 'admin@example.com' },
+                  roles: mockRoles,
               })
-            : json({ authenticated: false, user: null });
+            : json({ authenticated: false, user: null, roles: [] });
     }
     if (url.endsWith('/auth/refresh')) return json({ message: 'Session refresh is unavailable' }, 401);
     if (url.endsWith('/carts') && init?.method === 'POST') return json({ cart: emptyCart, guestToken: 'guest-token' });
@@ -124,7 +159,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
                     variantId: variant.id,
                     sku: variant.sku,
                     productName: product.name,
-                    variantName: variant.name,
+                    color: typeof variant.attributes?.color === 'string' ? variant.attributes.color : null,
                     imageUrl: image?.thumbnailUrl,
                     quantity: 1,
                     unitPricePaise: variant.pricePaise,
@@ -134,29 +169,118 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
             subtotalPaise: variant.pricePaise,
         });
     }
+    if (url.endsWith('/admin/catalogue/categories') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body)) as { name: string };
+        return json({
+            id: 'new-category-id',
+            name: body.name,
+            slug: 'dinner-sets',
+            isPublished: true,
+            sortOrder: 0,
+        });
+    }
     if (url.endsWith('/categories')) return json([currentProduct.category]);
     if (url.includes('/products?')) return json({ items: [currentProduct], total: 1, page: 1, limit: 48 });
     if (url.endsWith(`/products/${product.slug}`)) return json(currentProduct);
+    if (url.endsWith('/admin/inventory/levels')) {
+        return json([
+            {
+                id: 'inventory-level-1',
+                warehouseId: 'warehouse-1',
+                variantId: product.variants[0].id,
+                onHand: 8,
+                reserved: 2,
+                lowStockThreshold: 3,
+            },
+        ]);
+    }
+    if (url.endsWith('/admin/inventory/warehouses')) {
+        return json([{ id: 'warehouse-1', code: 'MAIN', name: 'Main Warehouse', isActive: true }]);
+    }
+    if (url.endsWith('/admin/catalogue/products') && init?.method === 'POST') {
+        if (mockImportedProductFailure) return json({ message: 'Product save failed' }, 400);
+        const body = JSON.parse(String(init.body)) as { categoryId: string; name: string; slug: string; status: Product['status'] };
+        return json({
+            ...currentProduct,
+            id: 'new-product-id',
+            categoryId: body.categoryId,
+            name: body.name,
+            slug: body.slug,
+            status: body.status,
+            variants: [],
+            images: [],
+            videos: [],
+        });
+    }
+    if (/\/admin\/catalogue\/products\/[^/]+\/variants$/.test(url) && init?.method === 'POST') {
+        return json({ ...currentProduct.variants[0], id: 'new-variant-id' });
+    }
+    if (/\/admin\/catalogue\/categories\/[^/]+$/.test(url) && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+    }
+    if (url.endsWith('/admin/audit-logs')) {
+        return json([
+            {
+                id: 'audit-1',
+                actorId: 'user-1',
+                actorLabel: 'admin@example.com',
+                action: 'catalogue.variant.updated',
+                entityType: 'product_variant',
+                entityId: product.variants[0].id,
+                metadata: {
+                    entityLabel: `${product.name} · ${product.variants[0].sku}`,
+                    changes: {
+                        pricePaise: { before: 249_900, after: 259_900 },
+                        isActive: { before: true, after: false },
+                    },
+                },
+                ipAddress: '127.0.0.1',
+                createdAt: '2026-08-09T08:00:00.000Z',
+            },
+        ]);
+    }
+    if (url.endsWith('/admin/users') && (!init?.method || init.method === 'GET')) {
+        return json([
+            {
+                id: 'user-1',
+                email: 'admin@example.com',
+                fullName: 'Faheem Admin',
+                roles: ['ADMIN'],
+                createdAt: '2026-07-01T08:00:00.000Z',
+            },
+            {
+                id: 'staff-1',
+                email: 'sana@example.com',
+                fullName: 'Sana Khan',
+                roles: ['SUPPORT_AGENT', 'CATALOGUE_MANAGER'],
+                createdAt: '2026-08-01T08:00:00.000Z',
+            },
+        ]);
+    }
+    if (url.endsWith('/admin/catalogue/categories')) return json([currentProduct.category]);
+    if (url.endsWith('/admin/catalogue/products')) return json([currentProduct]);
     if (url.includes('/admin/orders')) return json([], 403);
     if (url.includes('/admin/operations')) return json({}, 403);
     return json({});
 });
 
+let mountedRoot: Root | null = null;
+
 const render = async (node: React.ReactNode, path = '/') => {
+    routerState.path = path;
+    window.history.replaceState(null, '', path);
     const container = document.createElement('div');
     document.body.appendChild(container);
+    mountedRoot = createRoot(container);
     await act(async () => {
-        ReactDOM.render(
+        mountedRoot!.render(
             <AuthProvider>
                 <CartProvider>
-                    <MemoryRouter initialEntries={[path]}>
-                        {node}
-                        <CartDrawer />
-                        <Toast />
-                    </MemoryRouter>
+                    {node}
+                    <CartDrawer />
+                    <Toast />
                 </CartProvider>
             </AuthProvider>,
-            container,
         );
         await Promise.resolve();
         await new Promise((resolve) => window.setTimeout(resolve, 220));
@@ -169,14 +293,16 @@ describe('black and gold commerce UI', () => {
         localStorage.clear();
         sessionStorage.clear();
         mockAuthenticated = false;
+        mockRoles = [];
         currentProduct = product;
+        mockImportedProductFailure = false;
         saveSession(null);
         vi.stubGlobal('fetch', fetchMock);
         fetchMock.mockClear();
     });
     afterEach(() => {
-        const root = document.body.firstElementChild;
-        if (root) ReactDOM.unmountComponentAtNode(root);
+        act(() => mountedRoot?.unmount());
+        mountedRoot = null;
         document.body.innerHTML = '';
         vi.unstubAllGlobals();
     });
@@ -195,9 +321,7 @@ describe('black and gold commerce UI', () => {
 
     it('switches colour images and writes the selected variant to the backend cart', async () => {
         const container = await render(
-            <Route path="/product/:productId">
-                <ProductDetailPage />
-            </Route>,
+            <ProductDetailPage />,
             `/product/${product.slug}`,
         );
         expect(container.textContent).toContain('₹2,499');
@@ -240,9 +364,7 @@ describe('black and gold commerce UI', () => {
         };
         currentProduct = unavailableProduct;
         const container = await render(
-            <Route path="/product/:productId">
-                <ProductDetailPage />
-            </Route>,
+            <ProductDetailPage />,
             `/product/${product.slug}`,
         );
 
@@ -270,24 +392,159 @@ describe('black and gold commerce UI', () => {
 
     it('protects customer account routes', async () => {
         const container = await render(
-            <>
-                <Route path="/account">
-                    <AccountPage />
-                </Route>
-                <Route path="/auth">
-                    <span>Authentication required</span>
-                </Route>
-            </>,
+            <AccountPage />,
             '/account/orders',
         );
-        expect(container.textContent).toContain('Authentication required');
+        expect(routerState.path).toBe('/auth?next=%2Faccount%2Forders');
+    });
+
+    it('renders a dedicated staff sign-in page', async () => {
+        const container = await render(<AdminLoginPage />, '/admin/login');
+        expect(container.textContent).toContain('Staff access');
+        expect(container.textContent).toContain('Sign in to admin');
+        expect(container.querySelector('input[name="email"]')).not.toBeNull();
+        expect(container.querySelector('input[name="password"]')).not.toBeNull();
+    });
+
+    it('sends unauthenticated admin routes to the staff sign-in page', async () => {
+        await render(<AdminPage />, '/admin/orders');
+        expect(routerState.path).toBe('/admin/login?next=%2Fadmin%2Forders');
     });
 
     it('surfaces backend authorization failures in the admin console', async () => {
         mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
         const container = await render(<AdminPage />, '/admin');
-        expect(container.textContent).toContain('Admin workspace');
+        expect(container.textContent).toContain('Workspace / Overview');
         expect(container.textContent).toContain('Request failed');
+        expect(container.querySelector('.admin-desktop-nav')?.className).toContain('lg:fixed');
+        expect(container.querySelector('.admin-workspace-main')?.className).toContain('lg:ml-[264px]');
+    });
+
+    it('shows each inventory variant colour beside its SKU', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['WAREHOUSE_MANAGER'];
+        const container = await render(<AdminPage />, '/admin/inventory');
+
+        expect(container.textContent).toContain('Noir Gold Serving Set');
+        expect(container.textContent).toContain('GHC-NOIR-GOLD');
+        expect(container.textContent).toContain('Gold');
+        const swatch = container.querySelector<HTMLElement>('[aria-label="Gold colour swatch"]');
+        expect(swatch).not.toBeNull();
+        expect(swatch?.style.backgroundColor).toBe('rgb(197, 160, 89)');
+    });
+
+    it('keeps redundant variant-name and dimensions fields out of Add Product', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const addProduct = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add Product'));
+
+        await act(async () => {
+            addProduct?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        expect(container.textContent).not.toContain('Catalogue Manager');
+        expect(container.textContent).not.toContain('Option name');
+        expect(container.querySelector('input[name="dimensions"]')).toBeNull();
+    });
+
+    it('shows categories by name without exposing their generated slug', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const categoriesTab = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Categories'));
+
+        await act(async () => {
+            categoriesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        const headings = Array.from(container.querySelectorAll('th')).map((heading) => heading.textContent?.trim());
+        expect(headings).toContain('Category Name');
+        expect(headings).not.toContain('Slug');
+        expect(container.textContent).not.toContain(currentProduct.category.slug);
+    });
+
+    it('creates a missing category by name during catalogue import', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
+        const csv = `${catalogueCsvHeaders.join(',')}\n${values.join(',')}`;
+        const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
+        const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+        await act(async () => {
+            input?.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((resolve) => window.setTimeout(resolve, 300));
+        });
+
+        const categoryRequest = fetchMock.mock.calls.find(([request, init]) =>
+            String(request).endsWith('/admin/catalogue/categories') && init?.method === 'POST');
+        expect(JSON.parse(String(categoryRequest?.[1]?.body))).toMatchObject({ name: 'Dinner Sets', isPublished: true });
+        expect(String(categoryRequest?.[1]?.body)).not.toContain('slug');
+        const productRequest = fetchMock.mock.calls.find(([request, init]) =>
+            String(request).endsWith('/admin/catalogue/products') && init?.method === 'POST');
+        expect(JSON.parse(String(productRequest?.[1]?.body))).toMatchObject({ categoryId: 'new-category-id' });
+    });
+
+    it('removes an auto-created category when the rest of the import fails', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        mockImportedProductFailure = true;
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
+        const csv = `${catalogueCsvHeaders.join(',')}\n${values.join(',')}`;
+        const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
+        const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+        await act(async () => {
+            input?.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((resolve) => window.setTimeout(resolve, 300));
+        });
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            expect.stringMatching(/\/admin\/catalogue\/categories\/new-category-id$/),
+            expect.objectContaining({ method: 'DELETE' }),
+        );
+        expect(container.textContent).toContain('All changes from this file were rolled back');
+    });
+
+    it('shows who changed which record and the before/after values', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/audit-logs');
+
+        expect(container.textContent).toContain('admin@example.com');
+        expect(container.textContent).toContain('Noir Gold Serving Set · GHC-NOIR-GOLD');
+        expect(container.textContent).toContain('Price');
+        expect(container.textContent).toMatch(/₹2,499\s*→\s*₹2,599/);
+        expect(container.textContent).toContain('Active');
+        expect(container.textContent).toMatch(/Yes\s*→\s*No/);
+    });
+
+    it('presents team access with readable role names and explicit editing', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/users');
+
+        expect(container.textContent).toContain('Team directory');
+        expect(container.textContent).toContain('Faheem Admin');
+        expect(container.textContent).toContain('Sana Khan');
+        expect(container.textContent).toContain('Catalogue manager');
+        expect(container.textContent).not.toContain('CATALOGUE_MANAGER');
+
+        const editButtons = Array.from(container.querySelectorAll('button')).filter((button) => button.textContent === 'Edit access');
+        await act(async () => editButtons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+        const ownAdminRole = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+        expect(ownAdminRole?.checked).toBe(true);
+        expect(ownAdminRole?.disabled).toBe(true);
+        expect(container.textContent).toContain('Your own admin access is protected.');
     });
 
     it('escapes script-closing characters in product JSON-LD', () => {

@@ -11,7 +11,6 @@ export interface ProductVariant {
     id: string;
     sku: string;
     barcode?: string | null;
-    name: string;
     pricePaise: number;
     compareAtPricePaise?: number | null;
     attributes?: Record<string, unknown>;
@@ -45,7 +44,6 @@ export interface Product {
     shortDescription?: string | null;
     description?: string | null;
     material?: string | null;
-    dimensions?: string | null;
     status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
     attributes?: Record<string, unknown>;
     category: Category;
@@ -70,12 +68,16 @@ export interface SupabaseUser {
 
 export interface Session {
     user: SupabaseUser | null;
+    roles: AppRole[];
 }
+
+export type AppRole = 'ADMIN' | 'CATALOGUE_MANAGER' | 'WAREHOUSE_MANAGER' | 'SUPPORT_AGENT' | 'CUSTOMER';
 
 export interface AuthResult {
     authenticated: boolean;
     user: SupabaseUser | null;
     csrfToken?: string;
+    roles: AppRole[];
 }
 
 export interface CartItem {
@@ -88,8 +90,7 @@ export interface CartItem {
     categoryName?: string;
     productDescription?: string | null;
     productMaterial?: string | null;
-    productDimensions?: string | null;
-    variantName: string;
+    color?: string | null;
     imageUrl: string | null;
     attributes?: Record<string, unknown>;
     quantity: number;
@@ -199,6 +200,18 @@ export interface Order {
     updatedAt: string;
     payments?: OrderPayment[];
     invoice?: { id: string } | null;
+    shipments?: Shipment[];
+    returns?: ReturnRequest[];
+}
+
+export interface ReturnRequest {
+    id: string;
+    orderId: string;
+    status: string;
+    reason: string;
+    reviewNote?: string | null;
+    eligibleUntil: string;
+    createdAt: string;
 }
 
 export interface TrackingEvent {
@@ -285,6 +298,7 @@ export interface CreateCouponInput {
 export interface AuditLog {
     id: string;
     actorId?: string | null;
+    actorLabel?: string | null;
     action: string;
     entityType: string;
     entityId?: string | null;

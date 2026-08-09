@@ -36,11 +36,6 @@ export class CreateProductDto {
   material?: string;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  dimensions?: string;
-
-  @IsOptional()
   @IsEnum(ProductStatus)
   status?: ProductStatus;
 

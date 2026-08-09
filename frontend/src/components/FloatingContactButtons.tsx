@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from '../lib/router';
 import { IconMessageCircle, IconPhone } from './Icons';
 
 const FloatingContactButtons = () => {

@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { IconAlert } from './Icons';
 
 export const OfflineBanner: React.FC = () => {
-    const [isOffline, setIsOffline] = useState(!navigator.onLine);
+    const [isOffline, setIsOffline] = useState(false);
 
     useEffect(() => {
         const handleOnline = () => setIsOffline(false);
         const handleOffline = () => setIsOffline(true);
 
+        setIsOffline(!navigator.onLine);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
 

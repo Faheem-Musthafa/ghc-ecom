@@ -23,10 +23,6 @@ export class CreateVariantDto {
   @Matches(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
   barcode?: string | null;
 
-  @IsString()
-  @MaxLength(120)
-  name!: string;
-
   @IsInt()
   @Min(0)
   pricePaise!: number;
@@ -34,7 +30,7 @@ export class CreateVariantDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  compareAtPricePaise?: number;
+  compareAtPricePaise?: number | null;
 
   @IsOptional()
   @IsObject()

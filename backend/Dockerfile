@@ -1,6 +1,5 @@
 FROM node:24-alpine AS base
 WORKDIR /app
-RUN apk add --no-cache ffmpeg
 
 FROM base AS dependencies
 COPY package.json package-lock.json ./
@@ -18,10 +17,12 @@ RUN npm prune --omit=dev
 
 FROM base AS production
 ENV NODE_ENV=production
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
-COPY package.json ./
+ENV NODE_OPTIONS=--enable-source-maps
+RUN apk add --no-cache ffmpeg
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/prisma ./prisma
+COPY --chown=node:node package.json ./
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

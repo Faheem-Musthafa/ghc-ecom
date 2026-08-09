@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
+import { AppRole } from '@prisma/client';
 import { AuthService, AuthResult } from './auth.service';
 import { CsrfService } from './csrf.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -29,6 +30,7 @@ interface BrowserAuthResponse {
   authenticated: boolean;
   user: BrowserUser | null;
   csrfToken?: string;
+  roles: AppRole[];
 }
 
 @Controller('auth')
@@ -62,6 +64,7 @@ export class AuthController {
         return {
           authenticated: true,
           user: this.publicUser({ user, session: null }),
+          roles: await this.authService.roles(user.id),
         };
       } catch (error) {
         if (!(error instanceof UnauthorizedException)) throw error;
@@ -71,20 +74,20 @@ export class AuthController {
     const refreshToken = this.cookies.readRefreshToken(request);
     if (!refreshToken) {
       if (accessToken) this.cookies.clear(response);
-      return { authenticated: false, user: null };
+      return { authenticated: false, user: null, roles: [] };
     }
 
     try {
       const result = await this.authService.refresh(refreshToken);
       if (!result.session) {
         this.cookies.clear(response);
-        return { authenticated: false, user: null };
+        return { authenticated: false, user: null, roles: [] };
       }
       return this.completeAuthentication(result, request, response);
     } catch (error) {
       if (!(error instanceof UnauthorizedException)) throw error;
       this.cookies.clear(response);
-      return { authenticated: false, user: null };
+      return { authenticated: false, user: null, roles: [] };
     }
   }
 
@@ -168,19 +171,20 @@ export class AuthController {
     this.cookies.clear(response);
   }
 
-  private completeAuthentication(
+  private async completeAuthentication(
     result: AuthResult,
     request: Request,
     response: Response,
-  ): BrowserAuthResponse {
+  ): Promise<BrowserAuthResponse> {
     this.cookies.noStore(response);
     const user = this.publicUser(result);
-    if (!result.session) return { authenticated: false, user };
+    if (!result.session) return { authenticated: false, user, roles: [] };
 
     this.cookies.setSession(response, result.session);
     return {
       authenticated: true,
       user,
+      roles: user ? await this.authService.roles(user.id) : [],
       csrfToken: this.csrf.generate(request, response, result.session),
     };
   }

@@ -6,7 +6,7 @@
 Browser
   │ HTTPS
   ▼
-Nginx / CDN ── static Vite assets
+Next.js server / CDN ── SSR pages, cached catalogue reads, immutable static assets
   │ /api/v1
   ▼
 NestJS API
