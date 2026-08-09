@@ -5,6 +5,8 @@ const backendOrigin = (process.env.BACKEND_ORIGIN ||
     ? 'https://ghc-ecom-production.up.railway.app'
     : 'http://127.0.0.1:3001')).replace(/\/+$/, '');
 const developmentEval = process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : '';
+const isManagedPlatformBuild =
+  process.env.VERCEL === '1' || Boolean(process.env.NEXT_ADAPTER_PATH);
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -27,7 +29,9 @@ const nextConfig = {
     root: fileURLToPath(new URL('..', import.meta.url)),
   },
   allowedDevOrigins: ['127.0.0.1', 'localhost'],
-  output: 'standalone',
+  // Vercel's Next.js adapter owns output tracing and deployment packaging.
+  // Keep standalone output only for the Docker/self-hosted build.
+  ...(!isManagedPlatformBuild && { output: 'standalone' }),
   poweredByHeader: false,
   compress: true,
   images: {
