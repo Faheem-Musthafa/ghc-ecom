@@ -65,6 +65,7 @@ export class FulfilmentService {
 
   listMine(userId: string, orderId: string): Promise<ShipmentDetail[]> {
     return this.prisma.shipment.findMany({
+      relationLoadStrategy: 'join',
       where: { orderId, order: { userId } },
       include: shipmentInclude,
       orderBy: { createdAt: 'asc' },

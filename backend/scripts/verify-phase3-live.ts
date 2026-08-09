@@ -1,12 +1,13 @@
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
-import { createClient, Session, User } from '@supabase/supabase-js';
+import { createClient, User } from '@supabase/supabase-js';
 import sharp from 'sharp';
 import { normalizeSupabaseUrl } from '../src/config/env.validation';
 
 interface AuthResult {
   user: User | null;
-  session: Session | null;
+  authenticated: boolean;
+  roles: string[];
 }
 
 interface Category {
@@ -62,6 +63,7 @@ const clientOptions = {
 };
 const admin = createClient(supabaseUrl, secretKey, clientOptions);
 const anonymous = createClient(supabaseUrl, publishableKey, clientOptions);
+const catalogueAuth = createClient(supabaseUrl, publishableKey, clientOptions);
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -171,8 +173,10 @@ async function run(): Promise<void> {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    assert(login.session, 'Catalogue manager login did not return a session');
-    const accessToken = login.session.access_token;
+    assert(login.authenticated, 'Catalogue manager login did not authenticate');
+    const { data: signedIn, error: signInError } = await catalogueAuth.auth.signInWithPassword({ email, password });
+    if (signInError || !signedIn.session) throw signInError || new Error('Catalogue manager test token unavailable');
+    const accessToken = signedIn.session.access_token;
     console.log('✓ Catalogue manager authenticated');
 
     const category = await apiRequest<Category>(

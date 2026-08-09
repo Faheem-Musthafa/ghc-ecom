@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { Order } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -37,5 +37,26 @@ export class OrdersController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
   ): Promise<Order> {
     return this.orders.cancelMine(user.id, orderId);
+  }
+}
+
+@Controller('guest/orders')
+export class GuestOrdersController {
+  constructor(private readonly orders: OrdersService) {}
+
+  @Get(':orderId')
+  get(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Headers('x-cart-token') guestToken: string,
+  ): Promise<OrderDetail> {
+    return this.orders.getGuest(orderId, guestToken);
+  }
+
+  @Get(':orderId/invoice')
+  invoice(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Headers('x-cart-token') guestToken: string,
+  ): Promise<{ url: string; expiresIn: number }> {
+    return this.orders.guestInvoiceUrl(orderId, guestToken);
   }
 }

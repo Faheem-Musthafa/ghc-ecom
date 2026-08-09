@@ -4,7 +4,7 @@ type OrderEmailEvent = 'order.confirmed' | 'order.cancelled';
 
 interface SnapshotItem {
   productName?: string;
-  variantName?: string;
+  color?: string;
   sku?: string;
   quantity?: number;
   lineTotalPaise?: number;
@@ -43,7 +43,7 @@ const orderItems = (value: Prisma.JsonValue): SnapshotItem[] => {
     return [
       {
         productName: typeof record.productName === 'string' ? record.productName : 'Product',
-        variantName: typeof record.variantName === 'string' ? record.variantName : undefined,
+        color: typeof record.color === 'string' ? record.color : undefined,
         sku: typeof record.sku === 'string' ? record.sku : undefined,
         quantity: typeof record.quantity === 'number' ? record.quantity : 1,
         lineTotalPaise:
@@ -83,7 +83,7 @@ export const renderOrderEmail = (
         <tr>
           <td style="padding:16px 0;border-bottom:1px solid #e8e1d5;vertical-align:top;">
             <p style="margin:0;color:#171511;font:600 14px/20px Arial,sans-serif;">${escapeHtml(item.productName || 'Product')}</p>
-            <p style="margin:4px 0 0;color:#756e62;font:12px/18px Arial,sans-serif;">${item.variantName ? `${escapeHtml(item.variantName)} · ` : ''}${item.sku ? `SKU ${escapeHtml(item.sku)} · ` : ''}Qty ${item.quantity ?? 1}</p>
+            <p style="margin:4px 0 0;color:#756e62;font:12px/18px Arial,sans-serif;">${item.color ? `${escapeHtml(item.color)} · ` : ''}${item.sku ? `SKU ${escapeHtml(item.sku)} · ` : ''}Qty ${item.quantity ?? 1}</p>
           </td>
           <td style="padding:16px 0 16px 16px;border-bottom:1px solid #e8e1d5;color:#171511;font:600 14px/20px Arial,sans-serif;text-align:right;vertical-align:top;white-space:nowrap;">${item.lineTotalPaise === undefined ? '—' : rupees(item.lineTotalPaise)}</td>
         </tr>`,
@@ -91,7 +91,7 @@ export const renderOrderEmail = (
     .join('');
   const textItems = items
     .map(
-      (item) => `- ${item.productName || 'Product'}${item.variantName ? ` (${item.variantName})` : ''} × ${item.quantity ?? 1}${item.lineTotalPaise === undefined ? '' : ` — ${rupees(item.lineTotalPaise)}`}`,
+      (item) => `- ${item.productName || 'Product'}${item.color ? ` (${item.color})` : ''} × ${item.quantity ?? 1}${item.lineTotalPaise === undefined ? '' : ` — ${rupees(item.lineTotalPaise)}`}`,
     )
     .join('\n');
 

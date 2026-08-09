@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderStatus, OutboxStatus, RefundStatus, WebhookStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { apiServerErrorTotal, operationsGauges, operationsRegistry } from './metrics';
 
@@ -14,6 +13,15 @@ export interface OperationsSnapshot {
   failedRefunds: number;
   lowStockSkus: number;
   checkedAt: string;
+}
+
+interface OperationsCountRow {
+  failedWebhooks: bigint;
+  terminalJobFailures: bigint;
+  expiredPendingPayments: bigint;
+  paymentMismatches: bigint;
+  failedRefunds: bigint;
+  lowStockSkus: bigint;
 }
 
 @Injectable()
@@ -45,77 +53,56 @@ export class OperationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async snapshot(): Promise<OperationsSnapshot> {
-    let databaseHealthy = true;
+    let counts: OperationsCountRow | undefined;
     try {
-      await this.prisma.$queryRaw`select 1`;
-    } catch {
-      databaseHealthy = false;
-    }
-    const [
-      failedWebhooks,
-      terminalJobFailures,
-      expiredPendingPayments,
-      paymentMismatches,
-      failedRefunds,
-      lowStockSkus,
-    ] = await Promise.all([
-      this.safeCount(
-        this.prisma.webhookEvent.count({
-          where: { status: WebhookStatus.FAILED },
-        }),
-      ),
-      this.safeCount(
-        this.prisma.outboxEvent.count({
-          where: { status: OutboxStatus.FAILED, attempts: { gte: 5 } },
-        }),
-      ),
-      this.safeCount(
-        this.prisma.order.count({
-          where: {
-            status: OrderStatus.PAYMENT_PENDING,
-            paymentExpiresAt: { lt: new Date() },
-          },
-        }),
-      ),
-      this.safeCount(
-        this.prisma.$queryRaw<Array<{ count: bigint }>>`
-            select count(*)::bigint as count
+      [counts] = await this.prisma.$queryRaw<OperationsCountRow[]>`
+        select
+          (select count(*) from public.webhook_events where status = 'failed')::bigint
+            as "failedWebhooks",
+          (select count(*) from public.outbox_events where status = 'failed' and attempts >= 5)::bigint
+            as "terminalJobFailures",
+          (select count(*) from public.orders where status = 'payment_pending' and payment_expires_at < now())::bigint
+            as "expiredPendingPayments",
+          (
+            select count(*)
             from (
-              select o.id::text
-              from public.orders o
-              where o.status in ('confirmed', 'processing', 'shipped', 'delivered')
+              select target_order.id
+              from public.orders as target_order
+              where target_order.status in ('confirmed', 'processing', 'shipped', 'delivered')
                 and not exists (
-                  select 1 from public.payments p
-                  where p.order_id = o.id
-                    and p.status in ('captured', 'refunded')
+                  select 1 from public.payments as payment
+                  where payment.order_id = target_order.id
+                    and payment.status in ('captured', 'refunded')
                 )
               union all
-              select p.id::text
-              from public.payments p
-              join public.orders o on o.id = p.order_id
-              where p.status in ('captured', 'refunded')
-                and o.status in ('payment_pending', 'payment_failed')
-            ) mismatches
-          `.then((rows) => Number(rows[0]?.count ?? 0)),
-      ),
-      this.safeCount(this.prisma.refund.count({ where: { status: RefundStatus.FAILED } })),
-      this.safeCount(
-        this.prisma.$queryRaw<Array<{ count: bigint }>>`
-            select count(*)::bigint as count
-            from public.inventory_levels
+              select payment.id
+              from public.payments as payment
+              join public.orders as target_order on target_order.id = payment.order_id
+              where payment.status in ('captured', 'refunded')
+                and target_order.status in ('payment_pending', 'payment_failed')
+            ) as mismatches
+          )::bigint as "paymentMismatches",
+          (select count(*) from public.refunds where status = 'failed')::bigint
+            as "failedRefunds",
+          (
+            select count(*) from public.inventory_levels
             where on_hand - reserved <= low_stock_threshold
-          `.then((rows) => Number(rows[0]?.count ?? 0)),
-      ),
-    ]);
+          )::bigint as "lowStockSkus"
+      `;
+    } catch {
+      counts = undefined;
+    }
+    const value = (field: keyof OperationsCountRow): number =>
+      counts ? Number(counts[field]) : -1;
     const snapshot: OperationsSnapshot = {
-      databaseHealthy,
+      databaseHealthy: Boolean(counts),
       apiServerErrorsTotal: await apiServerErrorTotal(),
-      failedWebhooks,
-      terminalJobFailures,
-      expiredPendingPayments,
-      paymentMismatches,
-      failedRefunds,
-      lowStockSkus,
+      failedWebhooks: value('failedWebhooks'),
+      terminalJobFailures: value('terminalJobFailures'),
+      expiredPendingPayments: value('expiredPendingPayments'),
+      paymentMismatches: value('paymentMismatches'),
+      failedRefunds: value('failedRefunds'),
+      lowStockSkus: value('lowStockSkus'),
       checkedAt: new Date().toISOString(),
     };
     this.setGauges(snapshot);
@@ -131,6 +118,8 @@ export class OperationsService implements OnModuleInit, OnModuleDestroy {
     const snapshot = await this.snapshot();
     const unhealthy =
       !snapshot.databaseHealthy ||
+      [snapshot.failedWebhooks, snapshot.terminalJobFailures, snapshot.expiredPendingPayments,
+        snapshot.paymentMismatches, snapshot.failedRefunds, snapshot.lowStockSkus].some((value) => value < 0) ||
       snapshot.apiServerErrorsTotal > this.lastObservedServerErrors ||
       snapshot.failedWebhooks > 0 ||
       snapshot.terminalJobFailures > 0 ||
@@ -169,11 +158,4 @@ export class OperationsService implements OnModuleInit, OnModuleDestroy {
     operationsGauges.lowStockSkus.set(snapshot.lowStockSkus);
   }
 
-  private async safeCount(value: Promise<number>): Promise<number> {
-    try {
-      return await value;
-    } catch {
-      return -1;
-    }
-  }
 }

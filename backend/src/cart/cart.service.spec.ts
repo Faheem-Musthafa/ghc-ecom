@@ -24,7 +24,7 @@ describe('CartService', () => {
           variant: {
             id: 'variant-id',
             sku: 'SKU-1',
-            name: 'Default',
+            attributes: { color: 'Gold' },
             pricePaise: 12_500,
             images: [{ thumbnailUrl: 'https://images.test/variant-thumbnail.webp' }],
             product: {
@@ -61,7 +61,7 @@ describe('CartService', () => {
           quantity: 1,
           variant: {
             sku: 'SKU-1',
-            name: 'Sage Green',
+            attributes: { color: 'Sage Green' },
             pricePaise: 12_500,
             images: [],
             product: {
@@ -90,5 +90,82 @@ describe('CartService', () => {
       UnauthorizedException,
     );
     expect(prisma.cart.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('sets a guest cart item with only a mutation and a joined cart read', async () => {
+    const expiresAt = new Date('2026-09-01T00:00:00.000Z');
+    const prisma = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            cartFound: true,
+            variantFound: true,
+            paymentPending: false,
+            availableStock: 8,
+            itemChanged: true,
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            cartId: 'c3fd0b35-6f59-4d7b-be52-4b278bd0895c',
+            status: 'active',
+            expiresAt,
+            itemId: 'item-id',
+            variantId: 'd54f0e2c-51d8-4c25-98bd-1d84735cc937',
+            sku: 'SKU-1',
+            productName: 'Stored Product',
+            color: 'Gold',
+            imageUrl: null,
+            quantity: 2,
+            unitPricePaise: 12_500,
+          },
+        ]),
+    };
+    const service = new CartService(prisma as never, {} as never);
+
+    await expect(
+      service.setItem(
+        'c3fd0b35-6f59-4d7b-be52-4b278bd0895c',
+        { variantId: 'd54f0e2c-51d8-4c25-98bd-1d84735cc937', quantity: 2 },
+        undefined,
+        'guest-token',
+      ),
+    ).resolves.toMatchObject({ subtotalPaise: 25_000 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a guest cart item with only a mutation and a joined cart read', async () => {
+    const prisma = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ cartFound: true, paymentPending: false, itemRemoved: true }])
+        .mockResolvedValueOnce([
+          {
+            cartId: 'c3fd0b35-6f59-4d7b-be52-4b278bd0895c',
+            status: 'ACTIVE',
+            expiresAt: new Date('2026-09-01T00:00:00.000Z'),
+            itemId: null,
+            variantId: null,
+            sku: null,
+            productName: null,
+            color: null,
+            imageUrl: null,
+            quantity: null,
+            unitPricePaise: null,
+          },
+        ]),
+    };
+    const service = new CartService(prisma as never, {} as never);
+
+    await expect(
+      service.removeItem(
+        'c3fd0b35-6f59-4d7b-be52-4b278bd0895c',
+        'd54f0e2c-51d8-4c25-98bd-1d84735cc937',
+        undefined,
+        'guest-token',
+      ),
+    ).resolves.toMatchObject({ items: [], subtotalPaise: 0 });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 });

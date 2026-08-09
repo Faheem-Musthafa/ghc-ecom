@@ -42,6 +42,7 @@ describe('CatalogueService', () => {
     });
     expect(prisma.product.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        relationLoadStrategy: 'join',
         where: expect.objectContaining({
           status: ProductStatus.PUBLISHED,
           category: { isPublished: true },
@@ -51,6 +52,7 @@ describe('CatalogueService', () => {
         }),
       }),
     );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('does not return an unpublished product from the public detail API', async () => {
@@ -67,6 +69,43 @@ describe('CatalogueService', () => {
     await expect(service.getPublicProduct('draft-product')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+    expect(prisma.product.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ relationLoadStrategy: 'join' }),
+    );
+  });
+
+  it('serves repeated public catalogue requests from Redis', async () => {
+    const products = [{ id: 'product-id', status: ProductStatus.PUBLISHED, variants: [] }];
+    const prisma = {
+      product: {
+        findMany: jest.fn().mockResolvedValue(products),
+        count: jest.fn().mockResolvedValue(1),
+      },
+    };
+    const values = new Map<string, unknown>();
+    const redis = {
+      getJson: jest.fn(async (key: string) => values.get(key) ?? null),
+      setJson: jest.fn(async (key: string, value: unknown) => {
+        values.set(key, value);
+      }),
+      get: jest.fn().mockResolvedValue('1'),
+      increment: jest.fn(),
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+      videoProcessor as never,
+      redis as never,
+    );
+
+    await service.listPublicProducts({ page: 1, limit: 20 });
+    await service.listPublicProducts({ page: 1, limit: 20 });
+
+    expect(prisma.product.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.product.count).toHaveBeenCalledTimes(1);
+    expect(redis.setJson).toHaveBeenCalledTimes(1);
   });
 
   it('normalizes category names before saving them', async () => {
@@ -84,12 +123,33 @@ describe('CatalogueService', () => {
     await expect(
       service.createCategory(
         'actor-id',
-        { name: '  Tea   Sets  ', slug: 'tea-sets', isPublished: true },
+        { name: '  Tea   Sets  ', isPublished: true },
         {},
       ),
     ).resolves.toEqual(category);
     expect(prisma.category.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Tea Sets', slug: 'tea-sets' }),
+    });
+  });
+
+  it('regenerates the internal category slug when its name changes', async () => {
+    const category = { id: 'category-id', name: 'Dining Sets', slug: 'dining-sets' };
+    const prisma = {
+      category: { update: jest.fn().mockResolvedValue(category) },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.updateCategory('actor-id', 'category-id', { name: '  Dining Sets  ' }, {}),
+    ).resolves.toEqual(category);
+    expect(prisma.category.update).toHaveBeenCalledWith({
+      where: { id: 'category-id' },
+      data: expect.objectContaining({ name: 'Dining Sets', slug: 'dining-sets' }),
     });
   });
 
@@ -103,7 +163,7 @@ describe('CatalogueService', () => {
     );
 
     await expect(
-      service.createCategory('actor-id', { name: 'Test', slug: 'test', isPublished: true }, {}),
+      service.createCategory('actor-id', { name: 'Test', isPublished: true }, {}),
     ).rejects.toThrow('Placeholder categories cannot be published');
     expect(prisma.category.create).not.toHaveBeenCalled();
   });
@@ -123,7 +183,6 @@ describe('CatalogueService', () => {
         'product-id',
         {
           sku: 'SKU-1',
-          name: 'Default',
           pricePaise: 10_000,
           compareAtPricePaise: 9_000,
         },
@@ -156,7 +215,7 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', barcode: 'abc-123', name: 'Standard', pricePaise: 10_000 },
+        { sku: 'sku-1', barcode: 'abc-123', pricePaise: 10_000 },
         {},
       ),
     ).resolves.toEqual(variant);
@@ -174,6 +233,34 @@ describe('CatalogueService', () => {
         { warehouseId: 'warehouse-b', variantId: 'variant-id' },
       ],
     });
+  });
+
+  it('deletes automatically-created zero-stock levels before deleting an unused product', async () => {
+    const transaction = {
+      product: {
+        findUnique: jest.fn().mockResolvedValue({ variants: [{ id: 'variant-id' }] }),
+        delete: jest.fn().mockResolvedValue({}),
+      },
+      inventoryLevel: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
+      },
+      cartItem: { count: jest.fn().mockResolvedValue(0) },
+      inventoryReservation: { count: jest.fn().mockResolvedValue(0) },
+      stockMovement: { count: jest.fn().mockResolvedValue(0) },
+    };
+    const prisma = {
+      productImage: { findMany: jest.fn().mockResolvedValue([]) },
+      productVideo: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((callback) => callback(transaction)),
+    };
+    audit.record.mockResolvedValue({});
+    const service = new CatalogueService(prisma as never, audit as never, supabase as never, imageProcessor as never);
+
+    await service.deleteProduct('actor-id', 'product-id', {});
+
+    expect(transaction.inventoryLevel.deleteMany).toHaveBeenCalledWith({ where: { variantId: { in: ['variant-id'] } } });
+    expect(transaction.product.delete).toHaveBeenCalledWith({ where: { id: 'product-id' } });
   });
 
   it('stores uploaded videos as browser-ready MP4 files', async () => {

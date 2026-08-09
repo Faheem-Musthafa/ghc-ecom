@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
-import { createClient, Session, User } from '@supabase/supabase-js';
+import { createClient, User } from '@supabase/supabase-js';
 import { normalizeSupabaseUrl } from '../src/config/env.validation';
 
 interface AuthResult {
   user: User | null;
-  session: Session | null;
+  authenticated: boolean;
+  roles: string[];
 }
 
 interface Profile {
@@ -41,6 +42,7 @@ const clientOptions = {
   },
 };
 const admin = createClient(supabaseUrl, secretKey, clientOptions);
+const customerAuth = createClient(supabaseUrl, publishableKey, clientOptions);
 const createdUserIds: string[] = [];
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -119,16 +121,15 @@ async function run(): Promise<void> {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    assert(login.session, 'Login did not return a session');
-    console.log('✓ Confirmed customer login returned a session');
+    assert(login.authenticated && login.user, 'Login did not authenticate the browser session');
+    console.log('✓ Confirmed customer login returned the cookie-safe browser response');
 
-    const refreshed = await apiRequest<AuthResult>('/api/v1/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken: login.session.refresh_token }),
-    });
-    assert(refreshed.session, 'Refresh did not return a session');
+    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({ email, password });
+    if (signInError || !signedIn.session) throw signInError || new Error('Supabase test session unavailable');
+    const { data: refreshed, error: refreshError } = await customerAuth.auth.refreshSession(signedIn.session);
+    if (refreshError || !refreshed.session) throw refreshError || new Error('Supabase refresh failed');
     const accessToken = refreshed.session.access_token;
-    console.log('✓ Refresh token rotation returned a new session');
+    console.log('✓ Refresh token rotation returned a new provider session');
 
     const profile = await apiRequest<Profile>('/api/v1/me/profile', {
       headers: { authorization: `Bearer ${accessToken}` },

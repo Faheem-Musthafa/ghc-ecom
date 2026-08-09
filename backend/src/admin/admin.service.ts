@@ -3,7 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { AppRole, AuditLog, UserRole } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { SupabaseService } from '../supabase/supabase.service';
+import { rolesCacheKey } from '../auth/auth.service';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
 
 interface RequestContext {
@@ -30,6 +32,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly supabase: SupabaseService,
+    private readonly redis?: RedisService,
   ) {}
 
   async createStaffUser(
@@ -126,6 +129,11 @@ export class AdminService {
       metadata: { role },
       ...context,
     });
+    try {
+      await this.redis?.delete(rolesCacheKey(userId));
+    } catch {
+      // The short TTL bounds stale role cache entries if Redis is unavailable.
+    }
     return assignment;
   }
 

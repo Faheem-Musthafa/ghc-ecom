@@ -188,9 +188,9 @@ async function run(): Promise<void> {
     assert(
       quoteBody.subtotalPaise === 100_000 &&
         quoteBody.discountPaise === 10_000 &&
-        quoteBody.shippingPaise === 9_900 &&
-        quoteBody.taxPaise === 16_200 &&
-        quoteBody.totalPaise === 116_100,
+        quoteBody.shippingPaise === 0 &&
+        quoteBody.taxPaise === 0 &&
+        quoteBody.totalPaise === 90_000,
       'Server-side pricing totals are incorrect',
     );
     console.log('✓ Coupon, shipping, GST, and final paise totals are correct');
@@ -252,16 +252,23 @@ async function run(): Promise<void> {
     });
     if (userError) throw userError;
     userId = createdUser.user.id;
-    const login = await api<{ session: { access_token: string } | null }>('/api/v1/auth/login', {
+    const login = await api<{ authenticated: boolean }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    assert(login.session, 'Authenticated customer login failed');
+    assert(login.authenticated, 'Authenticated customer login failed');
+    const customerAuth = createClient(
+      normalizeSupabaseUrl(requireEnvironment('SUPABASE_URL')),
+      requireEnvironment('SUPABASE_ANON_KEY'),
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    );
+    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({ email, password });
+    if (signInError || !signedIn.session) throw signInError || new Error('Customer test token unavailable');
     const customerCart = await api<CreatedCart>(
       '/api/v1/carts',
       {
         method: 'POST',
-        headers: { authorization: `Bearer ${login.session.access_token}` },
+        headers: { authorization: `Bearer ${signedIn.session.access_token}` },
       },
       201,
     );

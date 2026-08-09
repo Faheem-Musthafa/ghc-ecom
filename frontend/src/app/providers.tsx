@@ -1,0 +1,33 @@
+'use client';
+
+import ErrorBoundary from '../components/ErrorBoundary';
+import CartDrawer from '../components/CartDrawer';
+import FloatingContactButtons from '../components/FloatingContactButtons';
+import OfflineBanner from '../components/OfflineBanner';
+import ScrollToTop from '../components/ScrollToTop';
+import Toast from '../components/Toast';
+import { AuthProvider } from '../contexts/AuthContext';
+import { CartProvider } from '../contexts/CartContext';
+import { ToastProvider } from '../contexts/ToastContext';
+import { WishlistProvider } from '../contexts/WishlistContext';
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary>
+      <AuthProvider>
+        <CartProvider>
+          <WishlistProvider>
+            <ToastProvider>
+              <OfflineBanner />
+              <ScrollToTop />
+              <FloatingContactButtons />
+              {children}
+              <CartDrawer />
+              <Toast />
+            </ToastProvider>
+          </WishlistProvider>
+        </CartProvider>
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+}

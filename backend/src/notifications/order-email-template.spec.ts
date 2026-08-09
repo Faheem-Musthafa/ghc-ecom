@@ -10,7 +10,7 @@ describe('renderOrderEmail', () => {
     itemsSnapshot: [
       {
         productName: 'Noir Gold Tea Set',
-        variantName: 'Six cup set',
+        color: 'Gold',
         sku: 'GHC-TEA-006',
         quantity: 1,
         lineTotalPaise: 11_198,
@@ -22,7 +22,7 @@ describe('renderOrderEmail', () => {
     const email = renderOrderEmail(order, 'order.confirmed', 'Faheem');
 
     expect(email.subject).toBe('Confirmed — your Glockery order GHC-EMAIL-42');
-    expect(email.text).toContain('Noir Gold Tea Set (Six cup set) × 1 — ₹111.98');
+    expect(email.text).toContain('Noir Gold Tea Set (Gold) × 1 — ₹111.98');
     expect(email.html).toContain('GLOCKERY');
     expect(email.html).toContain('Noir Gold Tea Set');
     expect(email.html).toContain('VIEW ORDER DETAILS');

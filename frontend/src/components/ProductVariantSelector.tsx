@@ -1,5 +1,5 @@
 import React from 'react';
-import { primaryImageForVariant, productHasColourOptions, variantColorHex, variantOptionName } from '../lib/product-options';
+import { primaryImageForVariant, productHasColourOptions, variantColorHex, variantOptionLabel } from '../lib/product-options';
 import { Product } from '../types';
 
 interface ProductVariantSelectorProps {
@@ -19,7 +19,7 @@ const ProductVariantSelector: React.FC<ProductVariantSelectorProps> = ({ product
     return (
         <fieldset className={compact ? 'mt-5' : 'mt-6'}>
             <legend className="mb-3 text-sm font-semibold text-cream">
-                {label}: <span className="font-normal text-cream/70">{variantOptionName(selected)}</span>
+                {label}: <span className="font-normal text-cream/70">{variantOptionLabel(selected)}</span>
             </legend>
             <div className="flex flex-wrap gap-2">
                 {product.variants.map((variant) => {
@@ -49,7 +49,7 @@ const ProductVariantSelector: React.FC<ProductVariantSelectorProps> = ({ product
                                         aria-hidden="true"
                                     />
                                 ) : null}
-                                <span>{variantOptionName(variant)}{outOfStock ? ' — Out of stock' : ''}</span>
+                                <span>{variantOptionLabel(variant)}{outOfStock ? ' — Out of stock' : ''}</span>
                             </span>
                         </label>
                     );

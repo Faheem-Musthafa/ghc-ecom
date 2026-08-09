@@ -1,5 +1,5 @@
 const DEFAULT_API_BASE_URL = '/api/v1';
-const ENV_ASSIGNMENT_PREFIX = /^VITE_API_URL\s*=\s*/i;
+const ENV_ASSIGNMENT_PREFIX = /^(?:VITE_API_URL|NEXT_PUBLIC_API_URL)\s*=\s*/i;
 
 export function resolveApiBaseUrl(value?: string): string {
     const configured = value?.trim().replace(ENV_ASSIGNMENT_PREFIX, '').trim();
@@ -8,7 +8,7 @@ export function resolveApiBaseUrl(value?: string): string {
     const isHttpUrl = /^https?:\/\//i.test(candidate);
 
     if (!isRootRelative && !isHttpUrl) {
-        throw new Error('VITE_API_URL must be a root-relative path or an HTTP(S) URL');
+        throw new Error('NEXT_PUBLIC_API_URL must be a root-relative path or an HTTP(S) URL');
     }
 
     return candidate.replace(/\/+$/, '');

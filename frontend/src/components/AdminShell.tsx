@@ -1,8 +1,9 @@
-import React, { ReactNode, useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import React, { ReactNode, useEffect, useMemo, useState } from 'react';
+import { Link, NavLink } from '../lib/router';
 import { useAuth } from '../contexts/AuthContext';
 import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
+import { AppRole } from '../types';
 import {
     IconArrowRight,
     IconClose,
@@ -24,9 +25,28 @@ interface AdminShellProps {
     children: ReactNode;
 }
 
+type NavigationItem = {
+    href: string;
+    label: string;
+    icon: ReactNode;
+    roles: AppRole[];
+    exact?: boolean;
+    badge?: number | null;
+};
+
+const roleLabels: Record<AppRole, string> = {
+    ADMIN: 'Administrator',
+    CATALOGUE_MANAGER: 'Catalogue manager',
+    WAREHOUSE_MANAGER: 'Warehouse manager',
+    SUPPORT_AGENT: 'Support agent',
+    CUSTOMER: 'Customer',
+};
+
 const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, children }) => {
     const { session, signOut } = useAuth();
     const user = session?.user;
+    const roles = session?.roles || [];
+    const hasRole = (...allowed: AppRole[]) => allowed.some((role) => roles.includes(role));
     const [mobileOpen, setMobileOpen] = useState(false);
     const [lowStockCount, setLowStockCount] = useState<number | null>(null);
     const [connection, setConnection] = useState<'checking' | 'connected' | 'unavailable'>('checking');
@@ -34,104 +54,138 @@ const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, chi
 
     useEffect(() => {
         document.title = `${title} | Glockery Admin`;
+        if (!hasRole('ADMIN')) {
+            setConnection('connected');
+            return;
+        }
         api.operations()
             .then((snapshot) => {
                 setConnection('connected');
                 if (typeof snapshot?.lowStockSkus === 'number') setLowStockCount(snapshot.lowStockSkus);
             })
             .catch(() => setConnection('unavailable'));
-    }, [title]);
+    }, [title, roles.join('|')]);
 
-    const navItems = [
-        { href: '/admin', label: 'Overview', icon: <IconGrid size={18} />, exact: true },
-        { href: '/admin/orders', label: 'Orders', icon: <IconShoppingBag size={18} /> },
-        { href: '/admin/catalogue', label: 'Catalogue', icon: <IconPackage size={18} /> },
-        { href: '/admin/inventory', label: 'Inventory', icon: <IconRefresh size={18} />, badge: lowStockCount },
-        { href: '/admin/promotions', label: 'Promotions', icon: <IconTag size={18} /> },
-        { href: '/admin/users', label: 'Users & roles', icon: <IconUser size={18} /> },
-        { href: '/admin/audit-logs', label: 'Audit logs', icon: <IconShield size={18} /> },
-        { href: '/admin/operations', label: 'System health', icon: <IconGrid size={18} /> },
-    ];
+    const navGroups = useMemo(() => {
+        const workspace: NavigationItem[] = [
+            { href: '/admin', label: 'Overview', icon: <IconGrid size={18} />, exact: true, roles: ['ADMIN'] },
+            { href: '/admin/orders', label: 'Orders', icon: <IconShoppingBag size={18} />, roles: ['ADMIN', 'SUPPORT_AGENT', 'WAREHOUSE_MANAGER'] },
+        ];
+        const commerce: NavigationItem[] = [
+            { href: '/admin/catalogue', label: 'Catalogue', icon: <IconPackage size={18} />, roles: ['ADMIN', 'CATALOGUE_MANAGER'] },
+            { href: '/admin/inventory', label: 'Inventory', icon: <IconRefresh size={18} />, badge: lowStockCount, roles: ['ADMIN', 'WAREHOUSE_MANAGER'] },
+            { href: '/admin/promotions', label: 'Promotions', icon: <IconTag size={18} />, roles: ['ADMIN', 'CATALOGUE_MANAGER'] },
+        ];
+        const control: NavigationItem[] = [
+            { href: '/admin/users', label: 'Team & roles', icon: <IconUser size={18} />, roles: ['ADMIN'] },
+            { href: '/admin/audit-logs', label: 'Activity log', icon: <IconShield size={18} />, roles: ['ADMIN'] },
+            { href: '/admin/operations', label: 'System health', icon: <IconGrid size={18} />, roles: ['ADMIN'] },
+        ];
+        const permitted = (items: NavigationItem[]) => items.filter((item) => hasRole(...item.roles));
+        return [
+            { label: 'Workspace', items: permitted(workspace) },
+            { label: 'Commerce', items: permitted(commerce) },
+            { label: 'Control', items: permitted(control) },
+        ].filter((group) => group.items.length);
+    }, [lowStockCount, roles.join('|')]);
 
-    const connectionLabel = connection === 'checking' ? 'Checking API' : connection === 'connected' ? 'API connected' : 'API unavailable';
+    const primaryRole = roles.find((role) => role !== 'CUSTOMER');
+    const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Team member';
+    const initials = userName.slice(0, 2).toUpperCase();
+    const connectionLabel = connection === 'checking' ? 'Connecting' : connection === 'connected' ? 'All systems online' : 'Service unavailable';
 
     const sidebar = (
-        <aside className="flex h-full flex-col border-r border-line bg-carbon p-5">
-            <div className="flex h-14 items-center justify-between border-b border-line pb-5">
-                <Link to="/" className="flex items-center gap-3" aria-label="Glockery storefront">
-                    <span className="grid size-9 place-items-center border border-gold-400 font-display text-xl font-semibold text-gold-300">G</span>
+        <aside className="admin-nav flex h-full flex-col px-4 pb-4 pt-5 text-white">
+            <div className="flex h-14 items-center justify-between px-2">
+                <Link to="/admin" className="group flex items-center gap-3" aria-label="Glockery admin overview">
+                    <span className="grid size-10 place-items-center rounded-xl bg-[#f0b44d] text-base font-extrabold text-[#1d211f] shadow-[0_8px_24px_rgba(240,180,77,0.18)] transition-transform group-hover:-rotate-3">G</span>
                     <span>
-                        <span className="block text-sm font-bold tracking-[0.2em] text-cream">GLOCKERY</span>
-                        <small className="block text-[8px] uppercase tracking-[0.22em] text-cream/40">Administration</small>
+                        <span className="block text-sm font-extrabold tracking-[0.14em] text-white">GLOCKERY</span>
+                        <small className="block text-[10px] font-medium tracking-wide text-white/45">Operations desk</small>
                     </span>
                 </Link>
-                <button onClick={() => setMobileOpen(false)} className="grid size-11 place-items-center text-cream/50 lg:hidden" aria-label="Close navigation"><IconClose size={20} /></button>
+                <button onClick={() => setMobileOpen(false)} className="grid size-11 place-items-center rounded-xl text-white/60 hover:bg-white/10 hover:text-white lg:hidden" aria-label="Close navigation">
+                    <IconClose size={20} />
+                </button>
             </div>
 
-            <nav className="mt-6 space-y-1" aria-label="Admin navigation">
-                {navItems.map((item) => (
-                    <NavLink
-                        key={item.href}
-                        exact={item.exact}
-                        to={item.href}
-                        onClick={() => setMobileOpen(false)}
-                        activeClassName="border-gold-400 bg-panel text-cream"
-                        className="flex min-h-11 items-center justify-between border-l-2 border-transparent px-3 text-xs font-medium text-cream/55 hover:bg-panel hover:text-cream"
-                    >
-                        <span className="flex items-center gap-3">{item.icon}{item.label}</span>
-                        {typeof item.badge === 'number' && item.badge > 0 && (
-                            <span className="min-w-5 bg-red-950 px-1.5 py-0.5 text-center text-[9px] font-bold tabular-nums text-red-300">{item.badge}</span>
-                        )}
-                    </NavLink>
+            <nav className="mt-7 space-y-6" aria-label="Admin navigation">
+                {navGroups.map((group) => (
+                    <section key={group.label} aria-labelledby={`admin-nav-${group.label.toLowerCase()}`}>
+                        <h2 id={`admin-nav-${group.label.toLowerCase()}`} className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/35">{group.label}</h2>
+                        <div className="space-y-1">
+                            {group.items.map((item) => (
+                                <NavLink
+                                    key={item.href}
+                                    exact={item.exact}
+                                    to={item.href}
+                                    onClick={() => setMobileOpen(false)}
+                                    activeClassName="admin-nav-active"
+                                    className="admin-nav-link flex min-h-11 items-center justify-between rounded-xl px-3 text-sm font-medium text-white/58"
+                                >
+                                    <span className="flex items-center gap-3"><span className="admin-nav-icon">{item.icon}</span>{item.label}</span>
+                                    {typeof item.badge === 'number' && item.badge > 0 && (
+                                        <span className="min-w-6 rounded-md bg-[#f0b44d] px-1.5 py-0.5 text-center text-[10px] font-bold tabular-nums text-[#1d211f]">{item.badge}</span>
+                                    )}
+                                </NavLink>
+                            ))}
+                        </div>
+                    </section>
                 ))}
             </nav>
 
-            <div className="mt-auto border-t border-line pt-5">
-                {user && (
-                    <div className="mb-4 flex items-center gap-3 px-2">
-                        <span className="grid size-9 shrink-0 place-items-center bg-gold-400 text-xs font-bold text-obsidian">{(user.user_metadata?.full_name || user.email || 'A')[0].toUpperCase()}</span>
-                        <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-cream">{user.user_metadata?.full_name || 'Admin user'}</p>
-                            <p className="truncate text-[10px] text-cream/35">{user.email}</p>
+            <div className="mt-auto pt-6">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+                    <div className="flex items-center gap-3">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-xs font-bold text-[#f6cf86]">{initials}</span>
+                        <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-semibold text-white">{userName}</p>
+                            <p className="truncate text-[10px] text-white/40">{primaryRole ? roleLabels[primaryRole] : 'Staff account'}</p>
                         </div>
+                        <button onClick={() => void signOut()} className="grid size-9 place-items-center rounded-lg text-white/45 hover:bg-red-400/10 hover:text-red-200" aria-label="Sign out" title="Sign out">
+                            <IconLogOut size={17} />
+                        </button>
                     </div>
-                )}
-                <button onClick={() => void signOut()} className="flex min-h-11 w-full items-center gap-3 px-3 text-xs text-red-300/75 hover:bg-red-950/30 hover:text-red-200">
-                    <IconLogOut size={17} /> Sign out
-                </button>
+                </div>
             </div>
         </aside>
     );
 
     return (
-        <div className="min-h-screen bg-obsidian font-body text-cream lg:grid lg:grid-cols-[244px_minmax(0,1fr)]">
-            <div className="hidden lg:sticky lg:top-0 lg:block lg:h-screen">{sidebar}</div>
+        <div className="admin-workspace min-h-screen bg-[#f5f3ed] font-body text-[#242722]">
+            <a href="#admin-main" className="admin-skip-link">Skip to admin content</a>
+            <div className="admin-desktop-nav hidden bg-[#1d211f] lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:block lg:w-[264px]">{sidebar}</div>
 
             {mobileOpen && (
                 <div className="fixed inset-0 z-50 lg:hidden">
-                    <button className="absolute inset-0 bg-black/70" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" />
-                    <div ref={mobileNavRef} tabIndex={-1} className="absolute inset-y-0 left-0 w-[min(86vw,300px)] outline-none" role="dialog" aria-modal="true" aria-label="Admin navigation">{sidebar}</div>
+                    <button className="absolute inset-0 bg-[#111512]/70 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-label="Close navigation overlay" />
+                    <div ref={mobileNavRef} tabIndex={-1} className="absolute inset-y-0 left-0 w-[min(86vw,320px)] bg-[#1d211f] outline-none animate-admin-drawer" role="dialog" aria-modal="true" aria-label="Admin navigation">{sidebar}</div>
                 </div>
             )}
 
-            <div className="min-w-0">
-                <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-obsidian/95 px-4 supports-[backdrop-filter]:backdrop-blur-md sm:px-7 lg:px-9">
-                    <div className="flex items-center gap-3">
-                        <button onClick={() => setMobileOpen(true)} className="grid size-11 place-items-center text-gold-300 lg:hidden" aria-label="Open navigation"><IconMenu size={21} /></button>
-                        <span className={`size-2 ${connection === 'connected' ? 'bg-emerald-500' : connection === 'checking' ? 'bg-amber-400' : 'bg-red-500'}`} aria-hidden="true" />
-                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-cream/45">{connectionLabel}</span>
+            <div className="admin-workspace-main min-w-0 lg:ml-[264px]">
+                <header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#dedbd2] bg-[#f9f8f4]/90 px-4 backdrop-blur-xl sm:px-7 lg:px-10">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <button onClick={() => setMobileOpen(true)} className="grid size-11 shrink-0 place-items-center rounded-xl text-[#343934] hover:bg-[#e9e6de] lg:hidden" aria-label="Open navigation">
+                            <IconMenu size={21} />
+                        </button>
+                        <div className="hidden items-center gap-2 sm:flex">
+                            <span className={`size-2 rounded-full ${connection === 'connected' ? 'bg-emerald-500' : connection === 'checking' ? 'animate-pulse bg-amber-400' : 'bg-red-500'}`} aria-hidden="true" />
+                            <span className="text-xs font-medium text-[#696e67]">{connectionLabel}</span>
+                        </div>
+                        <span className="truncate text-sm font-semibold text-[#343934] sm:hidden">{title}</span>
                     </div>
-                    <Link to="/" className="flex min-h-11 items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-cream/45 hover:text-gold-200">
-                        Storefront <IconArrowRight size={14} />
+                    <Link to="/" className="flex min-h-11 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-[#636860] hover:bg-[#e9e6de] hover:text-[#222622]">
+                        <span className="hidden sm:inline">Open storefront</span><span className="sm:hidden">Store</span><IconArrowRight size={15} />
                     </Link>
                 </header>
 
-                <main className="px-4 py-7 sm:px-7 lg:px-9 lg:py-9">
-                    <header className="mb-8 flex flex-col gap-5 border-b border-line pb-7 md:flex-row md:items-end md:justify-between">
-                        <div>
-                            <p className="eyebrow">Admin workspace</p>
-                            <h1 className="mt-2 font-display text-4xl font-semibold leading-none text-cream sm:text-5xl">{title}</h1>
-                            <p className="mt-3 max-w-2xl text-sm leading-6 text-cream/45">{description}</p>
+                <main id="admin-main" className="admin-content mx-auto w-full max-w-[1540px] px-4 pb-12 pt-7 sm:px-7 lg:px-10 lg:pb-16 lg:pt-10">
+                    <header className="mb-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold text-[#9b671d]">Workspace <span className="mx-1.5 text-[#b9b6ad]">/</span> {title}</p>
+                            <h1 className="mt-2 text-3xl font-bold leading-tight tracking-[-0.035em] text-[#20241f] sm:text-[2.5rem]">{title}</h1>
+                            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#696e67]">{description}</p>
                         </div>
                         {action && <div className="shrink-0">{action}</div>}
                     </header>

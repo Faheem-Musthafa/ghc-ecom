@@ -8,6 +8,7 @@ describe('resolveApiBaseUrl', () => {
 
     it('normalizes the dotenv assignment accidentally pasted into a Vercel value', () => {
         expect(resolveApiBaseUrl('VITE_API_URL=/api/v1')).toBe('/api/v1');
+        expect(resolveApiBaseUrl('NEXT_PUBLIC_API_URL=/api/v1')).toBe('/api/v1');
     });
 
     it('removes trailing slashes from valid API URLs', () => {
@@ -19,7 +20,7 @@ describe('resolveApiBaseUrl', () => {
 
     it('rejects malformed relative values', () => {
         expect(() => resolveApiBaseUrl('api/v1')).toThrow(
-            'VITE_API_URL must be a root-relative path or an HTTP(S) URL',
+            'NEXT_PUBLIC_API_URL must be a root-relative path or an HTTP(S) URL',
         );
     });
 });

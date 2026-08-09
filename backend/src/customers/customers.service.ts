@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Address, Profile } from '@prisma/client';
+import { Address, Prisma, Profile } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
@@ -32,13 +32,20 @@ export class CustomersService {
   }
 
   async createAddress(userId: string, input: CreateAddressDto): Promise<Address> {
+    if (!input.isDefault) {
+      return this.prisma.address.create({
+        data: {
+          ...input,
+          country: input.country?.toUpperCase() ?? 'IN',
+          userId,
+        },
+      });
+    }
     return this.prisma.$transaction(async (transaction) => {
-      if (input.isDefault) {
-        await transaction.address.updateMany({
-          where: { userId, isDefault: true },
-          data: { isDefault: false },
-        });
-      }
+      await transaction.address.updateMany({
+        where: { userId, isDefault: true },
+        data: { isDefault: false },
+      });
       return transaction.address.create({
         data: {
           ...input,
@@ -54,32 +61,40 @@ export class CustomersService {
     addressId: string,
     input: UpdateAddressDto,
   ): Promise<Address> {
-    return this.prisma.$transaction(async (transaction) => {
-      if (input.isDefault) {
-        await transaction.address.updateMany({
-          where: { userId, isDefault: true, id: { not: addressId } },
-          data: { isDefault: false },
+    const data = {
+      ...input,
+      country: input.country?.toUpperCase(),
+    };
+    if (!input.isDefault) {
+      try {
+        return await this.prisma.address.update({
+          where: { id: addressId, userId },
+          data,
         });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new NotFoundException('Address not found');
+        }
+        throw error;
       }
+    }
 
-      const result = await transaction.address.updateMany({
-        where: { id: addressId, userId },
-        data: {
-          ...input,
-          country: input.country?.toUpperCase(),
-        },
+    return this.prisma.$transaction(async (transaction) => {
+      await transaction.address.updateMany({
+        where: { userId, isDefault: true, id: { not: addressId } },
+        data: { isDefault: false },
       });
-      if (result.count !== 1) {
-        throw new NotFoundException('Address not found');
+      try {
+        return await transaction.address.update({
+          where: { id: addressId, userId },
+          data,
+        });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new NotFoundException('Address not found');
+        }
+        throw error;
       }
-
-      const address = await transaction.address.findFirst({
-        where: { id: addressId, userId },
-      });
-      if (!address) {
-        throw new NotFoundException('Address not found');
-      }
-      return address;
     });
   }
 

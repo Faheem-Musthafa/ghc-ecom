@@ -1,12 +1,12 @@
 # Glockery Home Centre ecommerce
 
-Production-oriented ecommerce monorepo for Glockery's React storefront and NestJS API.
+Production-oriented ecommerce monorepo for Glockery's Next.js storefront and NestJS API.
 
 ## Repository layout
 
 ```text
 .
-├── frontend/            React + Vite storefront and administration UI
+├── frontend/            Next.js App Router storefront and administration UI
 ├── backend/             NestJS API, Prisma schema, workers, and tests
 ├── docs/                Architecture, setup, integrations, and deployment guides
 ├── .github/workflows/   Frontend and backend CI

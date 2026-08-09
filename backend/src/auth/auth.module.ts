@@ -10,6 +10,6 @@ import { SessionCookieService } from './session-cookie.service';
 @Module({
   controllers: [AuthController],
   providers: [AuthService, SessionCookieService, CsrfService, SupabaseAuthGuard, RolesGuard],
-  exports: [SessionCookieService, SupabaseAuthGuard, RolesGuard],
+  exports: [AuthService, SessionCookieService, SupabaseAuthGuard, RolesGuard],
 })
 export class AuthModule {}

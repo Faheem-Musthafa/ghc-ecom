@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -82,24 +83,43 @@ interface StoredProductImage {
   derivatives: StoredDerivative[];
 }
 
+export const PUBLIC_CATALOGUE_CACHE_VERSION_KEY = 'catalogue:version';
+const PUBLIC_CATALOGUE_CACHE_TTL_SECONDS = 30;
+
 @Injectable()
 export class CatalogueService {
+  private readonly publicLoads = new Map<string, Promise<unknown>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly supabase: SupabaseService,
     private readonly imageProcessor: ImageProcessorService,
     private readonly videoProcessor: VideoProcessorService = new VideoProcessorService(),
+    private readonly redis?: RedisService,
   ) {}
 
   listPublicCategories(): Promise<Category[]> {
-    return this.prisma.category.findMany({
-      where: { isPublished: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    });
+    return this.cachedPublic('categories', () =>
+      this.prisma.category.findMany({
+        where: { isPublished: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      }),
+    );
   }
 
   async listPublicProducts(query: ListProductsDto): Promise<PaginatedProducts> {
+    const cacheKey = [
+      'products',
+      query.page,
+      query.limit,
+      query.category ?? '',
+      query.q?.trim().toLowerCase() ?? '',
+    ].join(':');
+    return this.cachedPublic(cacheKey, () => this.loadPublicProducts(query));
+  }
+
+  private async loadPublicProducts(query: ListProductsDto): Promise<PaginatedProducts> {
     const where: Prisma.ProductWhereInput = {
       status: ProductStatus.PUBLISHED,
       publishedAt: { lte: new Date() },
@@ -117,8 +137,9 @@ export class CatalogueService {
         : {}),
     };
     const skip = (query.page - 1) * query.limit;
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.product.findMany({
+        relationLoadStrategy: 'join',
         where,
         include: {
           ...productInclude,
@@ -142,7 +163,14 @@ export class CatalogueService {
   }
 
   async getPublicProduct(slug: string): Promise<CatalogueProduct> {
+    return this.cachedPublic(`product:${slug.toLowerCase()}`, () =>
+      this.loadPublicProduct(slug),
+    );
+  }
+
+  private async loadPublicProduct(slug: string): Promise<CatalogueProduct> {
     const product = await this.prisma.product.findFirst({
+      relationLoadStrategy: 'join',
       where: {
         slug,
         status: ProductStatus.PUBLISHED,
@@ -171,6 +199,7 @@ export class CatalogueService {
 
   async listAdminProducts(): Promise<CatalogueProduct[]> {
     const products = await this.prisma.product.findMany({
+      relationLoadStrategy: 'join',
       include: productInclude,
       orderBy: { createdAt: 'desc' },
     });
@@ -179,6 +208,7 @@ export class CatalogueService {
 
   async getAdminProduct(productId: string): Promise<CatalogueProduct> {
     const product = await this.prisma.product.findUnique({
+      relationLoadStrategy: 'join',
       where: { id: productId },
       include: productInclude,
     });
@@ -200,7 +230,7 @@ export class CatalogueService {
         data: {
           ...input,
           name,
-          slug: input.slug.toLowerCase(),
+          slug: this.categorySlug(name),
         },
       }),
     );
@@ -240,7 +270,7 @@ export class CatalogueService {
           data: {
             ...input,
             name,
-            slug: input.slug?.toLowerCase(),
+            ...(name ? { slug: this.categorySlug(name) } : {}),
           },
         }),
       'Category',
@@ -309,7 +339,17 @@ export class CatalogueService {
       this.prisma.productImage.findMany({ where: { productId } }),
       this.prisma.productVideo.findMany({ where: { productId } }),
     ]);
-    await this.mutate(() => this.prisma.product.delete({ where: { id: productId } }), 'Product');
+    await this.prisma.$transaction(async (transaction) => {
+      const product = await transaction.product.findUnique({
+        where: { id: productId },
+        select: { variants: { select: { id: true } } },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+      const variantIds = product.variants.map((variant) => variant.id);
+      await this.requireUnusedVariants(transaction, variantIds);
+      await transaction.inventoryLevel.deleteMany({ where: { variantId: { in: variantIds } } });
+      await transaction.product.delete({ where: { id: productId } });
+    });
     await this.removeStoredImages(images);
     await this.removeStoredVideos(videos);
     await this.auditMutation(actorId, 'catalogue.product.deleted', 'product', productId, context);
@@ -369,7 +409,7 @@ export class CatalogueService {
     this.validateVariantPrices(
       input.pricePaise ?? existing.pricePaise,
       input.compareAtPricePaise === undefined
-        ? (existing.compareAtPricePaise ?? undefined)
+        ? existing.compareAtPricePaise
         : input.compareAtPricePaise,
     );
     const variant = await this.mutate(() => {
@@ -395,10 +435,11 @@ export class CatalogueService {
   }
 
   async deleteVariant(actorId: string, variantId: string, context: RequestContext): Promise<void> {
-    await this.mutate(
-      () => this.prisma.productVariant.delete({ where: { id: variantId } }),
-      'Product variant',
-    );
+    await this.prisma.$transaction(async (transaction) => {
+      await this.requireUnusedVariants(transaction, [variantId]);
+      await transaction.inventoryLevel.deleteMany({ where: { variantId } });
+      await transaction.productVariant.delete({ where: { id: variantId } });
+    });
     await this.auditMutation(
       actorId,
       'catalogue.variant.deleted',
@@ -406,6 +447,22 @@ export class CatalogueService {
       variantId,
       context,
     );
+  }
+
+  private async requireUnusedVariants(transaction: Prisma.TransactionClient, variantIds: string[]): Promise<void> {
+    if (!variantIds.length) return;
+    const [stock, cartItems, reservations, movements] = await Promise.all([
+      transaction.inventoryLevel.findFirst({
+        where: { variantId: { in: variantIds }, OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }] },
+        select: { id: true },
+      }),
+      transaction.cartItem.count({ where: { variantId: { in: variantIds } } }),
+      transaction.inventoryReservation.count({ where: { variantId: { in: variantIds } } }),
+      transaction.stockMovement.count({ where: { variantId: { in: variantIds } } }),
+    ]);
+    if (stock || cartItems || reservations || movements) {
+      throw new ConflictException('Product variant has stock or order history and must be archived instead');
+    }
   }
 
   async addProductImage(
@@ -597,21 +654,30 @@ export class CatalogueService {
       name: input.name as string,
       slug: input.slug?.toLowerCase() as string,
       material: input.material === undefined ? undefined : input.material.trim() || null,
-      dimensions: input.dimensions === undefined ? undefined : input.dimensions.trim() || null,
       attributes: input.attributes as Prisma.InputJsonValue | undefined,
       publishedAt:
         input.status === ProductStatus.PUBLISHED ? new Date() : input.status ? null : undefined,
     };
   }
 
-  private validateVariantPrices(pricePaise: number, compareAtPricePaise?: number): void {
-    if (compareAtPricePaise !== undefined && compareAtPricePaise < pricePaise) {
+  private validateVariantPrices(pricePaise: number, compareAtPricePaise?: number | null): void {
+    if (compareAtPricePaise != null && compareAtPricePaise < pricePaise) {
       throw new BadRequestException('compareAtPricePaise cannot be lower than pricePaise');
     }
   }
 
   private normalizedCategoryName(name: string): string {
     return name.trim().replace(/\s+/g, ' ');
+  }
+
+  private categorySlug(name: string): string {
+    return name
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'category';
   }
 
   private assertPublishableCategory(name?: string, isPublished?: boolean): void {
@@ -798,6 +864,7 @@ export class CatalogueService {
     context: RequestContext,
     metadata: Prisma.InputJsonValue = {},
   ): Promise<void> {
+    await this.invalidatePublicCache();
     await this.audit.record({
       actorId,
       action,
@@ -806,6 +873,45 @@ export class CatalogueService {
       metadata,
       ...context,
     });
+  }
+
+  private async cachedPublic<T>(suffix: string, load: () => Promise<T>): Promise<T> {
+    if (!this.redis) return load();
+
+    let key: string;
+    try {
+      const version = (await this.redis.get(PUBLIC_CATALOGUE_CACHE_VERSION_KEY)) ?? '0';
+      key = `catalogue:${version}:${suffix}`;
+      const cached = await this.redis.getJson<T>(key);
+      if (cached !== null) return cached;
+    } catch {
+      return load();
+    }
+
+    const existing = this.publicLoads.get(key) as Promise<T> | undefined;
+    if (existing) return existing;
+    const pending = load().then(async (value) => {
+      try {
+        await this.redis?.setJson(key, value, PUBLIC_CATALOGUE_CACHE_TTL_SECONDS);
+      } catch {
+        // Redis is an optimization; public catalogue reads must still succeed without it.
+      }
+      return value;
+    });
+    this.publicLoads.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.publicLoads.get(key) === pending) this.publicLoads.delete(key);
+    }
+  }
+
+  private async invalidatePublicCache(): Promise<void> {
+    try {
+      await this.redis?.increment(PUBLIC_CATALOGUE_CACHE_VERSION_KEY);
+    } catch {
+      // The short TTL still bounds staleness if Redis is temporarily unavailable.
+    }
   }
 
   private async mutate<T>(operation: () => Promise<T>, label = 'Record'): Promise<T> {

@@ -17,7 +17,7 @@ describe('AuthService', () => {
   const config = {
     getOrThrow: jest.fn().mockReturnValue('http://localhost:3000'),
   };
-  const service = new AuthService(supabase as never, config as never);
+  const service = new AuthService(supabase as never, config as never, { userRole: { findMany: jest.fn() } } as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -81,5 +81,25 @@ describe('AuthService', () => {
         fullName: 'Customer',
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('caches roles used by authenticated frontend sections', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ role: 'CUSTOMER' }]);
+    const values = new Map<string, unknown>();
+    const redis = {
+      getJson: jest.fn(async (key: string) => values.get(key) ?? null),
+      setJson: jest.fn(async (key: string, value: unknown) => values.set(key, value)),
+    };
+    const cachedService = new AuthService(
+      supabase as never,
+      config as never,
+      { userRole: { findMany } } as never,
+      redis as never,
+    );
+
+    await cachedService.roles('user-id');
+    await cachedService.roles('user-id');
+
+    expect(findMany).toHaveBeenCalledTimes(1);
   });
 });

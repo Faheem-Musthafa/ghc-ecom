@@ -1,15 +1,15 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppRole } from '@prisma/client';
-import { PrismaService } from '../../database/prisma.service';
 import { AuthenticatedRequest } from '../authenticated-user';
+import { AuthService } from '../auth.service';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly auth: AuthService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -22,13 +22,8 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const matchingRole = await this.prisma.userRole.findFirst({
-      where: {
-        userId: request.user.id,
-        role: { in: requiredRoles },
-      },
-    });
-    if (!matchingRole) {
+    const roles = await this.auth.roles(request.user.id);
+    if (!requiredRoles.some((role) => roles.includes(role))) {
       throw new ForbiddenException('Insufficient permissions');
     }
     return true;

@@ -32,6 +32,13 @@ export class AdminOrdersController {
     return this.orders.listAdmin(input);
   }
 
+  @Get(':orderId/invoice')
+  invoice(
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ): Promise<{ url: string; expiresIn: number }> {
+    return this.orders.adminInvoiceUrl(orderId);
+  }
+
   @Patch(':orderId/status')
   transition(
     @CurrentUser() actor: AuthenticatedUser,

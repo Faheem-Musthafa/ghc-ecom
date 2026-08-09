@@ -130,11 +130,22 @@ export class SupabaseService {
   }
 
   async verifyAccessToken(accessToken: string): Promise<User> {
-    const { data, error } = await this.publicClient.auth.getUser(accessToken);
-    if (error || !data.user) {
+    const { data, error } = await this.publicClient.auth.getClaims(accessToken);
+    const claims = data?.claims;
+    if (error || !claims?.sub) {
       throw new UnauthorizedException('Invalid or expired access token');
     }
-    return data.user;
+    return {
+      id: claims.sub,
+      aud: Array.isArray(claims.aud) ? claims.aud[0] ?? 'authenticated' : claims.aud,
+      role: claims.role,
+      email: claims.email,
+      phone: claims.phone,
+      app_metadata: claims.app_metadata ?? {},
+      user_metadata: claims.user_metadata ?? {},
+      is_anonymous: claims.is_anonymous,
+      created_at: new Date(claims.iat * 1000).toISOString(),
+    };
   }
 
   async uploadProductImage(path: string, body: Buffer): Promise<void> {

@@ -1,7 +1,9 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InventoryLevel, StockMovementType, Warehouse } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { PUBLIC_CATALOGUE_CACHE_VERSION_KEY } from '../catalogue/catalogue.service';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { SetInventoryDto } from './dto/set-inventory.dto';
 
@@ -10,6 +12,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly redis?: RedisService,
   ) {}
 
   async createWarehouse(actorId: string, input: CreateWarehouseDto): Promise<Warehouse> {
@@ -34,6 +37,7 @@ export class InventoryService {
       entityType: 'warehouse',
       entityId: warehouse.id,
     });
+    await this.invalidateCatalogue();
     return warehouse;
   }
 
@@ -100,6 +104,7 @@ export class InventoryService {
         lowStockThreshold: input.lowStockThreshold,
       },
     });
+    await this.invalidateCatalogue();
     return level;
   }
 
@@ -111,5 +116,13 @@ export class InventoryService {
 
   listWarehouses(): Promise<Warehouse[]> {
     return this.prisma.warehouse.findMany({ orderBy: { code: 'asc' } });
+  }
+
+  private async invalidateCatalogue(): Promise<void> {
+    try {
+      await this.redis?.increment(PUBLIC_CATALOGUE_CACHE_VERSION_KEY);
+    } catch {
+      // Inventory writes remain authoritative when the cache is unavailable.
+    }
   }
 }

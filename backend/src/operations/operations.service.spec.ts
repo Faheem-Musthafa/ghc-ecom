@@ -15,11 +15,16 @@ describe('OperationsService', () => {
 
   beforeEach(() => {
     prisma = {
-      $queryRaw: jest
-        .fn()
-        .mockResolvedValueOnce([{ healthy: 1 }])
-        .mockResolvedValueOnce([{ count: 6n }])
-        .mockResolvedValueOnce([{ count: 2n }]),
+      $queryRaw: jest.fn().mockResolvedValue([
+        {
+          failedWebhooks: 1n,
+          terminalJobFailures: 3n,
+          expiredPendingPayments: 4n,
+          paymentMismatches: 6n,
+          failedRefunds: 5n,
+          lowStockSkus: 2n,
+        },
+      ]),
       webhookEvent: { count: jest.fn().mockResolvedValue(1) },
       outboxEvent: { count: jest.fn().mockResolvedValue(3) },
       order: { count: jest.fn().mockResolvedValue(4) },
@@ -54,6 +59,7 @@ describe('OperationsService', () => {
       failedRefunds: 5,
       lowStockSkus: 2,
     });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('sends an alert when a terminal job failure is observable', async () => {

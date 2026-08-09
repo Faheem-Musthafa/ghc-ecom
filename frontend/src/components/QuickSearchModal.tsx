@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useHistory } from '../lib/router';
 import { useDialog } from '../hooks/useDialog';
 import { IconArrowRight, IconSearch, IconX } from './Icons';
 import { api } from '../lib/api';
@@ -19,7 +19,7 @@ const QuickSearchModal: React.FC<QuickSearchModalProps> = ({ isOpen, onClose }) 
     const inputRef = useRef<HTMLInputElement>(null);
     const dialogRef = useDialog<HTMLDivElement>(isOpen, onClose, {
         initialFocusRef: inputRef,
-        focusInitial: typeof window.matchMedia === 'function'
+        focusInitial: typeof window !== 'undefined' && typeof window.matchMedia === 'function'
             ? window.matchMedia('(min-width: 640px)').matches
             : true,
     });

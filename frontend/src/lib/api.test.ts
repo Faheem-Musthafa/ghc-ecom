@@ -42,4 +42,23 @@ describe('API CSRF recovery', () => {
         expect(csrfRequests).toBe(2);
         expect(cartWrites).toBe(2);
     });
+
+    it('deduplicates concurrent session initialization', async () => {
+        let sessionRequests = 0;
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.endsWith('/auth/csrf')) return json({ csrfToken: 'token' });
+            if (url.endsWith('/auth/session')) {
+                sessionRequests += 1;
+                await Promise.resolve();
+                return json({ authenticated: false, user: null });
+            }
+            return json({});
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await Promise.all([api.initializeSession(), api.initializeSession()]);
+
+        expect(sessionRequests).toBe(1);
+    });
 });

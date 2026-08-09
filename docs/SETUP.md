@@ -19,7 +19,7 @@ cp backend/.env.example backend/.env
 ```
 
 Fill `backend/.env`; never put service-role, payment secret, SMTP password, webhook
-token, session token, or CSRF secret in any `VITE_*` variable. Generate the CSRF
+token, session token, or CSRF secret in any `NEXT_PUBLIC_*` variable. Generate the CSRF
 secret with a cryptographically secure generator:
 
 ```bash
@@ -55,7 +55,7 @@ Terminal two:
 npm run dev:frontend
 ```
 
-For device testing on LAN, keep Vite host enabled and set `FRONTEND_ORIGIN` to the
+For device testing on LAN, keep the Next.js host enabled and set `FRONTEND_ORIGIN` to the
 exact device-facing origin. Never use wildcard CORS. Browser auth uses credentialed
 `HttpOnly` cookies, so use one stable hostname rather than alternating between
 `localhost`, `127.0.0.1`, and a LAN IP.
@@ -77,7 +77,9 @@ Frontend:
 
 | Variable | Purpose |
 |---|---|
-| `VITE_API_URL` | Public API base URL only; `/api/v1` in same-origin production |
+| `NEXT_PUBLIC_API_URL` | Public browser API base URL; `/api/v1` in same-origin production |
+| `BACKEND_ORIGIN` | Private origin used by Server Components and the API rewrite |
+| `NEXT_PUBLIC_SITE_URL` | Canonical public storefront origin |
 
 Backend values are documented in `backend/.env.example`. Production should set
 `NODE_ENV=production`, `ENABLE_SWAGGER=false`, exact `FRONTEND_ORIGIN`, and correct

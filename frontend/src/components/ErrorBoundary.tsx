@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         <p className="mt-3 text-xs leading-relaxed text-cream/60">
                             The application encountered an unexpected error. Reload the page, or contact support if it continues.
                         </p>
-                        {import.meta.env.DEV && this.state.error && (
+                        {process.env.NODE_ENV === 'development' && this.state.error && (
                             <div className="mt-4 overflow-x-auto rounded-sm border border-gold-500/15 bg-obsidian p-3 text-left font-mono text-[11px] text-red-300/80">
                                 {this.state.error.message}
                             </div>
