@@ -35,6 +35,11 @@ const rupees = (paise: number): string =>
     maximumFractionDigits: 2,
   }).format(paise / 100);
 
+const whatsappSupportUrl = (orderNumber: string): string =>
+  `https://wa.me/916282000289?text=${encodeURIComponent(
+    `Hi Glockery Home Centre, I need help with order ${orderNumber}.`,
+  )}`;
+
 const orderItems = (value: Prisma.JsonValue): SnapshotItem[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -72,6 +77,7 @@ export const renderOrderEmail = (
   const items = orderItems(order.itemsSnapshot);
   const safeName = escapeHtml(recipientName?.trim() || 'there');
   const safeOrderNumber = escapeHtml(order.orderNumber);
+  const whatsappUrl = whatsappSupportUrl(order.orderNumber);
   const placedAt = new Intl.DateTimeFormat('en-IN', {
     day: 'numeric',
     month: 'short',
@@ -97,7 +103,7 @@ export const renderOrderEmail = (
 
   return {
     subject: `${confirmed ? 'Confirmed' : 'Cancelled'} — your Glockery order ${order.orderNumber}`,
-    text: `Hello ${recipientName?.trim() || 'there'},\n\n${title}\n\nOrder: ${order.orderNumber}\nPlaced: ${placedAt}\nTotal: ${rupees(order.totalPaise)}\n\n${textItems || 'Your order details are available in your account.'}\n\n${nextStep}\n\nGlockery Home Centre`,
+    text: `Hello ${recipientName?.trim() || 'there'},\n\n${title}\n\nOrder: ${order.orderNumber}\nPlaced: ${placedAt}\nTotal: ${rupees(order.totalPaise)}\n\n${textItems || 'Your order details are available in your account.'}\n\n${nextStep}\n\nWhatsApp support: ${whatsappUrl}\n\nGlockery Home Centre`,
     html: `<!doctype html>
 <html lang="en">
   <body style="margin:0;padding:0;background:#f3efe8;color:#171511;">
@@ -143,6 +149,8 @@ export const renderOrderEmail = (
           </td></tr>
           <tr><td style="padding:32px 36px 36px;text-align:center;">
             <a href="https://www.glockery.com/order-lookup" style="display:inline-block;background:#171511;color:#fffaf0;padding:13px 22px;text-decoration:none;font:700 11px/16px Arial,sans-serif;letter-spacing:1.2px;">VIEW ORDER DETAILS</a>
+            <p style="margin:22px 0 8px;color:#756e62;font:12px/18px Arial,sans-serif;">Need help with this order?</p>
+            <a href="${escapeHtml(whatsappUrl)}" style="display:inline-block;border:1px solid #b8862f;color:#171511;padding:11px 20px;text-decoration:none;font:700 11px/16px Arial,sans-serif;letter-spacing:1.1px;">CHAT ON WHATSAPP</a>
           </td></tr>
           <tr><td style="border-top:1px solid #e8e1d5;padding:22px 36px;background:#fbf7ef;text-align:center;">
             <p style="margin:0;color:#756e62;font:11px/18px Arial,sans-serif;">Thoughtfully chosen pieces for the rituals at home.</p>
