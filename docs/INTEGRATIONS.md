@@ -11,7 +11,8 @@
    `private-documents` private bucket.
 6. Create first admin with SQL in `backend/README.md`; use admin API for later role
    changes.
-7. In Supabase Auth URL configuration add:
+7. In Supabase Auth URL configuration add both:
+   `https://YOUR_STORE/auth` and
    `https://YOUR_STORE/auth/reset-password`.
 8. Set the production Site URL and allow only explicit development, staging, and
    production redirect URLs; avoid production wildcards.
@@ -56,8 +57,19 @@ supply-chain dependency.
 
 ## Email and notifications
 
-- Set `EMAIL_FROM`, SMTP host/port/user/password.
+- Set `EMAIL_FROM` and `RESEND_API_KEY`. Transactional order emails use Resend's HTTPS
+  `POST /emails` API, so they work on Railway plans that block outbound SMTP.
+- Use a verified Glockery sender such as
+  `EMAIL_FROM="Glockery Home Centre <orders@YOUR_VERIFIED_DOMAIN>"`.
 - Verify sender domain SPF, DKIM, and DMARC before launch.
+- Install the hosted Supabase signup and recovery templates from
+  `supabase/templates/README.md`. Supabase Auth owns those two delivery flows; the Nest
+  notification worker owns order confirmation and cancellation emails.
+- Supabase requires custom SMTP before hosted Auth templates are editable. Configure
+  Resend SMTP (`smtp.resend.com`, port `465`, username `resend`, API key as password)
+  in Supabase only. Railway never opens that SMTP connection.
+- Disable link tracking for Supabase authentication messages so confirmation and recovery
+  URLs are not rewritten.
 - Optional non-email channel uses `NOTIFICATION_WEBHOOK_URL` and bearer token.
 - All provider calls have bounded timeouts; configure retries through durable outbox,
   not an unbounded request loop.

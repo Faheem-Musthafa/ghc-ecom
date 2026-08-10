@@ -16,10 +16,7 @@ Object.assign(process.env, {
   RAZORPAY_KEY_SECRET: 'secret',
   RAZORPAY_WEBHOOK_SECRET: 'webhook-secret',
   EMAIL_FROM: 'orders@example.com',
-  SMTP_HOST: 'smtp.example.com',
-  SMTP_PORT: '587',
-  SMTP_USER: 'smtp-user',
-  SMTP_PASSWORD: 'smtp-password',
+  RESEND_API_KEY: 're_test_key',
   CSRF_SECRET: 'test-csrf-secret-with-at-least-32-characters',
   SESSION_REFRESH_TTL_SECONDS: '2592000',
 });

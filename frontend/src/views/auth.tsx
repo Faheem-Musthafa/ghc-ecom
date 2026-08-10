@@ -12,6 +12,7 @@ const AuthPage = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const { signedIn, sync } = useAuth();
     const cartContext = useCart();
     const history = useHistory();
@@ -23,6 +24,7 @@ const AuthPage = () => {
 
     const changeMode = (nextMode: typeof mode) => {
         setMode(nextMode);
+        setShowPassword(false);
         setError('');
         setNotice('');
     };
@@ -111,11 +113,23 @@ const AuthPage = () => {
                             <input className="field w-full text-sm" name="email" type="email" autoComplete="email" required />
                         </label>
                         {mode !== 'forgot' && (
-                            <label className="block">
-                                <span className="mb-2 block text-sm">Password</span>
-                                <input className="field w-full text-sm" name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'login' ? 8 : 12} maxLength={128} required />
+                            <div>
+                                <div className="mb-2 flex items-center justify-between">
+                                    <label className="text-sm" htmlFor="customer-password">Password</label>
+                                    <button
+                                        type="button"
+                                        className="min-h-8 px-1 text-xs font-semibold text-gold-300 hover:text-gold-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400"
+                                        aria-controls="customer-password"
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                        aria-pressed={showPassword}
+                                        onClick={() => setShowPassword((visible) => !visible)}
+                                    >
+                                        {showPassword ? 'Hide' : 'Show'}
+                                    </button>
+                                </div>
+                                <input id="customer-password" className="field w-full text-sm" name="password" type={showPassword ? 'text' : 'password'} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} minLength={mode === 'login' ? 8 : 12} maxLength={128} required />
                                 {mode === 'register' && <small className="mt-2 block text-xs text-cream/60">Use at least 12 characters.</small>}
-                            </label>
+                            </div>
                         )}
 
                         {error && <p className="border border-red-500/30 p-3 text-sm text-red-200" role="alert">{error}</p>}

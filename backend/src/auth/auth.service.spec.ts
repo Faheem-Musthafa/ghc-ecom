@@ -38,6 +38,14 @@ describe('AuthService', () => {
         fullName: 'Customer',
       }),
     ).resolves.toEqual(authData);
+    expect(supabase.register).toHaveBeenCalledWith(
+      {
+        email: 'customer@example.com',
+        password: 'password123',
+        fullName: 'Customer',
+      },
+      'http://localhost:3000/auth',
+    );
     await expect(service.login('customer@example.com', 'password123')).resolves.toEqual(authData);
     await expect(service.refresh('refresh-token')).resolves.toEqual(authData);
     await expect(service.logout('access-token')).resolves.toBeUndefined();

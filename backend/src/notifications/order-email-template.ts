@@ -122,6 +122,7 @@ export const renderOrderEmail = (
                 <td style="padding:16px 18px;background:#fbf7ef;">
                   <p style="margin:0;color:#756e62;font:700 10px/15px Arial,sans-serif;letter-spacing:1.2px;">ORDER</p>
                   <p style="margin:5px 0 0;color:#171511;font:700 15px/20px Arial,sans-serif;">${safeOrderNumber}</p>
+                  <p style="margin:3px 0 0;color:#756e62;font:11px/17px Arial,sans-serif;">Placed ${placedAt}</p>
                 </td>
                 <td style="padding:16px 18px;background:#fbf7ef;text-align:right;">
                   <p style="margin:0;color:${accent};font:700 10px/15px Arial,sans-serif;letter-spacing:1.2px;">${statusLabel.toUpperCase()}</p>

@@ -111,7 +111,8 @@ In **Authentication -> URL Configuration**, set:
 Site URL:
 https://shop.example.com
 
-Additional redirect URL:
+Additional redirect URLs:
+https://shop.example.com/auth
 https://shop.example.com/auth/reset-password
 ```
 
@@ -199,11 +200,8 @@ RAZORPAY_KEY_ID=rzp_test_REPLACE
 RAZORPAY_KEY_SECRET=REPLACE
 RAZORPAY_WEBHOOK_SECRET=REPLACE
 
-EMAIL_FROM=orders@example.com
-SMTP_HOST=REPLACE
-SMTP_PORT=587
-SMTP_USER=REPLACE
-SMTP_PASSWORD=REPLACE
+EMAIL_FROM="Glockery Home Centre <orders@YOUR_VERIFIED_DOMAIN>"
+RESEND_API_KEY=re_REPLACE
 
 SHIPPING_PROVIDER_NAME=manual
 RETURN_WINDOW_DAYS=30
@@ -216,6 +214,11 @@ openssl rand -base64 48
 ```
 
 All backend replicas must use the same `CSRF_SECRET`.
+
+The Resend key must be stored only in the backend secret manager. Verify the sender domain
+in Resend before production testing. Hosted Supabase signup and password-recovery emails
+use the branded sources in `supabase/templates/`; follow that folder's README to install
+them in **Authentication → Email Templates**.
 
 ### 4.4 Configure deployment
 
