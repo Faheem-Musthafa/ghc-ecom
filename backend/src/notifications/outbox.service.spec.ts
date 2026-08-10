@@ -99,6 +99,7 @@ describe('OutboxService', () => {
       expect.objectContaining({
         channel: NotificationChannel.EMAIL,
         recipient: 'customer@example.com',
+        idempotencyKey: 'notification-notification-1',
       }),
     );
     expect(prisma.outboxEvent.update).toHaveBeenLastCalledWith({
@@ -109,7 +110,7 @@ describe('OutboxService', () => {
 
   it('records notification failure and leaves a terminal fifth-attempt outbox event observable', async () => {
     prisma.outboxEvent.findMany.mockResolvedValue([{ ...event, attempts: 4 }]);
-    sender.send.mockRejectedValue(new Error('SMTP unavailable'));
+    sender.send.mockRejectedValue(new Error('Resend unavailable'));
 
     await expect(service.processPending()).resolves.toBe(1);
 
@@ -117,14 +118,14 @@ describe('OutboxService', () => {
       where: { id: 'notification-1' },
       data: expect.objectContaining({
         status: NotificationStatus.FAILED,
-        lastError: 'SMTP unavailable',
+        lastError: 'Resend unavailable',
       }),
     });
     expect(prisma.outboxEvent.update).toHaveBeenLastCalledWith({
       where: { id: event.id },
       data: expect.objectContaining({
         status: OutboxStatus.FAILED,
-        lastError: 'SMTP unavailable',
+        lastError: 'Resend unavailable',
       }),
     });
   });

@@ -136,7 +136,10 @@ export class OutboxService {
       return;
     }
     try {
-      const providerRef = await this.sender.send(message);
+      const providerRef = await this.sender.send({
+        ...message,
+        idempotencyKey: `notification-${notification.id}`,
+      });
       await this.prisma.notification.update({
         where: { id: notification.id },
         data: {

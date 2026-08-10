@@ -17,6 +17,7 @@ import { serializeJsonLd } from './components/SEOHead';
 import { saveSession } from './lib/api';
 import { catalogueCsvHeaders } from './lib/catalogue-csv';
 import { Product } from './types';
+import Providers from './app/providers';
 
 const routerState = vi.hoisted(() => ({ path: '/' }));
 
@@ -319,6 +320,40 @@ describe('black and gold commerce UI', () => {
         expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/auth/refresh'), expect.anything());
     });
 
+    it('removes Supabase signup credentials from the address bar', async () => {
+        window.history.replaceState(
+            null,
+            '',
+            '/#access_token=test-access-token&refresh_token=test-refresh-token&type=signup',
+        );
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        mountedRoot = createRoot(container);
+
+        await act(async () => {
+            mountedRoot!.render(<Providers><div>Storefront</div></Providers>);
+            await Promise.resolve();
+        });
+
+        expect(window.location.hash).toBe('');
+        expect(window.location.pathname).toBe('/');
+    });
+
+    it('leaves recovery credentials for the password-reset page to consume', async () => {
+        const recoveryHash = '#access_token=test-access-token&refresh_token=test-refresh-token&type=recovery';
+        window.history.replaceState(null, '', `/auth/reset-password${recoveryHash}`);
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        mountedRoot = createRoot(container);
+
+        await act(async () => {
+            mountedRoot!.render(<Providers><div>Password reset</div></Providers>);
+            await Promise.resolve();
+        });
+
+        expect(window.location.hash).toBe(recoveryHash);
+    });
+
     it('switches colour images and writes the selected variant to the backend cart', async () => {
         const container = await render(
             <ProductDetailPage />,
@@ -382,12 +417,22 @@ describe('black and gold commerce UI', () => {
 
     it('switches between sign-in and account registration', async () => {
         const container = await render(<AuthPage />, '/auth');
+        const password = container.querySelector<HTMLInputElement>('#customer-password');
+        const showPassword = container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]');
+        expect(password?.type).toBe('password');
+        await act(async () => {
+            showPassword?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(password?.type).toBe('text');
+        expect(container.querySelector('button[aria-label="Hide password"]')).not.toBeNull();
+
         const register = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Create account');
         await act(async () => {
             register?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
         expect(container.textContent).toContain('Begin your collection.');
         expect(container.querySelector('input[name="name"]')).not.toBeNull();
+        expect(password?.type).toBe('password');
     });
 
     it('protects customer account routes', async () => {
@@ -403,7 +448,14 @@ describe('black and gold commerce UI', () => {
         expect(container.textContent).toContain('Staff access');
         expect(container.textContent).toContain('Sign in to admin');
         expect(container.querySelector('input[name="email"]')).not.toBeNull();
-        expect(container.querySelector('input[name="password"]')).not.toBeNull();
+        const password = container.querySelector<HTMLInputElement>('#admin-password');
+        const showPassword = container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]');
+        expect(password?.type).toBe('password');
+        await act(async () => {
+            showPassword?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+        expect(password?.type).toBe('text');
+        expect(container.querySelector('button[aria-label="Hide password"]')).not.toBeNull();
     });
 
     it('sends unauthenticated admin routes to the staff sign-in page', async () => {

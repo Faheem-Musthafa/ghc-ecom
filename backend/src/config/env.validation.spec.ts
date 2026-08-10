@@ -13,10 +13,8 @@ const validEnvironment = {
   RAZORPAY_KEY_ID: 'rzp_test_key',
   RAZORPAY_KEY_SECRET: 'secret',
   RAZORPAY_WEBHOOK_SECRET: 'webhook-secret',
-  EMAIL_FROM: 'orders@example.com',
-  SMTP_HOST: 'smtp.example.com',
-  SMTP_USER: 'smtp-user',
-  SMTP_PASSWORD: 'smtp-password',
+  EMAIL_FROM: 'Glockery Home Centre <orders@example.com>',
+  RESEND_API_KEY: 're_test_key',
 };
 
 describe('validateEnvironment', () => {
@@ -26,7 +24,6 @@ describe('validateEnvironment', () => {
       PORT: 3001,
       RATE_LIMIT_TTL_MS: 60_000,
       RATE_LIMIT_LIMIT: 100,
-      SMTP_PORT: 587,
       ...validEnvironment,
     });
   });

@@ -12,6 +12,12 @@ function emptyStringToUndefined(value: unknown): unknown {
   return value === '' ? undefined : value;
 }
 
+function isEmailFrom(value: string): boolean {
+  const bracketed = value.match(/^[^<>]+<([^<>]+)>$/);
+  const email = bracketed?.[1]?.trim() ?? value.trim();
+  return z.string().email().safeParse(email).success;
+}
+
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -54,11 +60,8 @@ const environmentSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
-    EMAIL_FROM: z.string().email(),
-    SMTP_HOST: z.string().min(1),
-    SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(587),
-    SMTP_USER: z.string().min(1),
-    SMTP_PASSWORD: z.string().min(1),
+    EMAIL_FROM: z.string().min(1).refine(isEmailFrom, 'must be an email or Name <email>'),
+    RESEND_API_KEY: z.string().min(1),
     NOTIFICATION_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
     NOTIFICATION_WEBHOOK_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
     SHIPPING_PROVIDER_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
@@ -119,7 +122,7 @@ const environmentSchema = z
         'SUPABASE_SERVICE_ROLE_KEY',
         'RAZORPAY_KEY_SECRET',
         'RAZORPAY_WEBHOOK_SECRET',
-        'SMTP_PASSWORD',
+        'RESEND_API_KEY',
       ] as const) {
         if (environment[key].toLowerCase().includes('replace-with')) {
           context.addIssue({

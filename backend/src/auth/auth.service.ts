@@ -25,7 +25,8 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterDto): Promise<AuthResult> {
-    const { data, error } = await this.supabase.register(input);
+    const emailRedirectTo = `${this.config.getOrThrow<string>('FRONTEND_ORIGIN')}/auth`;
+    const { data, error } = await this.supabase.register(input, emailRedirectTo);
     if (error) {
       throw new BadRequestException('Registration could not be completed');
     }

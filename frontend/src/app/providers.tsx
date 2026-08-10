@@ -6,6 +6,7 @@ import FloatingContactButtons from '../components/FloatingContactButtons';
 import OfflineBanner from '../components/OfflineBanner';
 import ScrollToTop from '../components/ScrollToTop';
 import Toast from '../components/Toast';
+import AuthFragmentCleaner from '../components/AuthFragmentCleaner';
 import { AuthProvider } from '../contexts/AuthContext';
 import { CartProvider } from '../contexts/CartContext';
 import { ToastProvider } from '../contexts/ToastContext';
@@ -14,6 +15,7 @@ import { WishlistProvider } from '../contexts/WishlistContext';
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ErrorBoundary>
+      <AuthFragmentCleaner />
       <AuthProvider>
         <CartProvider>
           <WishlistProvider>

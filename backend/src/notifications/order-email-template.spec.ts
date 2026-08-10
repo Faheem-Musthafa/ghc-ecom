@@ -25,6 +25,7 @@ describe('renderOrderEmail', () => {
     expect(email.text).toContain('Noir Gold Tea Set (Gold) × 1 — ₹111.98');
     expect(email.html).toContain('GLOCKERY');
     expect(email.html).toContain('Noir Gold Tea Set');
+    expect(email.html).toContain('Placed 6 Aug 2026');
     expect(email.html).toContain('VIEW ORDER DETAILS');
   });
 

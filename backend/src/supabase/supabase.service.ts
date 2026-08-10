@@ -40,11 +40,12 @@ export class SupabaseService {
     );
   }
 
-  register(input: RegisterInput): Promise<AuthResponse> {
+  register(input: RegisterInput, emailRedirectTo: string): Promise<AuthResponse> {
     return this.publicClient.auth.signUp({
       email: input.email,
       password: input.password,
       options: {
+        emailRedirectTo,
         data: {
           full_name: input.fullName,
         },

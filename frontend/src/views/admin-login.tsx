@@ -133,15 +133,22 @@ const AdminLoginPage = () => {
                                 <input id="admin-email" className="admin-login-field w-full" name="email" type="email" inputMode="email" autoComplete="username" placeholder="name@glockery.in" required autoFocus />
                             </label>
 
-                            <label className="block" htmlFor="admin-password">
-                                <span className="mb-2 flex items-center justify-between text-sm font-semibold">
-                                    Password
-                                    <button type="button" onClick={() => setShowPassword((visible) => !visible)} className="min-h-8 px-1 text-xs font-medium text-[#7a5a26] hover:text-[#4a3514]" aria-pressed={showPassword}>
+                            <div>
+                                <div className="mb-2 flex items-center justify-between">
+                                    <label className="text-sm font-semibold" htmlFor="admin-password">Password</label>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword((visible) => !visible)}
+                                        className="min-h-8 px-1 text-xs font-medium text-[#7a5a26] hover:text-[#4a3514] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9b671d]"
+                                        aria-controls="admin-password"
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                        aria-pressed={showPassword}
+                                    >
                                         {showPassword ? 'Hide' : 'Show'}
                                     </button>
-                                </span>
+                                </div>
                                 <input id="admin-password" className="admin-login-field w-full" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" minLength={8} maxLength={128} placeholder="Enter your password" required />
-                            </label>
+                            </div>
 
                             {error && (
                                 <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm leading-5 text-red-800" role="alert">
