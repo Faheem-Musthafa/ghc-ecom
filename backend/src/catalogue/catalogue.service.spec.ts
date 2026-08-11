@@ -121,11 +121,7 @@ describe('CatalogueService', () => {
     );
 
     await expect(
-      service.createCategory(
-        'actor-id',
-        { name: '  Tea   Sets  ', isPublished: true },
-        {},
-      ),
+      service.createCategory('actor-id', { name: '  Tea   Sets  ', isPublished: true }, {}),
     ).resolves.toEqual(category);
     expect(prisma.category.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Tea Sets', slug: 'tea-sets' }),
@@ -232,7 +228,7 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', barcode: 'abc-123', pricePaise: 10_000 },
+        { sku: 'sku-1', alias: 'gold display', pricePaise: 10_000 },
         {},
       ),
     ).resolves.toEqual(variant);
@@ -240,7 +236,7 @@ describe('CatalogueService', () => {
     expect(transaction.productVariant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         sku: 'SKU-1',
-        barcode: 'ABC-123',
+        alias: 'GOLD DISPLAY',
       }),
     });
 
@@ -272,11 +268,18 @@ describe('CatalogueService', () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     };
     audit.record.mockResolvedValue({});
-    const service = new CatalogueService(prisma as never, audit as never, supabase as never, imageProcessor as never);
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
 
     await service.deleteProduct('actor-id', 'product-id', {});
 
-    expect(transaction.inventoryLevel.deleteMany).toHaveBeenCalledWith({ where: { variantId: { in: ['variant-id'] } } });
+    expect(transaction.inventoryLevel.deleteMany).toHaveBeenCalledWith({
+      where: { variantId: { in: ['variant-id'] } },
+    });
     expect(transaction.product.delete).toHaveBeenCalledWith({ where: { id: 'product-id' } });
   });
 

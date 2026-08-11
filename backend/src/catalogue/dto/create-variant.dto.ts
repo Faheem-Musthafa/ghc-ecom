@@ -20,8 +20,8 @@ export class CreateVariantDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(80)
-  @Matches(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-  barcode?: string | null;
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/)
+  alias?: string | null;
 
   @IsInt()
   @Min(0)

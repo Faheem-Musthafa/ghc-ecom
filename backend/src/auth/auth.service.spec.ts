@@ -17,7 +17,11 @@ describe('AuthService', () => {
   const config = {
     getOrThrow: jest.fn().mockReturnValue('http://localhost:3000'),
   };
-  const service = new AuthService(supabase as never, config as never, { userRole: { findMany: jest.fn() } } as never);
+  const service = new AuthService(
+    supabase as never,
+    config as never,
+    { userRole: { findMany: jest.fn() } } as never,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();

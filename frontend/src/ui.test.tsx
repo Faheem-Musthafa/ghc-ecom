@@ -136,6 +136,15 @@ let mockImportedProductFailure = false;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.startsWith('https://drive.usercontent.google.com/download')) {
+        return new Response(new Uint8Array([137, 80, 78, 71]), {
+            status: 200,
+            headers: {
+                'content-type': 'image/png',
+                'content-disposition': 'attachment; filename="catalogue.png"',
+            },
+        });
+    }
     if (url.endsWith('/auth/csrf')) return json({ csrfToken: 'test-csrf-token' });
     if (url.endsWith('/auth/session')) {
         return mockAuthenticated
@@ -501,6 +510,26 @@ describe('black and gold commerce UI', () => {
         expect(container.querySelector('input[name="dimensions"]')).toBeNull();
     });
 
+    it('keeps the product editor inside the viewport with independently scrolling content', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const addProduct = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Add Product'));
+
+        await act(async () => {
+            addProduct?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+
+        const dialog = document.body.querySelector<HTMLElement>('[aria-labelledby="product-dialog-title"]');
+        expect(dialog).not.toBeNull();
+        expect(dialog?.closest('.admin-content')).toBeNull();
+        expect(dialog?.className).toContain('max-h-[calc(100svh-1rem)]');
+        expect(dialog?.className).toContain('overflow-hidden');
+        expect(dialog?.querySelector('[data-dialog-scroll-body="product"]')?.className).toContain('overflow-y-auto');
+        expect(dialog?.querySelector('[data-dialog-actions="product"]')?.className).toContain('shrink-0');
+        expect(dialog?.querySelector('button[aria-label="Close product dialog"]')?.className).toContain('min-h-11');
+    });
+
     it('shows categories by name without exposing their generated slug', async () => {
         mockAuthenticated = true;
         mockRoles = ['ADMIN'];
@@ -540,6 +569,33 @@ describe('black and gold commerce UI', () => {
         const productRequest = fetchMock.mock.calls.find(([request, init]) =>
             String(request).endsWith('/admin/catalogue/products') && init?.method === 'POST');
         expect(JSON.parse(String(productRequest?.[1]?.body))).toMatchObject({ categoryId: 'new-category-id' });
+    });
+
+    it('limits imported summaries and transfers Drive images through the browser upload path', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const description = 'Long catalogue description. '.repeat(20);
+        const driveUrl = 'https://drive.google.com/file/d/1ZnzuqyfO8OHUVdlToTsGxCEQSnX0atWy/view?usp=drive_link';
+        const values = ['Client Drive Product', 'Serveware', 'DRAFT', description, 'Ceramic', 'Blue', '#0000FF', 'CLIENT-DRIVE-BLUE', '', '999', '', 'TRUE', driveUrl, ''];
+        const csv = `${catalogueCsvHeaders.join(',')}\n${values.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')}`;
+        const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
+        const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+        await act(async () => {
+            input?.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((resolve) => window.setTimeout(resolve, 350));
+        });
+
+        const productRequest = fetchMock.mock.calls.find(([request, init]) =>
+            String(request).endsWith('/admin/catalogue/products') && init?.method === 'POST');
+        const productBody = JSON.parse(String(productRequest?.[1]?.body)) as { shortDescription: string };
+        expect(productBody.shortDescription.length).toBeLessThanOrEqual(300);
+        expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith('/google-drive'))).toBe(false);
+        expect(fetchMock.mock.calls.some(([request, init]) =>
+            /\/admin\/catalogue\/products\/[^/]+\/images$/.test(String(request)) && init?.method === 'POST' && init.body instanceof FormData)).toBe(true);
     });
 
     it('removes an auto-created category when the rest of the import fails', async () => {

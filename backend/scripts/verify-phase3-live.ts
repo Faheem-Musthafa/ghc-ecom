@@ -174,8 +174,12 @@ async function run(): Promise<void> {
       body: JSON.stringify({ email, password }),
     });
     assert(login.authenticated, 'Catalogue manager login did not authenticate');
-    const { data: signedIn, error: signInError } = await catalogueAuth.auth.signInWithPassword({ email, password });
-    if (signInError || !signedIn.session) throw signInError || new Error('Catalogue manager test token unavailable');
+    const { data: signedIn, error: signInError } = await catalogueAuth.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError || !signedIn.session)
+      throw signInError || new Error('Catalogue manager test token unavailable');
     const accessToken = signedIn.session.access_token;
     console.log('✓ Catalogue manager authenticated');
 

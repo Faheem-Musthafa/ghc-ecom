@@ -262,8 +262,12 @@ async function run(): Promise<void> {
       requireEnvironment('SUPABASE_ANON_KEY'),
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({ email, password });
-    if (signInError || !signedIn.session) throw signInError || new Error('Customer test token unavailable');
+    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError || !signedIn.session)
+      throw signInError || new Error('Customer test token unavailable');
     const customerCart = await api<CreatedCart>(
       '/api/v1/carts',
       {

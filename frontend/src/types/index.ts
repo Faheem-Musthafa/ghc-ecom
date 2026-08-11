@@ -10,7 +10,7 @@ export interface Category {
 export interface ProductVariant {
     id: string;
     sku: string;
-    barcode?: string | null;
+    alias?: string | null;
     pricePaise: number;
     compareAtPricePaise?: number | null;
     attributes?: Record<string, unknown>;
@@ -84,7 +84,7 @@ export interface CartItem {
     id: string;
     variantId: string;
     sku: string;
-    barcode?: string | null;
+    alias?: string | null;
     productName: string;
     productSlug?: string;
     categoryName?: string;

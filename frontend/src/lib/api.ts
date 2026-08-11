@@ -336,15 +336,10 @@ export const api = {
         request<ProductVariant>(`/admin/catalogue/variants/${variantId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteVariant: (variantId: string) => request<void>(`/admin/catalogue/variants/${variantId}`, { method: 'DELETE' }, { auth: true }),
     uploadProductImage: (productId: string, form: FormData) =>
-        request<ProductImage>(`/admin/catalogue/products/${productId}/images`, { method: 'POST', body: form }, { auth: true }),
-    importGoogleDriveImage: (
-        productId: string,
-        input: { driveUrl: string; variantId?: string; altText: string; sortOrder?: number },
-    ) =>
         request<ProductImage>(
-            `/admin/catalogue/products/${productId}/images/google-drive`,
-            { method: 'POST', body: JSON.stringify(input) },
-            { auth: true },
+            `/admin/catalogue/products/${productId}/images`,
+            { method: 'POST', body: form },
+            { auth: true, timeoutMs: 45_000 },
         ),
     updateProductImage: (productId: string, imageId: string, input: { variantId: string | null; altText?: string; sortOrder?: number }) =>
         request<ProductImage>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),

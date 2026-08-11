@@ -118,8 +118,14 @@ export class OperationsService implements OnModuleInit, OnModuleDestroy {
     const snapshot = await this.snapshot();
     const unhealthy =
       !snapshot.databaseHealthy ||
-      [snapshot.failedWebhooks, snapshot.terminalJobFailures, snapshot.expiredPendingPayments,
-        snapshot.paymentMismatches, snapshot.failedRefunds, snapshot.lowStockSkus].some((value) => value < 0) ||
+      [
+        snapshot.failedWebhooks,
+        snapshot.terminalJobFailures,
+        snapshot.expiredPendingPayments,
+        snapshot.paymentMismatches,
+        snapshot.failedRefunds,
+        snapshot.lowStockSkus,
+      ].some((value) => value < 0) ||
       snapshot.apiServerErrorsTotal > this.lastObservedServerErrors ||
       snapshot.failedWebhooks > 0 ||
       snapshot.terminalJobFailures > 0 ||
@@ -157,5 +163,4 @@ export class OperationsService implements OnModuleInit, OnModuleDestroy {
     operationsGauges.failedRefunds.set(snapshot.failedRefunds);
     operationsGauges.lowStockSkus.set(snapshot.lowStockSkus);
   }
-
 }

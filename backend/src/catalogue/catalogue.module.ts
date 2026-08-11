@@ -8,6 +8,11 @@ import { GoogleDriveImageService } from './google-drive-image.service';
 
 @Module({
   controllers: [CatalogueController, AdminCatalogueController],
-  providers: [CatalogueService, ImageProcessorService, VideoProcessorService, GoogleDriveImageService],
+  providers: [
+    CatalogueService,
+    ImageProcessorService,
+    VideoProcessorService,
+    GoogleDriveImageService,
+  ],
 })
 export class CatalogueModule {}

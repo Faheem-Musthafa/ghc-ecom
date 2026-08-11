@@ -1,6 +1,7 @@
 'use client';
 
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Redirect, useLocation } from '../lib/router';
 import AdminShell from '../components/AdminShell';
 import {
@@ -35,6 +36,7 @@ import {
 } from '../lib/catalogue-csv';
 import { inventoryCsvExport, inventoryCsvTemplate, parseInventoryCsv, validateInventoryCsvRows } from '../lib/inventory-csv';
 import { fallbackImage, rupees, shortDate, slugify, titleCase } from '../lib/commerce';
+import { downloadGoogleDriveImage } from '../lib/google-drive';
 import { openTrustedUrl } from '../lib/navigation';
 import { basisPointsToPercent, localDateBoundaryIso, percentToBasisPoints } from '../lib/promotions';
 import { readSpreadsheetText } from '../lib/spreadsheet-import';
@@ -42,7 +44,31 @@ import { AppRole, AuditLog, Category, Coupon, CreatedStaffUser, InventoryLevel, 
 
 const box = 'admin-panel';
 const inputStyle = 'admin-field h-12 w-full text-sm';
+const textareaStyle = 'admin-field min-h-24 w-full resize-y text-sm';
 const metricValue = (value: number | undefined): string => value === undefined || value < 0 ? 'Unavailable' : String(value);
+
+const productSummary = (description: string): string => {
+    const normalized = description.trim().replace(/\s+/g, ' ');
+    if (normalized.length <= 300) return normalized;
+    const candidate = normalized.slice(0, 299);
+    const wordBoundary = candidate.lastIndexOf(' ');
+    const summary = wordBoundary >= 220 ? candidate.slice(0, wordBoundary) : candidate;
+    return `${summary.trimEnd()}…`;
+};
+
+const uploadGoogleDriveImage = async (
+    productId: string,
+    driveUrl: string,
+    metadata: { variantId?: string; altText: string; sortOrder?: number },
+) => {
+    const file = await downloadGoogleDriveImage(driveUrl);
+    const form = new FormData();
+    form.set('file', file);
+    if (metadata.variantId) form.set('variantId', metadata.variantId);
+    form.set('altText', metadata.altText);
+    if (metadata.sortOrder !== undefined) form.set('sortOrder', String(metadata.sortOrder));
+    return api.uploadProductImage(productId, form);
+};
 
 const orderItemAttributes = (attributes?: Record<string, unknown>): Array<[string, string]> => {
     if (!attributes) return [];
@@ -61,6 +87,11 @@ const downloadCsv = (filename: string, contents: string): void => {
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+};
+
+const AdminModalLayer = ({ children }: { children: React.ReactNode }) => {
+    if (typeof document === 'undefined') return null;
+    return createPortal(<div className="admin-workspace contents">{children}</div>, document.body);
 };
 
 const NotificationToast = ({ message, type = 'info', onClose }: { message: string; type?: 'info' | 'success' | 'error'; onClose: () => void }) => {
@@ -550,6 +581,7 @@ const OrdersAdmin = () => {
 
             {/* Order Inspector Modal */}
             {inspectingOrder && (
+                <AdminModalLayer>
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
                     <div
                         ref={orderDialogRef}
@@ -566,7 +598,7 @@ const OrdersAdmin = () => {
                                     {inspectingOrder.orderNumber}
                                 </h2>
                             </div>
-                            <button onClick={() => setInspectingOrder(null)} className="text-cream/40 hover:text-cream">
+                            <button type="button" onClick={() => setInspectingOrder(null)} className="grid size-11 shrink-0 place-items-center rounded-sm text-cream/60 hover:bg-obsidian hover:text-cream" aria-label="Close order dialog">
                                 <IconClose size={22} />
                             </button>
                         </div>
@@ -681,7 +713,7 @@ const OrdersAdmin = () => {
                                     <thead className="border-b border-gold-500/15 bg-carbon text-[9px] uppercase tracking-wider text-cream/40">
                                         <tr>
                                             <th className="p-3">Product details</th>
-                                            <th className="p-3">SKU / Barcode</th>
+                                            <th className="p-3">SKU / Alias</th>
                                             <th className="p-3">Selected options</th>
                                             <th className="p-3 text-right">Price</th>
                                             <th className="p-3 text-center">Qty</th>
@@ -715,7 +747,7 @@ const OrdersAdmin = () => {
                                                 </td>
                                                 <td className="p-3 text-cream/60">
                                                     <p>{item.sku || 'No SKU'}</p>
-                                                    <p className="mt-1 text-[10px] text-cream/40">Barcode: {item.barcode || '—'}</p>
+                                                    <p className="mt-1 text-[10px] text-cream/40">Alias: {item.alias || '—'}</p>
                                                 </td>
                                                 <td className="p-3 text-cream/60">
                                                     {orderItemAttributes(item.attributes).length > 0 ? (
@@ -741,6 +773,7 @@ const OrdersAdmin = () => {
                         </div>
                     </div>
                 </div>
+                </AdminModalLayer>
             )}
         </AdminShell>
     );
@@ -753,7 +786,7 @@ interface VariantDraft {
     key: string;
     id?: string;
     sku: string;
-    barcode: string;
+    alias: string;
     color: string;
     colorHex: string;
     priceRupees: string;
@@ -788,7 +821,7 @@ const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
     key: variant?.id || `new-variant-${++variantDraftCounter}`,
     id: variant?.id,
     sku: variant?.sku || '',
-    barcode: variant?.barcode || '',
+    alias: variant?.alias || '',
     color: variant ? variantAttribute(variant, 'color') : '',
     colorHex: variantAttribute(variant || ({ attributes: {} } as ProductVariant), 'colorHex') || '#C5A059',
     priceRupees: variant ? paiseToRupeesInput(variant.pricePaise) : '',
@@ -874,15 +907,16 @@ const CatalogueAdmin = () => {
             if (variantDrafts.length === 0 || !variantDrafts.some((variant) => variant.isActive)) {
                 throw new Error('Add at least one active product option.');
             }
-            const barcodeOwners = new Map<string, number>();
+            const aliasOwners = new Map<string, number>();
             for (const [index, variant] of variantDrafts.entries()) {
-                const barcode = variant.barcode.trim().toUpperCase();
-                if (!barcode) continue;
-                const previousIndex = barcodeOwners.get(barcode);
-                if (previousIndex !== undefined) {
-                    throw new Error(`Barcode “${barcode}” is used by options ${previousIndex + 1} and ${index + 1}. Each barcode must be unique.`);
+                const alias = variant.alias.trim().toUpperCase();
+                if (alias) {
+                    const previousIndex = aliasOwners.get(alias);
+                    if (previousIndex !== undefined) {
+                        throw new Error(`Alias “${alias}” is used by options ${previousIndex + 1} and ${index + 1}. Each alias must be unique.`);
+                    }
+                    aliasOwners.set(alias, index);
                 }
-                barcodeOwners.set(barcode, index);
             }
 
             if (editingProduct) {
@@ -891,7 +925,7 @@ const CatalogueAdmin = () => {
                     slug: editingProduct.slug,
                     categoryId: String(form.get('categoryId')),
                     description: String(form.get('description')),
-                    shortDescription: String(form.get('description')),
+                    shortDescription: productSummary(String(form.get('description'))),
                     material: String(form.get('material')),
                     status: String(form.get('status')),
                 });
@@ -902,7 +936,7 @@ const CatalogueAdmin = () => {
                     categoryId: String(form.get('categoryId')),
                     name: String(form.get('name')),
                     slug: slugify(String(form.get('name'))),
-                    shortDescription: String(form.get('description')),
+                    shortDescription: productSummary(String(form.get('description'))),
                     description: String(form.get('description')),
                     material: String(form.get('material')),
                     status: String(form.get('status')),
@@ -915,7 +949,7 @@ const CatalogueAdmin = () => {
                 const color = draft.color.trim();
                 const input = {
                     sku: draft.sku.trim().toUpperCase(),
-                    barcode: draft.barcode.trim().toUpperCase() || null,
+                    alias: draft.alias.trim().toUpperCase() || null,
                     pricePaise: rupeesInputToPaise(draft.priceRupees),
                     compareAtPricePaise: draft.compareAtPriceRupees
                         ? rupeesInputToPaise(draft.compareAtPriceRupees)
@@ -936,8 +970,7 @@ const CatalogueAdmin = () => {
                 }
 
                 for (const [index, driveUrl] of driveImageLinks(draft.driveImageUrls).entries()) {
-                    await api.importGoogleDriveImage(productId, {
-                        driveUrl,
+                    await uploadGoogleDriveImage(productId, driveUrl, {
                         variantId: savedVariant.id,
                         altText: `${productName} — ${color || draft.sku}`,
                         sortOrder: draft.images.length + index,
@@ -965,8 +998,7 @@ const CatalogueAdmin = () => {
 
             const sharedDriveLinks = driveImageLinks(String(form.get('driveImageUrls') || ''));
             for (const [index, driveUrl] of sharedDriveLinks.entries()) {
-                await api.importGoogleDriveImage(productId, {
-                    driveUrl,
+                await uploadGoogleDriveImage(productId, driveUrl, {
                     altText: productName,
                     sortOrder: imageFiles.length + index,
                 });
@@ -1089,7 +1121,7 @@ const CatalogueAdmin = () => {
                         categoryId: category.id,
                         name: base.product_name,
                         slug,
-                        shortDescription: base.description,
+                        shortDescription: productSummary(base.description),
                         description: base.description,
                         material: base.material,
                         status: base.status.toUpperCase(),
@@ -1128,7 +1160,7 @@ const CatalogueAdmin = () => {
                         const existingVariant = existingVariants.get(sku);
                         const variantInput = {
                             sku,
-                            barcode: row.barcode ? row.barcode.toUpperCase() : null,
+                            alias: row.alias ? row.alias.toUpperCase() : null,
                             pricePaise: importRupeesToPaise(row.price_rupees)!,
                             compareAtPricePaise: row.compare_at_price_rupees
                                 ? importRupeesToPaise(row.compare_at_price_rupees)!
@@ -1144,7 +1176,7 @@ const CatalogueAdmin = () => {
                         if (existingVariant) {
                             undoActions.push(() => api.updateVariant(existingVariant.id, {
                                 sku: existingVariant.sku,
-                                barcode: existingVariant.barcode || null,
+                                alias: existingVariant.alias || null,
                                 pricePaise: existingVariant.pricePaise,
                                 compareAtPricePaise: existingVariant.compareAtPricePaise ?? null,
                                 attributes: existingVariant.attributes,
@@ -1157,8 +1189,7 @@ const CatalogueAdmin = () => {
                         }
 
                         for (const [index, driveUrl] of driveLinksFromCsvCell(row.option_google_drive_image_links).entries()) {
-                            const importedImage = await api.importGoogleDriveImage(savedProduct.id, {
-                                driveUrl,
+                            const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
                                 variantId: savedVariant.id,
                                 altText: `${base.product_name} — ${row.color || row.sku}`,
                                 sortOrder: index,
@@ -1174,8 +1205,7 @@ const CatalogueAdmin = () => {
                 const sharedLinks = new Set(productRows.flatMap((row) => driveLinksFromCsvCell(row.shared_google_drive_image_links)));
                 for (const [index, driveUrl] of [...sharedLinks].entries()) {
                     try {
-                        const importedImage = await api.importGoogleDriveImage(savedProduct.id, {
-                            driveUrl,
+                        const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
                             altText: base.product_name,
                             sortOrder: index,
                         });
@@ -1498,35 +1528,38 @@ const CatalogueAdmin = () => {
 
             {/* Product Modal (Create/Edit) */}
             {openProductModal && (
-                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
+                <AdminModalLayer>
+                <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/85 p-2 backdrop-blur-sm sm:items-center sm:p-5">
                     <form
                         ref={productDialogRef}
                         tabIndex={-1}
                         onSubmit={handleProductSubmit}
-                        className="mx-auto my-6 w-full max-w-5xl border border-gold-500/30 bg-carbon p-5 shadow-2xl outline-none sm:p-7"
+                        className="flex max-h-[calc(100svh-1rem)] w-full max-w-5xl flex-col overflow-hidden border border-gold-500/30 bg-carbon shadow-2xl outline-none sm:max-h-[calc(100svh-2.5rem)]"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="product-dialog-title"
                     >
-                        <div className="flex justify-between border-b border-gold-500/20 pb-4">
+                        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gold-500/20 px-4 py-3 sm:px-7 sm:py-4">
                             <div>
-                                <h2 id="product-dialog-title" className="font-display text-3xl text-cream">
+                                <h2 id="product-dialog-title" className="font-display text-2xl text-cream sm:text-3xl">
                                     {editingProduct ? 'Edit Product' : 'Add New Product'}
                                 </h2>
                             </div>
                             <button
                                 type="button"
+                                aria-label="Close product dialog"
                                 onClick={() => {
                                     setOpenProductModal(false);
                                     setEditingProduct(null);
                                 }}
-                                className="text-xs text-cream/40 hover:text-cream"
+                                className="flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-xs font-semibold text-cream/60 hover:bg-obsidian hover:text-cream"
                             >
-                                Close
+                                <IconClose size={17} aria-hidden="true" /> Close
                             </button>
                         </div>
 
-                        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                        <div data-dialog-scroll-body="product" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 sm:px-7">
+                        <div className="mt-5 grid gap-4 sm:grid-cols-2">
                             <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Product Name</span>
                                 <input name="name" defaultValue={editingProduct?.name || ''} className={inputStyle} required />
@@ -1551,7 +1584,7 @@ const CatalogueAdmin = () => {
                                 </select>
                             </label>
 
-                            <label>
+                            <label className="sm:col-span-2">
                                 <span className="mb-1.5 block text-xs text-cream/60 font-medium">Material</span>
                                 <input
                                     name="material"
@@ -1577,7 +1610,7 @@ const CatalogueAdmin = () => {
                                             Colours and options
                                         </h3>
                                         <p className="mt-1 text-xs leading-5 text-cream/55">
-                                            Each option has its own SKU, price, swatch and image set. The colour name is shown to customers.
+                                            Each option has its own SKU, alias, stock, price, swatch and image set. The colour name is shown to customers.
                                         </p>
                                     </div>
                                     <button
@@ -1647,20 +1680,20 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Barcode (unique)</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Alias (unique)</span>
                                                     <input
-                                                        value={draft.barcode}
+                                                        value={draft.alias}
                                                         onChange={(event) =>
                                                             updateVariantDraft(draft.key, {
-                                                                barcode: event.target.value.toUpperCase(),
+                                                                alias: event.target.value.toUpperCase(),
                                                             })
                                                         }
-                                                        placeholder="e.g. 8901234567890"
-                                                        pattern={'[A-Za-z0-9][A-Za-z0-9._\\-]*'}
+                                                        placeholder="e.g. SAGE SET"
+                                                        pattern={'[A-Za-z0-9][A-Za-z0-9 ._\\-]*'}
                                                         maxLength={80}
                                                         className={inputStyle}
                                                     />
-                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional, but cannot be reused by another option.</span>
+                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional lookup name or legacy code.</span>
                                                 </label>
                                                 <label>
                                                     <span className="mb-1.5 block text-xs text-cream/60">Swatch</span>
@@ -1737,10 +1770,10 @@ const CatalogueAdmin = () => {
                                                         }
                                                         rows={3}
                                                         placeholder={'Paste public Google Drive file links here\nOne image link per line'}
-                                                        className={inputStyle}
+                                                        className={textareaStyle}
                                                     />
                                                     <span className="mt-1 block text-[10px] text-cream/40">
-                                                        In Drive, set each image to “Anyone with the link”. Folder links are not supported.
+                                                        Your browser downloads each public Drive image, then uploads it to Glockery. Set access to “Anyone with the link”; folder links are not supported.
                                                     </span>
                                                 </label>
                                             </div>
@@ -1853,10 +1886,10 @@ const CatalogueAdmin = () => {
                                     name="driveImageUrls"
                                     rows={3}
                                     placeholder={'Paste public Google Drive file links here\nOne image link per line'}
-                                    className={inputStyle}
+                                    className={textareaStyle}
                                 />
                                 <span className="mt-1 block text-[10px] text-cream/40">
-                                    These images appear after each option’s own images. Set Drive access to “Anyone with the link”.
+                                    Your browser downloads and uploads these shared images. They appear after each option’s photos; Drive access must be “Anyone with the link”.
                                 </span>
                             </label>
 
@@ -1872,24 +1905,29 @@ const CatalogueAdmin = () => {
                             </label>
                         </div>
 
-                        <button
-                            disabled={saving}
-                            className="mt-6 h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian disabled:opacity-50 hover:bg-gold-300 rounded-sm shadow-md"
-                        >
-                            {saving ? 'Saving product and options…' : editingProduct ? 'Save product and options' : 'Create product and options'}
-                        </button>
+                        </div>
+                        <div data-dialog-actions="product" className="shrink-0 border-t border-gold-500/20 bg-carbon px-4 py-3 sm:px-7 sm:py-4">
+                            <button
+                                disabled={saving}
+                                className="h-12 w-full bg-gold-400 text-xs font-bold uppercase tracking-[0.2em] text-obsidian disabled:opacity-50 hover:bg-gold-300 rounded-sm shadow-md"
+                            >
+                                {saving ? 'Saving product and options…' : editingProduct ? 'Save product and options' : 'Create product and options'}
+                            </button>
+                        </div>
                     </form>
                 </div>
+                </AdminModalLayer>
             )}
 
             {/* Category Modal */}
             {openCategoryModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
+                <AdminModalLayer>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
                     <form
                         ref={categoryDialogRef}
                         tabIndex={-1}
                         onSubmit={handleCategorySubmit}
-                        className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="category-dialog-title"
@@ -1900,13 +1938,14 @@ const CatalogueAdmin = () => {
                             </h2>
                             <button
                                 type="button"
+                                aria-label="Close category dialog"
                                 onClick={() => {
                                     setOpenCategoryModal(false);
                                     setEditingCategory(null);
                                 }}
-                                className="text-xs text-cream/40"
+                                className="flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-xs font-semibold text-cream/60 hover:bg-obsidian hover:text-cream"
                             >
-                                Close
+                                <IconClose size={17} aria-hidden="true" /> Close
                             </button>
                         </div>
                         <div className="mt-5 space-y-4">
@@ -1941,6 +1980,7 @@ const CatalogueAdmin = () => {
                         </button>
                     </form>
                 </div>
+                </AdminModalLayer>
             )}
         </AdminShell>
     );
@@ -1985,7 +2025,7 @@ const InventoryAdmin = () => {
             {
                 label: string;
                 sku: string;
-                barcode: string;
+                alias: string;
                 name: string;
                 color?: string;
                 colorHex?: string;
@@ -2000,7 +2040,7 @@ const InventoryAdmin = () => {
                 map.set(v.id, {
                     label: color ? `${p.name} · ${color} · ${v.sku}` : `${p.name} · ${v.sku}`,
                     sku: v.sku,
-                    barcode: v.barcode || '',
+                    alias: v.alias || '',
                     name: p.name,
                     color: color || undefined,
                     colorHex: /^#[0-9A-F]{6}$/i.test(colorHex) ? colorHex.toUpperCase() : undefined,
@@ -2119,7 +2159,7 @@ const InventoryAdmin = () => {
                 !searchQuery ||
                 (info &&
                     (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        info.barcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        info.alias.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         info.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         info.color?.toLowerCase().includes(searchQuery.toLowerCase())));
             const available = level.onHand - level.reserved;
@@ -2195,7 +2235,7 @@ const InventoryAdmin = () => {
                     <input
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by SKU, barcode or product name…"
+                        placeholder="Search by SKU, alias or product name…"
                         className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none"
                     />
                 </div>
@@ -2231,7 +2271,7 @@ const InventoryAdmin = () => {
                 <table className="w-full min-w-[860px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
-                            <th className="p-4">SKU / Barcode / Item</th>
+                            <th className="p-4">SKU / Alias / Item</th>
                             <th className="p-4">Warehouse</th>
                             <th className="p-4 text-center">On Hand</th>
                             <th className="p-4 text-center">Reserved</th>
@@ -2279,15 +2319,15 @@ const InventoryAdmin = () => {
                                                             <span className="font-mono text-[10px] font-semibold tracking-wide text-gold-300">
                                                                 {info.sku}
                                                             </span>
+                                                            {info.alias && (
+                                                                <span className="font-mono text-[10px] text-cream/50">
+                                                                    Alias: {info.alias}
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </>
                                                 ) : (
                                                     <span>{level.variantId}</span>
-                                                )}
-                                                {info?.barcode && (
-                                                    <span className="mt-1 block font-mono text-[10px] text-cream/45">
-                                                        Barcode: {info.barcode}
-                                                    </span>
                                                 )}
                                             </div>
                                         </div>
@@ -2332,12 +2372,13 @@ const InventoryAdmin = () => {
             </div>
 
             {openWarehouseModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
+                <AdminModalLayer>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
                     <form
                         ref={warehouseDialogRef}
                         tabIndex={-1}
                         onSubmit={handleCreateWarehouse}
-                        className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="warehouse-dialog-title"
@@ -2349,8 +2390,8 @@ const InventoryAdmin = () => {
                                     Add Warehouse
                                 </h3>
                             </div>
-                            <button type="button" onClick={() => setOpenWarehouseModal(false)} className="text-xs text-cream/40 hover:text-cream">
-                                Close
+                            <button type="button" onClick={() => setOpenWarehouseModal(false)} className="flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-xs font-semibold text-cream/60 hover:bg-obsidian hover:text-cream" aria-label="Close warehouse dialog">
+                                <IconClose size={17} aria-hidden="true" /> Close
                             </button>
                         </div>
                         <p className="mt-4 text-xs leading-relaxed text-cream/60">All catalogue variants will be added to this warehouse with zero stock.</p>
@@ -2378,16 +2419,18 @@ const InventoryAdmin = () => {
                         </button>
                     </form>
                 </div>
+                </AdminModalLayer>
             )}
 
             {/* Adjust Stock Modal */}
             {editingLevel && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
+                <AdminModalLayer>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
                     <form
                         ref={stockDialogRef}
                         tabIndex={-1}
                         onSubmit={handleSaveStock}
-                        className="w-full max-w-md border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="stock-dialog-title"
@@ -2399,8 +2442,8 @@ const InventoryAdmin = () => {
                                     Adjust SKU Level
                                 </h3>
                             </div>
-                            <button type="button" onClick={() => setEditingLevel(null)} className="text-xs text-cream/40">
-                                Close
+                            <button type="button" onClick={() => setEditingLevel(null)} className="flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-xs font-semibold text-cream/60 hover:bg-obsidian hover:text-cream" aria-label="Close stock dialog">
+                                <IconClose size={17} aria-hidden="true" /> Close
                             </button>
                         </div>
                         <div className="mt-5 space-y-4">
@@ -2432,6 +2475,7 @@ const InventoryAdmin = () => {
                         </button>
                     </form>
                 </div>
+                </AdminModalLayer>
             )}
         </AdminShell>
     );
@@ -2568,12 +2612,13 @@ const PromotionsAdmin = () => {
 
             {/* Create Coupon Modal */}
             {openModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-5 backdrop-blur-sm">
+                <AdminModalLayer>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/85 p-5 backdrop-blur-sm">
                     <form
                         ref={couponDialogRef}
                         tabIndex={-1}
                         onSubmit={handleCreateCoupon}
-                        className="w-full max-w-lg border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
+                        className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto border border-gold-500/30 bg-carbon p-6 rounded-sm shadow-2xl outline-none"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="coupon-dialog-title"
@@ -2582,8 +2627,8 @@ const PromotionsAdmin = () => {
                             <h3 id="coupon-dialog-title" className="font-display text-2xl text-cream">
                                 Create Promo Coupon
                             </h3>
-                            <button type="button" onClick={() => setOpenModal(false)} className="text-xs text-cream/40">
-                                Close
+                            <button type="button" onClick={() => setOpenModal(false)} className="flex min-h-11 shrink-0 items-center gap-2 rounded-sm px-3 text-xs font-semibold text-cream/60 hover:bg-obsidian hover:text-cream" aria-label="Close coupon dialog">
+                                <IconClose size={17} aria-hidden="true" /> Close
                             </button>
                         </div>
                         <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -2641,6 +2686,7 @@ const PromotionsAdmin = () => {
                         </button>
                     </form>
                 </div>
+                </AdminModalLayer>
             )}
         </AdminShell>
     );

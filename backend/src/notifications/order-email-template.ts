@@ -97,7 +97,8 @@ export const renderOrderEmail = (
     .join('');
   const textItems = items
     .map(
-      (item) => `- ${item.productName || 'Product'}${item.color ? ` (${item.color})` : ''} × ${item.quantity ?? 1}${item.lineTotalPaise === undefined ? '' : ` — ${rupees(item.lineTotalPaise)}`}`,
+      (item) =>
+        `- ${item.productName || 'Product'}${item.color ? ` (${item.color})` : ''} × ${item.quantity ?? 1}${item.lineTotalPaise === undefined ? '' : ` — ${rupees(item.lineTotalPaise)}`}`,
     )
     .join('\n');
 

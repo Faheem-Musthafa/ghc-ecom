@@ -124,10 +124,17 @@ async function run(): Promise<void> {
     assert(login.authenticated && login.user, 'Login did not authenticate the browser session');
     console.log('✓ Confirmed customer login returned the cookie-safe browser response');
 
-    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({ email, password });
-    if (signInError || !signedIn.session) throw signInError || new Error('Supabase test session unavailable');
-    const { data: refreshed, error: refreshError } = await customerAuth.auth.refreshSession(signedIn.session);
-    if (refreshError || !refreshed.session) throw refreshError || new Error('Supabase refresh failed');
+    const { data: signedIn, error: signInError } = await customerAuth.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError || !signedIn.session)
+      throw signInError || new Error('Supabase test session unavailable');
+    const { data: refreshed, error: refreshError } = await customerAuth.auth.refreshSession(
+      signedIn.session,
+    );
+    if (refreshError || !refreshed.session)
+      throw refreshError || new Error('Supabase refresh failed');
     const accessToken = refreshed.session.access_token;
     console.log('✓ Refresh token rotation returned a new provider session');
 

@@ -68,7 +68,12 @@ export class PromotionsService {
     }
   }
 
-  private async auditCoupon(actorId: string, action: string, before: object, coupon: Coupon): Promise<void> {
+  private async auditCoupon(
+    actorId: string,
+    action: string,
+    before: object,
+    coupon: Coupon,
+  ): Promise<void> {
     await this.audit.record({
       actorId,
       action,

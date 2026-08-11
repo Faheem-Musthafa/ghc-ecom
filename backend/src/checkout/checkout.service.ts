@@ -4,7 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CheckoutQuote, Coupon, DiscountType, OrderStatus, Prisma, QuoteStatus } from '@prisma/client';
+import {
+  CheckoutQuote,
+  Coupon,
+  DiscountType,
+  OrderStatus,
+  Prisma,
+  QuoteStatus,
+} from '@prisma/client';
 import { CartService, CartWithItems } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';
@@ -146,7 +153,7 @@ export class CheckoutService {
     return cart.items.map((item) => ({
       variantId: item.variantId,
       sku: item.variant.sku,
-      barcode: item.variant.barcode,
+      alias: item.variant.alias,
       productName: item.variant.product.name,
       productSlug: item.variant.product.slug,
       categoryName: item.variant.product.category?.name ?? null,

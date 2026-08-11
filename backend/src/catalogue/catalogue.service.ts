@@ -86,9 +86,24 @@ interface StoredProductImage {
 
 export const PUBLIC_CATALOGUE_CACHE_VERSION_KEY = 'catalogue:version';
 const PUBLIC_CATALOGUE_CACHE_TTL_SECONDS = 30;
-const CATEGORY_AUDIT_FIELDS = ['name', 'slug', 'description', 'isPublished', 'sortOrder', 'parentId'] as const;
+const CATEGORY_AUDIT_FIELDS = [
+  'name',
+  'slug',
+  'description',
+  'isPublished',
+  'sortOrder',
+  'parentId',
+] as const;
 const PRODUCT_AUDIT_FIELDS = ['name', 'category', 'status', 'description', 'material'] as const;
-const VARIANT_AUDIT_FIELDS = ['sku', 'barcode', 'color', 'colorHex', 'pricePaise', 'compareAtPricePaise', 'isActive'] as const;
+const VARIANT_AUDIT_FIELDS = [
+  'sku',
+  'alias',
+  'color',
+  'colorHex',
+  'pricePaise',
+  'compareAtPricePaise',
+  'isActive',
+] as const;
 const IMAGE_AUDIT_FIELDS = ['altText', 'variantId', 'sortOrder', 'sourceFilename'] as const;
 const VIDEO_AUDIT_FIELDS = ['altText', 'sortOrder', 'sourceFilename'] as const;
 
@@ -169,9 +184,7 @@ export class CatalogueService {
   }
 
   async getPublicProduct(slug: string): Promise<CatalogueProduct> {
-    return this.cachedPublic(`product:${slug.toLowerCase()}`, () =>
-      this.loadPublicProduct(slug),
-    );
+    return this.cachedPublic(`product:${slug.toLowerCase()}`, () => this.loadPublicProduct(slug));
   }
 
   private async loadPublicProduct(slug: string): Promise<CatalogueProduct> {
@@ -295,7 +308,10 @@ export class CatalogueService {
     categoryId: string,
     context: RequestContext,
   ): Promise<void> {
-    const category = await this.mutate(() => this.prisma.category.delete({ where: { id: categoryId } }), 'Category');
+    const category = await this.mutate(
+      () => this.prisma.category.delete({ where: { id: categoryId } }),
+      'Category',
+    );
     await this.auditMutation(
       actorId,
       'catalogue.category.deleted',
@@ -323,7 +339,12 @@ export class CatalogueService {
       'product',
       product.id,
       context,
-      auditChangeMetadata(product.name, {}, this.productAuditSnapshot(product), PRODUCT_AUDIT_FIELDS),
+      auditChangeMetadata(
+        product.name,
+        {},
+        this.productAuditSnapshot(product),
+        PRODUCT_AUDIT_FIELDS,
+      ),
     );
     return this.withAvailableStock(product);
   }
@@ -420,7 +441,7 @@ export class CatalogueService {
           data: {
             ...variantInput,
             sku: input.sku.toUpperCase(),
-            barcode: input.barcode?.toUpperCase() ?? null,
+            alias: input.alias?.trim().toUpperCase() ?? null,
             attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
@@ -476,7 +497,7 @@ export class CatalogueService {
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
-          barcode: input.barcode === undefined ? undefined : input.barcode?.toUpperCase() || null,
+          alias: input.alias === undefined ? undefined : input.alias?.trim().toUpperCase() || null,
           attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
       });
@@ -521,11 +542,17 @@ export class CatalogueService {
     );
   }
 
-  private async requireUnusedVariants(transaction: Prisma.TransactionClient, variantIds: string[]): Promise<void> {
+  private async requireUnusedVariants(
+    transaction: Prisma.TransactionClient,
+    variantIds: string[],
+  ): Promise<void> {
     if (!variantIds.length) return;
     const [stock, cartItems, reservations, movements] = await Promise.all([
       transaction.inventoryLevel.findFirst({
-        where: { variantId: { in: variantIds }, OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }] },
+        where: {
+          variantId: { in: variantIds },
+          OR: [{ onHand: { gt: 0 } }, { reserved: { gt: 0 } }],
+        },
         select: { id: true },
       }),
       transaction.cartItem.count({ where: { variantId: { in: variantIds } } }),
@@ -533,7 +560,9 @@ export class CatalogueService {
       transaction.stockMovement.count({ where: { variantId: { in: variantIds } } }),
     ]);
     if (stock || cartItems || reservations || movements) {
-      throw new ConflictException('Product variant has stock or order history and must be archived instead');
+      throw new ConflictException(
+        'Product variant has stock or order history and must be archived instead',
+      );
     }
   }
 
@@ -762,18 +791,21 @@ export class CatalogueService {
 
   private variantAuditSnapshot(variant: {
     sku: string;
-    barcode: string | null;
+    alias: string | null;
     pricePaise: number;
     compareAtPricePaise: number | null;
     isActive: boolean;
     attributes: Prisma.JsonValue;
   }): Record<string, string | number | boolean | null> {
-    const attributes = variant.attributes && typeof variant.attributes === 'object' && !Array.isArray(variant.attributes)
-      ? variant.attributes as Record<string, Prisma.JsonValue>
-      : {};
+    const attributes =
+      variant.attributes &&
+      typeof variant.attributes === 'object' &&
+      !Array.isArray(variant.attributes)
+        ? (variant.attributes as Record<string, Prisma.JsonValue>)
+        : {};
     return {
       sku: variant.sku,
-      barcode: variant.barcode,
+      alias: variant.alias,
       color: typeof attributes.color === 'string' ? attributes.color : null,
       colorHex: typeof attributes.colorHex === 'string' ? attributes.colorHex : null,
       pricePaise: variant.pricePaise,
@@ -782,13 +814,10 @@ export class CatalogueService {
     };
   }
 
-  private variantAuditLabel(variant: {
-    sku: string;
-    attributes: Prisma.JsonValue;
-  }): string {
+  private variantAuditLabel(variant: { sku: string; attributes: Prisma.JsonValue }): string {
     const snapshot = this.variantAuditSnapshot({
       ...variant,
-      barcode: null,
+      alias: null,
       pricePaise: 0,
       compareAtPricePaise: null,
       isActive: true,
@@ -822,13 +851,15 @@ export class CatalogueService {
   }
 
   private categorySlug(name: string): string {
-    return name
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'category';
+    return (
+      name
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'category'
+    );
   }
 
   private assertPublishableCategory(name?: string, isPublished?: boolean): void {
@@ -1072,8 +1103,8 @@ export class CatalogueService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
-          if (target.some((field) => field.toLowerCase().includes('barcode'))) {
-            throw new ConflictException('Barcode must be unique across the catalogue');
+          if (target.some((field) => field.toLowerCase().includes('alias'))) {
+            throw new ConflictException('Alias must be unique across the catalogue');
           }
           throw new ConflictException('A record with that unique value already exists');
         }

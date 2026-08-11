@@ -89,12 +89,14 @@ describe('AdminService', () => {
     expect(prisma.userRole.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'staff-id', role: AppRole.SUPPORT_AGENT },
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      actorId: 'admin-id',
-      action: 'user.role.removed',
-      entityId: 'staff-id',
-      metadata: { role: AppRole.SUPPORT_AGENT },
-    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin-id',
+        action: 'user.role.removed',
+        entityId: 'staff-id',
+        metadata: { role: AppRole.SUPPORT_AGENT },
+      }),
+    );
     expect(redis.delete).toHaveBeenCalledWith('auth:roles:staff-id');
   });
 
@@ -102,8 +104,9 @@ describe('AdminService', () => {
     const prisma = { userRole: { count: jest.fn(), deleteMany: jest.fn() } };
     const service = new AdminService(prisma as never, {} as never, {} as never);
 
-    await expect(service.removeRole('admin-id', 'admin-id', AppRole.ADMIN, {}))
-      .rejects.toThrow('You cannot remove your own administrator access');
+    await expect(service.removeRole('admin-id', 'admin-id', AppRole.ADMIN, {})).rejects.toThrow(
+      'You cannot remove your own administrator access',
+    );
     expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -116,8 +119,9 @@ describe('AdminService', () => {
     };
     const service = new AdminService(prisma as never, {} as never, {} as never);
 
-    await expect(service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {}))
-      .rejects.toThrow('The final administrator cannot be removed');
+    await expect(
+      service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {}),
+    ).rejects.toThrow('The final administrator cannot be removed');
     expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
   });
 
@@ -147,14 +151,21 @@ describe('AdminService', () => {
       { ipAddress: '127.0.0.1', userAgent: 'test-agent' },
     );
 
-    expect(supabase.createAdminUser).toHaveBeenCalledWith(expect.objectContaining({
-      email: 'staff@example.com',
-      fullName: 'Store Staff',
-      password: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
-    }));
-    expect(result).toEqual(expect.objectContaining({
-      user: expect.objectContaining({ email: 'staff@example.com', roles: [AppRole.WAREHOUSE_MANAGER] }),
-      temporaryPassword: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
-    }));
+    expect(supabase.createAdminUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'staff@example.com',
+        fullName: 'Store Staff',
+        password: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        user: expect.objectContaining({
+          email: 'staff@example.com',
+          roles: [AppRole.WAREHOUSE_MANAGER],
+        }),
+        temporaryPassword: expect.stringMatching(/^[A-Za-z0-9_-]{24}$/),
+      }),
+    );
   });
 });

@@ -138,7 +138,7 @@ export class SupabaseService {
     }
     return {
       id: claims.sub,
-      aud: Array.isArray(claims.aud) ? claims.aud[0] ?? 'authenticated' : claims.aud,
+      aud: Array.isArray(claims.aud) ? (claims.aud[0] ?? 'authenticated') : claims.aud,
       role: claims.role,
       email: claims.email,
       phone: claims.phone,
