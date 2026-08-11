@@ -314,7 +314,7 @@ describe('Application health (e2e)', () => {
   });
 
   it('rejects a non-image product upload before storage', async () => {
-    prisma.userRole.findFirst.mockResolvedValueOnce({ role: 'catalogue_manager' });
+    prisma.userRole.findMany.mockResolvedValueOnce([{ role: 'CATALOGUE_MANAGER' }]);
 
     await request(app.getHttpServer())
       .post('/api/v1/admin/catalogue/products/0f8fad5b-d9cb-469f-a165-70867728950e/images')
@@ -328,7 +328,7 @@ describe('Application health (e2e)', () => {
   });
 
   it('rejects an oversized product upload before processing', async () => {
-    prisma.userRole.findFirst.mockResolvedValueOnce({ role: 'catalogue_manager' });
+    prisma.userRole.findMany.mockResolvedValueOnce([{ role: 'CATALOGUE_MANAGER' }]);
 
     await request(app.getHttpServer())
       .post('/api/v1/admin/catalogue/products/0f8fad5b-d9cb-469f-a165-70867728950e/images')
@@ -342,7 +342,7 @@ describe('Application health (e2e)', () => {
   });
 
   it('rejects malformed image bytes with a spoofed image MIME type', async () => {
-    prisma.userRole.findFirst.mockResolvedValueOnce({ role: 'catalogue_manager' });
+    prisma.userRole.findMany.mockResolvedValueOnce([{ role: 'CATALOGUE_MANAGER' }]);
     prisma.product.findUnique.mockResolvedValueOnce({
       id: '0f8fad5b-d9cb-469f-a165-70867728950e',
     });

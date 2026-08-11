@@ -1,12 +1,5 @@
 import { Type } from 'class-transformer';
-import {
-  IsEmail,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  ValidateNested,
-} from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsUUID, Matches, ValidateNested } from 'class-validator';
 import { ShippingAddressDto } from './shipping-address.dto';
 
 export class CreateQuoteDto {
@@ -29,5 +22,4 @@ export class CreateQuoteDto {
 
   @IsEmail()
   contactEmail!: string;
-
 }

@@ -8,22 +8,14 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const projectUrl = new URL(SUPABASE_URL.trim()).origin;
 
-const supabase = createClient(
-  projectUrl,
-  SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+const supabase = createClient(projectUrl, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
   },
-);
+});
 
-const buckets = [
-  'product-images',
-  'product-videos',
-  'private-documents',
-];
+const buckets = ['product-images', 'product-videos', 'private-documents'];
 
 for (const bucket of buckets) {
   const { error } = await supabase.storage.emptyBucket(bucket);

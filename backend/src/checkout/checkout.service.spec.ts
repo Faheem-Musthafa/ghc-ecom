@@ -112,13 +112,21 @@ describe('CheckoutService', () => {
       requireAccessibleCart: jest.fn().mockResolvedValue({
         id: 'cart-id',
         userId: null,
-        items: [{
-          id: 'item-id', cartId: 'cart-id', variantId: 'variant-id', quantity: 1,
-          variant: {
-            id: 'variant-id', sku: 'SKU', pricePaise: 10_000,
-            attributes: { color: 'Gold' }, product: { name: 'Product', images: [] },
+        items: [
+          {
+            id: 'item-id',
+            cartId: 'cart-id',
+            variantId: 'variant-id',
+            quantity: 1,
+            variant: {
+              id: 'variant-id',
+              sku: 'SKU',
+              pricePaise: 10_000,
+              attributes: { color: 'Gold' },
+              product: { name: 'Product', images: [] },
+            },
           },
-        }],
+        ],
       }),
     };
     const service = new CheckoutService(prisma as never, carts as never);
@@ -129,8 +137,14 @@ describe('CheckoutService', () => {
           cartId: 'cart-id',
           contactEmail: 'guest@example.com',
           shippingAddress: {
-            recipientName: 'Guest', phone: '9876543210', line1: 'Road', line2: '', city: 'Pune',
-            state: 'Maharashtra', postalCode: '411001', country: 'IN',
+            recipientName: 'Guest',
+            phone: '9876543210',
+            line1: 'Road',
+            line2: '',
+            city: 'Pune',
+            state: 'Maharashtra',
+            postalCode: '411001',
+            country: 'IN',
           },
         },
         undefined,
@@ -143,11 +157,18 @@ describe('CheckoutService', () => {
 
   it('calculates percentage coupons in basis points', () => {
     const service = new CheckoutService({} as never, {} as never);
-    const discount = (service as unknown as {
-      discount: (coupon: { type: DiscountType; value: number; maximumDiscountPaise: null }, subtotal: number) => number;
-    }).discount.bind(service);
+    const discount = (
+      service as unknown as {
+        discount: (
+          coupon: { type: DiscountType; value: number; maximumDiscountPaise: null },
+          subtotal: number,
+        ) => number;
+      }
+    ).discount.bind(service);
 
-    expect(discount({ type: DiscountType.PERCENT, value: 1_500, maximumDiscountPaise: null }, 1_000_000)).toBe(150_000);
+    expect(
+      discount({ type: DiscountType.PERCENT, value: 1_500, maximumDiscountPaise: null }, 1_000_000),
+    ).toBe(150_000);
   });
 
   it('rejects a coupon after its global redemption limit is reached', async () => {

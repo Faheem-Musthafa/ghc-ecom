@@ -57,10 +57,17 @@ describe('OrdersService', () => {
     prisma.order.findUnique.mockResolvedValue(guestOrder);
 
     await expect(service.getGuest(guestOrder.id, 'guest-token')).resolves.toBe(guestOrder);
-    expect(carts.requireOwnedCart).toHaveBeenCalledWith('guest-cart', undefined, 'guest-token', false);
+    expect(carts.requireOwnedCart).toHaveBeenCalledWith(
+      'guest-cart',
+      undefined,
+      'guest-token',
+      false,
+    );
 
     carts.requireOwnedCart.mockRejectedValueOnce(new Error('Cart access denied'));
-    await expect(service.getGuest(guestOrder.id, 'wrong-token')).rejects.toThrow('Cart access denied');
+    await expect(service.getGuest(guestOrder.id, 'wrong-token')).rejects.toThrow(
+      'Cart access denied',
+    );
   });
 
   it('scopes customer order detail to the authenticated owner', async () => {

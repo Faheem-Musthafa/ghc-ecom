@@ -69,7 +69,10 @@ export class OrdersService {
     return order;
   }
 
-  async guestInvoiceUrl(orderId: string, guestToken: string): Promise<{ url: string; expiresIn: number }> {
+  async guestInvoiceUrl(
+    orderId: string,
+    guestToken: string,
+  ): Promise<{ url: string; expiresIn: number }> {
     const order = await this.getGuest(orderId, guestToken);
     return this.invoiceFor(order);
   }
@@ -140,7 +143,9 @@ export class OrdersService {
               OR: [
                 { orderNumber: { contains: input.search, mode: 'insensitive' } },
                 { razorpayOrderId: { contains: input.search, mode: 'insensitive' } },
-                { addressSnapshot: { path: ['email'], string_contains: input.search.toLowerCase() } },
+                {
+                  addressSnapshot: { path: ['email'], string_contains: input.search.toLowerCase() },
+                },
                 { addressSnapshot: { path: ['recipientName'], string_contains: input.search } },
               ],
             }

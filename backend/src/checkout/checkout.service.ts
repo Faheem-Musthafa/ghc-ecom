@@ -4,7 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CheckoutQuote, Coupon, DiscountType, OrderStatus, Prisma, QuoteStatus } from '@prisma/client';
+import {
+  CheckoutQuote,
+  Coupon,
+  DiscountType,
+  OrderStatus,
+  Prisma,
+  QuoteStatus,
+} from '@prisma/client';
 import { CartService, CartWithItems } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreateQuoteDto } from './dto/create-quote.dto';

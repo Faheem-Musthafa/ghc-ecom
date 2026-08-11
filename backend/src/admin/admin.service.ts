@@ -62,7 +62,8 @@ export class AdminService {
         user: {
           id: user.id,
           email: user.email || email,
-          fullName: typeof user.user_metadata.full_name === 'string' ? user.user_metadata.full_name : null,
+          fullName:
+            typeof user.user_metadata.full_name === 'string' ? user.user_metadata.full_name : null,
           roles: [input.role],
           createdAt: user.created_at,
         },
@@ -91,14 +92,18 @@ export class AdminService {
     });
     const rolesByUser = new Map<string, AppRole[]>();
     for (const assignment of roles) {
-      rolesByUser.set(assignment.userId, [...(rolesByUser.get(assignment.userId) || []), assignment.role]);
+      rolesByUser.set(assignment.userId, [
+        ...(rolesByUser.get(assignment.userId) || []),
+        assignment.role,
+      ]);
     }
     return users
       .filter((user) => rolesByUser.has(user.id))
       .map((user) => ({
         id: user.id,
         email: user.email || '',
-        fullName: typeof user.user_metadata.full_name === 'string' ? user.user_metadata.full_name : null,
+        fullName:
+          typeof user.user_metadata.full_name === 'string' ? user.user_metadata.full_name : null,
         roles: rolesByUser.get(user.id) || [],
         createdAt: user.created_at,
       }));
@@ -189,15 +194,17 @@ export class AdminService {
     const logs = await this.audit.list();
     try {
       const users = await this.supabase.listAdminUsers();
-      const actorLabels = new Map(users.map((user) => [
-        user.id,
-        typeof user.user_metadata.full_name === 'string' && user.user_metadata.full_name.trim()
-          ? `${user.user_metadata.full_name.trim()}${user.email ? ` · ${user.email}` : ''}`
-          : user.email || user.id,
-      ]));
+      const actorLabels = new Map(
+        users.map((user) => [
+          user.id,
+          typeof user.user_metadata.full_name === 'string' && user.user_metadata.full_name.trim()
+            ? `${user.user_metadata.full_name.trim()}${user.email ? ` · ${user.email}` : ''}`
+            : user.email || user.id,
+        ]),
+      );
       return logs.map((log) => ({
         ...log,
-        actorLabel: log.actorId ? actorLabels.get(log.actorId) ?? null : 'System',
+        actorLabel: log.actorId ? (actorLabels.get(log.actorId) ?? null) : 'System',
       }));
     } catch {
       return logs.map((log) => ({ ...log, actorLabel: log.actorId ? null : 'System' }));

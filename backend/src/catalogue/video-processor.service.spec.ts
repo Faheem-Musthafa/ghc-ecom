@@ -18,14 +18,14 @@ function file(buffer: Buffer, mimetype: string): Express.Multer.File {
 
 describe('VideoProcessorService', () => {
   it('rejects unsupported video MIME types before invoking FFmpeg', async () => {
-    await expect(new VideoProcessorService().process(file(Buffer.from('nope'), 'application/pdf'))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      new VideoProcessorService().process(file(Buffer.from('nope'), 'application/pdf')),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects empty video uploads', async () => {
-    await expect(new VideoProcessorService().process(file(Buffer.alloc(0), 'video/mp4'))).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      new VideoProcessorService().process(file(Buffer.alloc(0), 'video/mp4')),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
