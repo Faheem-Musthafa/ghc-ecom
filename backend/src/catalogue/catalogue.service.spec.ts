@@ -248,6 +248,37 @@ describe('CatalogueService', () => {
     });
   });
 
+  it('maps a legacy barcode payload to alias without forwarding barcode to Prisma', async () => {
+    const variant = { id: 'variant-id', sku: '16187-29-GREY', alias: '16187-29-GREY' };
+    const transaction = {
+      productVariant: { create: jest.fn().mockResolvedValue(variant) },
+      warehouse: { findMany: jest.fn().mockResolvedValue([]) },
+      inventoryLevel: { createMany: jest.fn() },
+    };
+    const prisma = { $transaction: jest.fn((callback) => callback(transaction)) };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await service.createVariant(
+      'actor-id',
+      'product-id',
+      { sku: '16187-29-GREY', barcode: '16187-29-GREY', pricePaise: 690_000 } as never,
+      {},
+    );
+
+    expect(transaction.productVariant.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sku: '16187-29-GREY',
+        alias: '16187-29-GREY',
+      }),
+    });
+    expect(transaction.productVariant.create.mock.calls[0][0].data).not.toHaveProperty('barcode');
+  });
+
   it('deletes automatically-created zero-stock levels before deleting an unused product', async () => {
     const transaction = {
       product: {

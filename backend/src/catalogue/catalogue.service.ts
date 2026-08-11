@@ -436,12 +436,13 @@ export class CatalogueService {
     this.validateVariantPrices(input.pricePaise, input.compareAtPricePaise);
     const variant = await this.mutate(() =>
       this.prisma.$transaction(async (transaction) => {
-        const { color, colorHex, attributes, ...variantInput } = input;
+        const { color, colorHex, attributes, barcode, ...variantInput } = input;
+        const alias = input.alias === undefined ? barcode : input.alias;
         const created = await transaction.productVariant.create({
           data: {
             ...variantInput,
             sku: input.sku.toUpperCase(),
-            alias: input.alias?.trim().toUpperCase() ?? null,
+            alias: alias?.trim().toUpperCase() ?? null,
             attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
@@ -491,13 +492,14 @@ export class CatalogueService {
         : input.compareAtPricePaise,
     );
     const variant = await this.mutate(() => {
-      const { color, colorHex, attributes, ...variantInput } = input;
+      const { color, colorHex, attributes, barcode, ...variantInput } = input;
+      const alias = input.alias === undefined ? barcode : input.alias;
       return this.prisma.productVariant.update({
         where: { id: variantId },
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
-          alias: input.alias === undefined ? undefined : input.alias?.trim().toUpperCase() || null,
+          alias: alias === undefined ? undefined : alias?.trim().toUpperCase() || null,
           attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
       });
