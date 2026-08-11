@@ -10,7 +10,7 @@ export const catalogueCsvHeaders = [
     'color',
     'color_hex',
     'sku',
-    'barcode',
+    'alias',
     'price_rupees',
     'compare_at_price_rupees',
     'is_active',
@@ -46,7 +46,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Gold',
         '#C9A35B',
         'EXAMPLE-TEA-GOLD',
-        '',
+        'TEA-GOLD',
         '1299',
         '1499',
         'TRUE',
@@ -62,7 +62,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Sage Green',
         '#9CAF88',
         'EXAMPLE-TEA-SAGE',
-        '',
+        'TEA-SAGE',
         '1349',
         '1549',
         'TRUE',
@@ -78,7 +78,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Natural',
         '#D8C3A5',
         'EXAMPLE-BOWL-NATURAL',
-        '',
+        'BOWL-NATURAL',
         '899',
         '',
         'TRUE',
@@ -105,7 +105,7 @@ export const catalogueCsvExport = (products: Product[]): string => {
                 attributeText(variant.attributes, 'color'),
                 attributeText(variant.attributes, 'colorHex'),
                 variant.sku,
-                variant.barcode || '',
+                variant.alias || '',
                 String(variant.pricePaise / 100),
                 variant.compareAtPricePaise == null ? '' : String(variant.compareAtPricePaise / 100),
                 variant.isActive ? 'TRUE' : 'FALSE',
@@ -203,7 +203,7 @@ export const driveLinksFromCsvCell = (value: string): string[] =>
 export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
     const errors: string[] = [];
     const seenSkus = new Map<string, number>();
-    const seenBarcodes = new Map<string, number>();
+    const seenAliases = new Map<string, number>();
     const productSignatures = new Map<string, string>();
 
     if (rows.length === 0) return ['The CSV has headers but no product rows.'];
@@ -216,10 +216,10 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
         if (!/^[A-Z0-9][A-Z0-9._-]*$/.test(sku)) errors.push(`${prefix}: sku is invalid.`);
         if (seenSkus.has(sku)) errors.push(`${prefix}: sku duplicates row ${seenSkus.get(sku)}.`);
         else seenSkus.set(sku, row.sourceRow);
-        const barcode = row.barcode.toUpperCase();
-        if (barcode && !/^[A-Z0-9][A-Z0-9._-]*$/.test(barcode)) errors.push(`${prefix}: barcode is invalid.`);
-        if (barcode && seenBarcodes.has(barcode)) errors.push(`${prefix}: barcode duplicates row ${seenBarcodes.get(barcode)}.`);
-        else if (barcode) seenBarcodes.set(barcode, row.sourceRow);
+        const alias = row.alias.toUpperCase();
+        if (alias && !/^[A-Z0-9][A-Z0-9 ._-]*$/.test(alias)) errors.push(`${prefix}: alias is invalid.`);
+        if (alias && seenAliases.has(alias)) errors.push(`${prefix}: alias duplicates row ${seenAliases.get(alias)}.`);
+        else if (alias) seenAliases.set(alias, row.sourceRow);
 
         const pricePaise = importRupeesToPaise(row.price_rupees);
         if (pricePaise === undefined) errors.push(`${prefix}: price_rupees must be a non-negative amount with at most two decimals.`);

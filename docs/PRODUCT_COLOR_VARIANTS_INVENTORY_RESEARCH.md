@@ -25,6 +25,31 @@ Google Merchant Center likewise requires every variant to be submitted as a
 separate product ID while sharing an item-group ID
 ([Google item group ID](https://support.google.com/merchants/answer/6324507)).
 
+## Repository-specific assessment
+
+This repository already follows the core model:
+
+- `ProductVariant` has a globally unique SKU and owns its price, active state,
+  color attributes, images, cart references, reservations, and stock movements.
+- `InventoryLevel` is unique by warehouse and variant, with separate `onHand`,
+  `reserved`, and low-stock threshold values.
+- Creating a variant creates a zero-stock inventory row in every warehouse, and
+  creating a warehouse does the inverse for every existing variant.
+- The storefront selects and checks stock for the exact color variant; the admin
+  catalogue and inventory tools already work at variant/SKU level.
+
+The project decision is to replace its existing flexible `barcode` field with an
+optional globally unique `alias` on each variant. The migration renames the column
+and rewrites checkout/order snapshot keys, preserving existing values while changing
+their application meaning. Alias is available in catalogue editing, CSV
+import/export, order snapshots, and inventory search.
+
+If scanner or marketplace identifiers are needed later, add a new standards-aware
+identifier model and do not export these aliases as GTINs. Other hardening
+opportunities are moving from one alias to a one-to-many alias table if multiple
+legacy codes become necessary, and modeling damaged/safety-stock/quality-control
+quantities if warehouse operations require those states.
+
 ## Identity terms: do not merge these fields
 
 | Field | Audience and purpose | Cardinality | Recommended rule |
@@ -350,11 +375,10 @@ import per color.
 - Feed exports contain one row per color variant with one shared product-group ID.
 - Invalid GTIN lengths/check digits and duplicate normalized GTINs are rejected.
 
-## Final answer to the requested change
+## Final project decision
 
-Implement **different SKU and stock per color variant**. Keep **barcode/GTIN** as a
-separate, standards-aware scanner identifier. Add **Alias** as a new human/legacy
-lookup field (preferably a one-to-many alias table). Only rename the current barcode
-UI/database field to Alias if a data audit proves that its contents are not barcodes;
-otherwise such a rename would destroy an important semantic boundary and create
-integration risk.
+Implement **different SKU and stock per color variant** and replace the application's
+current `barcode` field with **Alias**. Preserve existing stored values through a
+column rename and snapshot-key migration. Treat the resulting values only as
+human/legacy lookup aliases; if barcode/GTIN support is introduced later, implement
+it as a separate standards-aware scanner identifier.

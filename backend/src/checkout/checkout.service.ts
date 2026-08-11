@@ -146,7 +146,7 @@ export class CheckoutService {
     return cart.items.map((item) => ({
       variantId: item.variantId,
       sku: item.variant.sku,
-      barcode: item.variant.barcode,
+      alias: item.variant.alias,
       productName: item.variant.product.name,
       productSlug: item.variant.product.slug,
       categoryName: item.variant.product.category?.name ?? null,

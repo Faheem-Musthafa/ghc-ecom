@@ -88,7 +88,7 @@ export const PUBLIC_CATALOGUE_CACHE_VERSION_KEY = 'catalogue:version';
 const PUBLIC_CATALOGUE_CACHE_TTL_SECONDS = 30;
 const CATEGORY_AUDIT_FIELDS = ['name', 'slug', 'description', 'isPublished', 'sortOrder', 'parentId'] as const;
 const PRODUCT_AUDIT_FIELDS = ['name', 'category', 'status', 'description', 'material'] as const;
-const VARIANT_AUDIT_FIELDS = ['sku', 'barcode', 'color', 'colorHex', 'pricePaise', 'compareAtPricePaise', 'isActive'] as const;
+const VARIANT_AUDIT_FIELDS = ['sku', 'alias', 'color', 'colorHex', 'pricePaise', 'compareAtPricePaise', 'isActive'] as const;
 const IMAGE_AUDIT_FIELDS = ['altText', 'variantId', 'sortOrder', 'sourceFilename'] as const;
 const VIDEO_AUDIT_FIELDS = ['altText', 'sortOrder', 'sourceFilename'] as const;
 
@@ -420,7 +420,7 @@ export class CatalogueService {
           data: {
             ...variantInput,
             sku: input.sku.toUpperCase(),
-            barcode: input.barcode?.toUpperCase() ?? null,
+            alias: input.alias?.trim().toUpperCase() ?? null,
             attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
@@ -476,7 +476,7 @@ export class CatalogueService {
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
-          barcode: input.barcode === undefined ? undefined : input.barcode?.toUpperCase() || null,
+          alias: input.alias === undefined ? undefined : input.alias?.trim().toUpperCase() || null,
           attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
       });
@@ -762,7 +762,7 @@ export class CatalogueService {
 
   private variantAuditSnapshot(variant: {
     sku: string;
-    barcode: string | null;
+    alias: string | null;
     pricePaise: number;
     compareAtPricePaise: number | null;
     isActive: boolean;
@@ -773,7 +773,7 @@ export class CatalogueService {
       : {};
     return {
       sku: variant.sku,
-      barcode: variant.barcode,
+      alias: variant.alias,
       color: typeof attributes.color === 'string' ? attributes.color : null,
       colorHex: typeof attributes.colorHex === 'string' ? attributes.colorHex : null,
       pricePaise: variant.pricePaise,
@@ -788,7 +788,7 @@ export class CatalogueService {
   }): string {
     const snapshot = this.variantAuditSnapshot({
       ...variant,
-      barcode: null,
+      alias: null,
       pricePaise: 0,
       compareAtPricePaise: null,
       isActive: true,
@@ -1072,8 +1072,8 @@ export class CatalogueService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
-          if (target.some((field) => field.toLowerCase().includes('barcode'))) {
-            throw new ConflictException('Barcode must be unique across the catalogue');
+          if (target.some((field) => field.toLowerCase().includes('alias'))) {
+            throw new ConflictException('Alias must be unique across the catalogue');
           }
           throw new ConflictException('A record with that unique value already exists');
         }

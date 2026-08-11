@@ -681,7 +681,7 @@ const OrdersAdmin = () => {
                                     <thead className="border-b border-gold-500/15 bg-carbon text-[9px] uppercase tracking-wider text-cream/40">
                                         <tr>
                                             <th className="p-3">Product details</th>
-                                            <th className="p-3">SKU / Barcode</th>
+                                            <th className="p-3">SKU / Alias</th>
                                             <th className="p-3">Selected options</th>
                                             <th className="p-3 text-right">Price</th>
                                             <th className="p-3 text-center">Qty</th>
@@ -715,7 +715,7 @@ const OrdersAdmin = () => {
                                                 </td>
                                                 <td className="p-3 text-cream/60">
                                                     <p>{item.sku || 'No SKU'}</p>
-                                                    <p className="mt-1 text-[10px] text-cream/40">Barcode: {item.barcode || '—'}</p>
+                                                    <p className="mt-1 text-[10px] text-cream/40">Alias: {item.alias || '—'}</p>
                                                 </td>
                                                 <td className="p-3 text-cream/60">
                                                     {orderItemAttributes(item.attributes).length > 0 ? (
@@ -753,7 +753,7 @@ interface VariantDraft {
     key: string;
     id?: string;
     sku: string;
-    barcode: string;
+    alias: string;
     color: string;
     colorHex: string;
     priceRupees: string;
@@ -788,7 +788,7 @@ const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
     key: variant?.id || `new-variant-${++variantDraftCounter}`,
     id: variant?.id,
     sku: variant?.sku || '',
-    barcode: variant?.barcode || '',
+    alias: variant?.alias || '',
     color: variant ? variantAttribute(variant, 'color') : '',
     colorHex: variantAttribute(variant || ({ attributes: {} } as ProductVariant), 'colorHex') || '#C5A059',
     priceRupees: variant ? paiseToRupeesInput(variant.pricePaise) : '',
@@ -874,15 +874,16 @@ const CatalogueAdmin = () => {
             if (variantDrafts.length === 0 || !variantDrafts.some((variant) => variant.isActive)) {
                 throw new Error('Add at least one active product option.');
             }
-            const barcodeOwners = new Map<string, number>();
+            const aliasOwners = new Map<string, number>();
             for (const [index, variant] of variantDrafts.entries()) {
-                const barcode = variant.barcode.trim().toUpperCase();
-                if (!barcode) continue;
-                const previousIndex = barcodeOwners.get(barcode);
-                if (previousIndex !== undefined) {
-                    throw new Error(`Barcode “${barcode}” is used by options ${previousIndex + 1} and ${index + 1}. Each barcode must be unique.`);
+                const alias = variant.alias.trim().toUpperCase();
+                if (alias) {
+                    const previousIndex = aliasOwners.get(alias);
+                    if (previousIndex !== undefined) {
+                        throw new Error(`Alias “${alias}” is used by options ${previousIndex + 1} and ${index + 1}. Each alias must be unique.`);
+                    }
+                    aliasOwners.set(alias, index);
                 }
-                barcodeOwners.set(barcode, index);
             }
 
             if (editingProduct) {
@@ -915,7 +916,7 @@ const CatalogueAdmin = () => {
                 const color = draft.color.trim();
                 const input = {
                     sku: draft.sku.trim().toUpperCase(),
-                    barcode: draft.barcode.trim().toUpperCase() || null,
+                    alias: draft.alias.trim().toUpperCase() || null,
                     pricePaise: rupeesInputToPaise(draft.priceRupees),
                     compareAtPricePaise: draft.compareAtPriceRupees
                         ? rupeesInputToPaise(draft.compareAtPriceRupees)
@@ -1128,7 +1129,7 @@ const CatalogueAdmin = () => {
                         const existingVariant = existingVariants.get(sku);
                         const variantInput = {
                             sku,
-                            barcode: row.barcode ? row.barcode.toUpperCase() : null,
+                            alias: row.alias ? row.alias.toUpperCase() : null,
                             pricePaise: importRupeesToPaise(row.price_rupees)!,
                             compareAtPricePaise: row.compare_at_price_rupees
                                 ? importRupeesToPaise(row.compare_at_price_rupees)!
@@ -1144,7 +1145,7 @@ const CatalogueAdmin = () => {
                         if (existingVariant) {
                             undoActions.push(() => api.updateVariant(existingVariant.id, {
                                 sku: existingVariant.sku,
-                                barcode: existingVariant.barcode || null,
+                                alias: existingVariant.alias || null,
                                 pricePaise: existingVariant.pricePaise,
                                 compareAtPricePaise: existingVariant.compareAtPricePaise ?? null,
                                 attributes: existingVariant.attributes,
@@ -1577,7 +1578,7 @@ const CatalogueAdmin = () => {
                                             Colours and options
                                         </h3>
                                         <p className="mt-1 text-xs leading-5 text-cream/55">
-                                            Each option has its own SKU, price, swatch and image set. The colour name is shown to customers.
+                                            Each option has its own SKU, alias, stock, price, swatch and image set. The colour name is shown to customers.
                                         </p>
                                     </div>
                                     <button
@@ -1647,20 +1648,20 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Barcode (unique)</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Alias (unique)</span>
                                                     <input
-                                                        value={draft.barcode}
+                                                        value={draft.alias}
                                                         onChange={(event) =>
                                                             updateVariantDraft(draft.key, {
-                                                                barcode: event.target.value.toUpperCase(),
+                                                                alias: event.target.value.toUpperCase(),
                                                             })
                                                         }
-                                                        placeholder="e.g. 8901234567890"
-                                                        pattern={'[A-Za-z0-9][A-Za-z0-9._\\-]*'}
+                                                        placeholder="e.g. SAGE SET"
+                                                        pattern={'[A-Za-z0-9][A-Za-z0-9 ._\\-]*'}
                                                         maxLength={80}
                                                         className={inputStyle}
                                                     />
-                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional, but cannot be reused by another option.</span>
+                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional lookup name or legacy code.</span>
                                                 </label>
                                                 <label>
                                                     <span className="mb-1.5 block text-xs text-cream/60">Swatch</span>
@@ -1985,7 +1986,7 @@ const InventoryAdmin = () => {
             {
                 label: string;
                 sku: string;
-                barcode: string;
+                alias: string;
                 name: string;
                 color?: string;
                 colorHex?: string;
@@ -2000,7 +2001,7 @@ const InventoryAdmin = () => {
                 map.set(v.id, {
                     label: color ? `${p.name} · ${color} · ${v.sku}` : `${p.name} · ${v.sku}`,
                     sku: v.sku,
-                    barcode: v.barcode || '',
+                    alias: v.alias || '',
                     name: p.name,
                     color: color || undefined,
                     colorHex: /^#[0-9A-F]{6}$/i.test(colorHex) ? colorHex.toUpperCase() : undefined,
@@ -2119,7 +2120,7 @@ const InventoryAdmin = () => {
                 !searchQuery ||
                 (info &&
                     (info.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        info.barcode.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        info.alias.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         info.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                         info.color?.toLowerCase().includes(searchQuery.toLowerCase())));
             const available = level.onHand - level.reserved;
@@ -2195,7 +2196,7 @@ const InventoryAdmin = () => {
                     <input
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by SKU, barcode or product name…"
+                        placeholder="Search by SKU, alias or product name…"
                         className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none"
                     />
                 </div>
@@ -2231,7 +2232,7 @@ const InventoryAdmin = () => {
                 <table className="w-full min-w-[860px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
-                            <th className="p-4">SKU / Barcode / Item</th>
+                            <th className="p-4">SKU / Alias / Item</th>
                             <th className="p-4">Warehouse</th>
                             <th className="p-4 text-center">On Hand</th>
                             <th className="p-4 text-center">Reserved</th>
@@ -2279,15 +2280,15 @@ const InventoryAdmin = () => {
                                                             <span className="font-mono text-[10px] font-semibold tracking-wide text-gold-300">
                                                                 {info.sku}
                                                             </span>
+                                                            {info.alias && (
+                                                                <span className="font-mono text-[10px] text-cream/50">
+                                                                    Alias: {info.alias}
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </>
                                                 ) : (
                                                     <span>{level.variantId}</span>
-                                                )}
-                                                {info?.barcode && (
-                                                    <span className="mt-1 block font-mono text-[10px] text-cream/45">
-                                                        Barcode: {info.barcode}
-                                                    </span>
                                                 )}
                                             </div>
                                         </div>

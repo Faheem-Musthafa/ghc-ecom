@@ -232,7 +232,7 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', barcode: 'abc-123', pricePaise: 10_000 },
+        { sku: 'sku-1', alias: 'gold display', pricePaise: 10_000 },
         {},
       ),
     ).resolves.toEqual(variant);
@@ -240,7 +240,7 @@ describe('CatalogueService', () => {
     expect(transaction.productVariant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         sku: 'SKU-1',
-        barcode: 'ABC-123',
+        alias: 'GOLD DISPLAY',
       }),
     });
 

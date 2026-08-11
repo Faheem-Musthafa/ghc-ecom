@@ -23,6 +23,7 @@ describe('CheckoutService', () => {
           variant: {
             id: 'variant-id',
             sku: 'SKU-1',
+            alias: 'GOLD SET',
             attributes: { color: 'Gold' },
             pricePaise: 1_100,
             product: {
@@ -81,6 +82,7 @@ describe('CheckoutService', () => {
     });
     expect(quoteData?.itemsSnapshot).toEqual([
       expect.objectContaining({
+        alias: 'GOLD SET',
         unitPricePaise: 1_100,
         quantity: 2,
         lineTotalPaise: 2_200,
