@@ -17,6 +17,8 @@ describe('Supabase auth email templates', () => {
     expect(html).toContain('role="presentation"');
     expect(html).toContain('max-width:600px');
     expect(html).toContain('GLOCKERY');
+    expect(html).toContain('CHAT ON WHATSAPP');
+    expect(html).toContain('https://wa.me/916282000289?text=');
     expect(html).not.toContain('<script');
   });
 });

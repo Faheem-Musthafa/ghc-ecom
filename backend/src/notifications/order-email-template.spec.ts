@@ -27,6 +27,13 @@ describe('renderOrderEmail', () => {
     expect(email.html).toContain('Noir Gold Tea Set');
     expect(email.html).toContain('Placed 6 Aug 2026');
     expect(email.html).toContain('VIEW ORDER DETAILS');
+    expect(email.html).toContain('CHAT ON WHATSAPP');
+    expect(email.html).toContain(
+      'https://wa.me/916282000289?text=Hi%20Glockery%20Home%20Centre%2C%20I%20need%20help%20with%20order%20GHC-EMAIL-42.',
+    );
+    expect(email.text).toContain(
+      'WhatsApp support: https://wa.me/916282000289?text=Hi%20Glockery%20Home%20Centre%2C%20I%20need%20help%20with%20order%20GHC-EMAIL-42.',
+    );
   });
 
   it('uses cancellation content and escapes unsafe customer input', () => {
@@ -36,5 +43,6 @@ describe('renderOrderEmail', () => {
     expect(email.html).toContain('Your order has been cancelled');
     expect(email.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(email.html).not.toContain('<script>alert(1)</script>');
+    expect(email.html).toContain('CHAT ON WHATSAPP');
   });
 });
