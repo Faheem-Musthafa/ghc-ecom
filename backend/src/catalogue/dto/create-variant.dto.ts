@@ -23,6 +23,14 @@ export class CreateVariantDto {
   @Matches(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/)
   alias?: string | null;
 
+  /** @deprecated Accepted temporarily for catalogue import compatibility; use alias. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/)
+  barcode?: string | null;
+
   @IsInt()
   @Min(0)
   pricePaise!: number;

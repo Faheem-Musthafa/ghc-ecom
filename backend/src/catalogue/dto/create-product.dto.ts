@@ -1,4 +1,5 @@
 import { ProductStatus } from '@prisma/client';
+import { Transform } from 'class-transformer';
 import {
   IsEnum,
   IsObject,
@@ -8,6 +9,16 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
+
+const importSafeProductSummary = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (normalized.length <= 300) return normalized;
+  const candidate = normalized.slice(0, 299);
+  const wordBoundary = candidate.lastIndexOf(' ');
+  const summary = wordBoundary >= 220 ? candidate.slice(0, wordBoundary) : candidate;
+  return `${summary.trimEnd()}…`;
+};
 
 export class CreateProductDto {
   @IsUUID()
@@ -22,6 +33,7 @@ export class CreateProductDto {
   slug!: string;
 
   @IsOptional()
+  @Transform(({ value }) => importSafeProductSummary(value))
   @IsString()
   @MaxLength(300)
   shortDescription?: string;

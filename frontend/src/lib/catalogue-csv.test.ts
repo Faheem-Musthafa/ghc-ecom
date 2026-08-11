@@ -80,6 +80,13 @@ describe('catalogue CSV', () => {
         });
     });
 
+    it('imports the legacy barcode column as the renamed alias field', () => {
+        const legacyCsv = catalogueCsvExport([product]).replace(',"alias",', ',"barcode",');
+        const [row] = parseCatalogueCsv(legacyCsv);
+
+        expect(row.alias).toBe('NOIR GOLD');
+    });
+
     it('provides a downloadable template with product examples', () => {
         const rows = parseCatalogueCsv(catalogueCsvTemplate());
 

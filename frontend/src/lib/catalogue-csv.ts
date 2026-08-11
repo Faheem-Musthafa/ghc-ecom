@@ -169,11 +169,13 @@ export const parseCatalogueCsv = (text: string): CatalogueCsvRow[] => {
     const headers = rows[0].map((header) => header.trim().toLowerCase());
     const missing = requiredHeaders.filter((header) => !headers.includes(header));
     if (missing.length > 0) throw new Error(`CSV is missing required columns: ${missing.join(', ')}.`);
+    const legacyBarcodeColumn = headers.indexOf('barcode');
 
     return rows.slice(1).map((values, index) => {
         const row = Object.fromEntries(
             catalogueCsvHeaders.map((header) => {
-                const column = headers.indexOf(header);
+                const currentColumn = headers.indexOf(header);
+                const column = header === 'alias' && currentColumn < 0 ? legacyBarcodeColumn : currentColumn;
                 return [header, column >= 0 ? importedCell(values[column] ?? '') : ''];
             }),
         ) as Record<CatalogueCsvHeader, string>;
