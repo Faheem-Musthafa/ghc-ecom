@@ -9,6 +9,13 @@ describe('variant aliases migration', () => {
     ),
     'utf8',
   );
+  const optionalTextMigration = readFileSync(
+    join(
+      process.cwd(),
+      'prisma/migrations/20260812154000_make_variant_alias_optional_text/migration.sql',
+    ),
+    'utf8',
+  );
 
   it('renames barcode to alias while preserving variant and order data', () => {
     expect(migration).toContain('rename column barcode to alias');
@@ -20,5 +27,14 @@ describe('variant aliases migration', () => {
     expect(migration).toContain("jsonb_build_object('alias', entry.item -> 'barcode')");
     expect(migration).toContain('update public.checkout_quotes');
     expect(migration).toContain('update public.orders');
+  });
+
+  it('keeps SKU unique while making alias optional non-unique text', () => {
+    expect(optionalTextMigration).toContain('drop constraint if exists product_variants_alias_key');
+    expect(optionalTextMigration).toContain(
+      'drop constraint if exists product_variants_alias_format_check',
+    );
+    expect(optionalTextMigration).toContain('product_variants_alias_text_check');
+    expect(optionalTextMigration).not.toContain('drop constraint product_variants_sku_key');
   });
 });

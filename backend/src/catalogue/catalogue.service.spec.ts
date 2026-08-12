@@ -1,5 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ProductStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma, ProductStatus } from '@prisma/client';
 import { CatalogueService } from './catalogue.service';
 
 describe('CatalogueService', () => {
@@ -228,7 +228,7 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', alias: 'gold display', pricePaise: 10_000 },
+        { sku: 'sku-1', alias: 'Gold display — popular', pricePaise: 10_000 },
         {},
       ),
     ).resolves.toEqual(variant);
@@ -236,7 +236,7 @@ describe('CatalogueService', () => {
     expect(transaction.productVariant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         sku: 'SKU-1',
-        alias: 'GOLD DISPLAY',
+        alias: 'Gold display — popular',
       }),
     });
 
@@ -277,6 +277,30 @@ describe('CatalogueService', () => {
       }),
     });
     expect(transaction.productVariant.create.mock.calls[0][0].data).not.toHaveProperty('barcode');
+  });
+
+  it('reports a duplicate SKU as a catalogue-wide conflict', async () => {
+    const duplicateSku = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['sku'] },
+    });
+    const prisma = { $transaction: jest.fn().mockRejectedValue(duplicateSku) };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(
+      service.createVariant(
+        'actor-id',
+        'product-id',
+        { sku: 'EXISTING-SKU', alias: 'Duplicate aliases are allowed', pricePaise: 10_000 },
+        {},
+      ),
+    ).rejects.toEqual(new ConflictException('SKU must be unique across the catalogue'));
   });
 
   it('deletes automatically-created zero-stock levels before deleting an unused product', async () => {

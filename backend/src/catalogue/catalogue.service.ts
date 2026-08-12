@@ -438,11 +438,13 @@ export class CatalogueService {
       this.prisma.$transaction(async (transaction) => {
         const { color, colorHex, attributes, barcode, ...variantInput } = input;
         const alias = input.alias === undefined ? barcode : input.alias;
+        const normalizedAlias = alias?.trim() || null;
         const created = await transaction.productVariant.create({
           data: {
             ...variantInput,
             sku: input.sku.toUpperCase(),
-            alias: alias?.trim().toUpperCase() ?? null,
+            alias:
+              input.alias === undefined ? normalizedAlias?.toUpperCase() ?? null : normalizedAlias,
             attributes: this.variantAttributes(attributes, color, colorHex),
             productId,
           },
@@ -494,12 +496,17 @@ export class CatalogueService {
     const variant = await this.mutate(() => {
       const { color, colorHex, attributes, barcode, ...variantInput } = input;
       const alias = input.alias === undefined ? barcode : input.alias;
+      const normalizedAlias = alias?.trim() || null;
       return this.prisma.productVariant.update({
         where: { id: variantId },
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
-          alias: alias === undefined ? undefined : alias?.trim().toUpperCase() || null,
+          alias: alias === undefined
+            ? undefined
+            : input.alias === undefined
+              ? normalizedAlias?.toUpperCase() ?? null
+              : normalizedAlias,
           attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
         },
       });
@@ -1105,8 +1112,8 @@ export class CatalogueService {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
-          if (target.some((field) => field.toLowerCase().includes('alias'))) {
-            throw new ConflictException('Alias must be unique across the catalogue');
+          if (target.some((field) => field.toLowerCase().includes('sku'))) {
+            throw new ConflictException('SKU must be unique across the catalogue');
           }
           throw new ConflictException('A record with that unique value already exists');
         }

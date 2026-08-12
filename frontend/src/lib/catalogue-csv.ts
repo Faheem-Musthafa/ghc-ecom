@@ -46,7 +46,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Gold',
         '#C9A35B',
         'EXAMPLE-TEA-GOLD',
-        'TEA-GOLD',
+        'Gold tea set',
         '1299',
         '1499',
         'TRUE',
@@ -62,7 +62,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Sage Green',
         '#9CAF88',
         'EXAMPLE-TEA-SAGE',
-        'TEA-SAGE',
+        'Sage green tea set',
         '1349',
         '1549',
         'TRUE',
@@ -78,7 +78,7 @@ export const catalogueCsvTemplate = (): string => csv([
         'Natural',
         '#D8C3A5',
         'EXAMPLE-BOWL-NATURAL',
-        'BOWL-NATURAL',
+        'Natural serving bowl',
         '899',
         '',
         'TRUE',
@@ -205,7 +205,6 @@ export const driveLinksFromCsvCell = (value: string): string[] =>
 export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
     const errors: string[] = [];
     const seenSkus = new Map<string, number>();
-    const seenAliases = new Map<string, number>();
     const productSignatures = new Map<string, string>();
 
     if (rows.length === 0) return ['The CSV has headers but no product rows.'];
@@ -218,10 +217,7 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
         if (!/^[A-Z0-9][A-Z0-9._-]*$/.test(sku)) errors.push(`${prefix}: sku is invalid.`);
         if (seenSkus.has(sku)) errors.push(`${prefix}: sku duplicates row ${seenSkus.get(sku)}.`);
         else seenSkus.set(sku, row.sourceRow);
-        const alias = row.alias.toUpperCase();
-        if (alias && !/^[A-Z0-9][A-Z0-9 ._-]*$/.test(alias)) errors.push(`${prefix}: alias is invalid.`);
-        if (alias && seenAliases.has(alias)) errors.push(`${prefix}: alias duplicates row ${seenAliases.get(alias)}.`);
-        else if (alias) seenAliases.set(alias, row.sourceRow);
+        if (row.alias.length > 80) errors.push(`${prefix}: alias must be 80 characters or fewer.`);
 
         const pricePaise = importRupeesToPaise(row.price_rupees);
         if (pricePaise === undefined) errors.push(`${prefix}: price_rupees must be a non-negative amount with at most two decimals.`);

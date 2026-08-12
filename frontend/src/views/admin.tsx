@@ -797,6 +797,97 @@ interface VariantDraft {
     driveImageUrls: string;
 }
 
+interface CatalogueImportProgress {
+    fileName: string;
+    phase: 'categories' | 'products' | 'rollback' | 'refreshing';
+    detail: string;
+    completedProducts: number;
+    totalProducts: number;
+}
+
+const catalogueImportPhaseLabel: Record<CatalogueImportProgress['phase'], string> = {
+    categories: 'Preparing categories',
+    products: 'Importing catalogue',
+    rollback: 'Reverting changes',
+    refreshing: 'Refreshing catalogue',
+};
+
+const CatalogueImportProgressModal = ({ progress }: { progress: CatalogueImportProgress }) => {
+    const dialogRef = useDialog<HTMLDivElement>(true, () => undefined, { focusInitial: false });
+    const percentage = progress.totalProducts > 0
+        ? Math.round((progress.completedProducts / progress.totalProducts) * 100)
+        : 0;
+
+    return (
+        <AdminModalLayer>
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+                <div
+                    ref={dialogRef}
+                    tabIndex={-1}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="catalogue-import-dialog-title"
+                    aria-describedby="catalogue-import-dialog-description"
+                    className="w-full max-w-lg overflow-hidden border border-gold-500/35 bg-carbon shadow-2xl outline-none"
+                >
+                    <div className="border-b border-gold-500/20 px-5 py-5 sm:px-7">
+                        <div className="flex items-start gap-4">
+                            <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-gold-400/35 bg-gold-400/10 text-gold-300">
+                                <IconRefresh className="animate-spin motion-reduce:animate-none" size={20} aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gold-400">
+                                    {catalogueImportPhaseLabel[progress.phase]}
+                                </p>
+                                <h2 id="catalogue-import-dialog-title" className="mt-1 font-display text-2xl text-cream sm:text-3xl">
+                                    Catalogue import in progress
+                                </h2>
+                                <p id="catalogue-import-dialog-description" className="mt-2 text-xs leading-5 text-cream/55">
+                                    Keep this tab open. The import will finish automatically.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-5 px-5 py-5 sm:px-7 sm:py-6">
+                        <div>
+                            <div className="mb-2 flex items-center justify-between gap-4 text-[11px] font-semibold text-cream/60">
+                                <span>{progress.completedProducts} of {progress.totalProducts} products completed</span>
+                                <span className="tabular-nums text-gold-300">{percentage}%</span>
+                            </div>
+                            <div
+                                className="h-2 overflow-hidden rounded-full bg-obsidian"
+                                role="progressbar"
+                                aria-label="Catalogue import progress"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={percentage}
+                            >
+                                <div
+                                    className="h-full rounded-full bg-gold-400 transition-[width] duration-300 motion-reduce:transition-none"
+                                    style={{ width: `${percentage}%` }}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="border border-gold-500/20 bg-obsidian/60 p-4">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-cream/35">Current task</p>
+                            <p className="mt-2 text-sm leading-6 text-cream" role="status" aria-live="polite" aria-atomic="true">
+                                {progress.detail}
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4 text-xs text-cream/45">
+                            <span className="truncate" title={progress.fileName}>{progress.fileName}</span>
+                            <span className="shrink-0">Do not close this window</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </AdminModalLayer>
+    );
+};
+
 let variantDraftCounter = 0;
 
 const variantAttribute = (variant: ProductVariant, key: string): string => {
@@ -854,6 +945,7 @@ const CatalogueAdmin = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [saving, setSaving] = useState(false);
     const [bulkImporting, setBulkImporting] = useState(false);
+    const [bulkImportProgress, setBulkImportProgress] = useState<CatalogueImportProgress | null>(null);
     const [bulkImportErrors, setBulkImportErrors] = useState<string[]>([]);
     const productDialogRef = useDialog<HTMLFormElement>(openProductModal, () => {
         setOpenProductModal(false);
@@ -907,16 +999,17 @@ const CatalogueAdmin = () => {
             if (variantDrafts.length === 0 || !variantDrafts.some((variant) => variant.isActive)) {
                 throw new Error('Add at least one active product option.');
             }
-            const aliasOwners = new Map<string, number>();
+            const skuOwners = new Map<string, number>();
             for (const [index, variant] of variantDrafts.entries()) {
-                const alias = variant.alias.trim().toUpperCase();
-                if (alias) {
-                    const previousIndex = aliasOwners.get(alias);
-                    if (previousIndex !== undefined) {
-                        throw new Error(`Alias “${alias}” is used by options ${previousIndex + 1} and ${index + 1}. Each alias must be unique.`);
-                    }
-                    aliasOwners.set(alias, index);
+                const sku = variant.sku.trim().toUpperCase();
+                if (!sku) {
+                    throw new Error(`SKU is required for option ${index + 1}.`);
                 }
+                const previousIndex = skuOwners.get(sku);
+                if (previousIndex !== undefined) {
+                    throw new Error(`SKU “${sku}” is used by options ${previousIndex + 1} and ${index + 1}. Each SKU must be unique.`);
+                }
+                skuOwners.set(sku, index);
             }
 
             if (editingProduct) {
@@ -949,7 +1042,7 @@ const CatalogueAdmin = () => {
                 const color = draft.color.trim();
                 const input = {
                     sku: draft.sku.trim().toUpperCase(),
-                    alias: draft.alias.trim().toUpperCase() || null,
+                    alias: draft.alias.trim() || null,
                     pricePaise: rupeesInputToPaise(draft.priceRupees),
                     compareAtPricePaise: draft.compareAtPriceRupees
                         ? rupeesInputToPaise(draft.compareAtPriceRupees)
@@ -1090,6 +1183,16 @@ const CatalogueAdmin = () => {
                 : '';
             if (!window.confirm(`Import ${rows.length} variant row(s) across ${groups.size} product(s)? Matching products and SKUs will be updated.${categoryNotice}`)) return;
 
+            setBulkImportProgress({
+                fileName: file.name,
+                phase: missingCategoryNames.length ? 'categories' : 'products',
+                detail: missingCategoryNames.length
+                    ? `Preparing ${missingCategoryNames.length} new categor${missingCategoryNames.length === 1 ? 'y' : 'ies'}…`
+                    : 'Preparing the first product…',
+                completedProducts: 0,
+                totalProducts: groups.size,
+            });
+
             const productBySlug = new Map(products.map((product) => [product.slug, product]));
             const importErrors: string[] = [];
             let categoriesCreated = 0;
@@ -1100,6 +1203,11 @@ const CatalogueAdmin = () => {
             const undoActions: Array<() => Promise<unknown>> = [];
 
             for (const categoryName of missingCategoryNames) {
+                setBulkImportProgress((current) => current ? {
+                    ...current,
+                    phase: 'categories',
+                    detail: `Creating category “${categoryName}”…`,
+                } : current);
                 try {
                     const category = await api.createCategory({ name: categoryName, isPublished: true });
                     categoryByName.set(categoryNameKey(category.name), category);
@@ -1111,10 +1219,31 @@ const CatalogueAdmin = () => {
                 }
             }
 
+            let completedProducts = 0;
+            const completeProductProgress = () => {
+                completedProducts += 1;
+                setBulkImportProgress((current) => current ? {
+                    ...current,
+                    phase: 'products',
+                    completedProducts,
+                    detail: completedProducts < groups.size
+                        ? 'Preparing the next product…'
+                        : 'Finishing product imports…',
+                } : current);
+            };
+
             for (const [slug, productRows] of groups) {
                 const base = productRows[0];
+                setBulkImportProgress((current) => current ? {
+                    ...current,
+                    phase: 'products',
+                    detail: `Saving product “${base.product_name}”…`,
+                } : current);
                 const category = categoryByName.get(categoryNameKey(base.category_name));
-                if (!category) continue;
+                if (!category) {
+                    completeProductProgress();
+                    continue;
+                }
                 let savedProduct: Product;
                 try {
                     const productInput = {
@@ -1148,6 +1277,7 @@ const CatalogueAdmin = () => {
                 } catch (caught) {
                     const message = caught instanceof Error ? caught.message : 'Product save failed.';
                     importErrors.push(`Product “${slug}”: ${message}`);
+                    completeProductProgress();
                     continue;
                 }
 
@@ -1155,12 +1285,16 @@ const CatalogueAdmin = () => {
                     (products.find((product) => product.slug === slug)?.variants || []).map((variant) => [variant.sku, variant]),
                 );
                 for (const row of productRows) {
+                    setBulkImportProgress((current) => current ? {
+                        ...current,
+                        detail: `Saving option ${row.sku} for “${base.product_name}”…`,
+                    } : current);
                     try {
                         const sku = row.sku.toUpperCase();
                         const existingVariant = existingVariants.get(sku);
                         const variantInput = {
                             sku,
-                            alias: row.alias ? row.alias.toUpperCase() : null,
+                            alias: row.alias || null,
                             pricePaise: importRupeesToPaise(row.price_rupees)!,
                             compareAtPricePaise: row.compare_at_price_rupees
                                 ? importRupeesToPaise(row.compare_at_price_rupees)!
@@ -1189,6 +1323,10 @@ const CatalogueAdmin = () => {
                         }
 
                         for (const [index, driveUrl] of driveLinksFromCsvCell(row.option_google_drive_image_links).entries()) {
+                            setBulkImportProgress((current) => current ? {
+                                ...current,
+                                detail: `Downloading image ${index + 1} for option ${row.sku}…`,
+                            } : current);
                             const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
                                 variantId: savedVariant.id,
                                 altText: `${base.product_name} — ${row.color || row.sku}`,
@@ -1204,6 +1342,10 @@ const CatalogueAdmin = () => {
 
                 const sharedLinks = new Set(productRows.flatMap((row) => driveLinksFromCsvCell(row.shared_google_drive_image_links)));
                 for (const [index, driveUrl] of [...sharedLinks].entries()) {
+                    setBulkImportProgress((current) => current ? {
+                        ...current,
+                        detail: `Downloading shared image ${index + 1} for “${base.product_name}”…`,
+                    } : current);
                     try {
                         const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
                             altText: base.product_name,
@@ -1215,9 +1357,15 @@ const CatalogueAdmin = () => {
                         importErrors.push(`Product “${slug}” shared image: ${message}`);
                     }
                 }
+                completeProductProgress();
             }
 
             if (importErrors.length > 0) {
+                setBulkImportProgress((current) => current ? {
+                    ...current,
+                    phase: 'rollback',
+                    detail: 'An issue was found. Reverting changes from this file…',
+                } : current);
                 const rollbackErrors: string[] = [];
                 for (const undo of undoActions.reverse()) {
                     try { await undo(); }
@@ -1227,6 +1375,11 @@ const CatalogueAdmin = () => {
                 setError(rollbackErrors.length
                     ? `Import failed and rollback needs attention (${rollbackErrors.length} rollback error(s)).`
                     : 'Import failed. All changes from this file were rolled back.');
+                setBulkImportProgress((current) => current ? {
+                    ...current,
+                    phase: 'refreshing',
+                    detail: 'Refreshing the catalogue after rollback…',
+                } : current);
                 await load();
                 return;
             }
@@ -1235,10 +1388,17 @@ const CatalogueAdmin = () => {
             setSuccessMessage(
                 `Bulk import finished: ${categoriesCreated} categor${categoriesCreated === 1 ? 'y' : 'ies'} created, ${productsCreated} product(s) created, ${productsUpdated} updated, ${variantsCreated} variant(s) created, and ${variantsUpdated} updated.`,
             );
+            setBulkImportProgress((current) => current ? {
+                ...current,
+                phase: 'refreshing',
+                completedProducts: current.totalProducts,
+                detail: 'Refreshing the catalogue with the imported products…',
+            } : current);
             await load();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Could not read the catalogue CSV.');
         } finally {
+            setBulkImportProgress(null);
             setBulkImporting(false);
         }
     };
@@ -1337,6 +1497,7 @@ const CatalogueAdmin = () => {
                 </div>
             }
         >
+            {bulkImportProgress && <CatalogueImportProgressModal progress={bulkImportProgress} />}
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMessage} type="success" onClose={() => setSuccessMessage('')} />
             {bulkImportErrors.length > 0 && (
@@ -1610,7 +1771,7 @@ const CatalogueAdmin = () => {
                                             Colours and options
                                         </h3>
                                         <p className="mt-1 text-xs leading-5 text-cream/55">
-                                            Each option has its own SKU, alias, stock, price, swatch and image set. The colour name is shown to customers.
+                                            Each option has a required unique SKU. Alias name is optional descriptive text for staff.
                                         </p>
                                     </div>
                                     <button
@@ -1664,7 +1825,7 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">SKU</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">SKU (unique, required)</span>
                                                     <input
                                                         value={draft.sku}
                                                         onChange={(event) =>
@@ -1680,20 +1841,20 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label>
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Alias (unique)</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Alias name (optional)</span>
                                                     <input
+                                                        type="text"
                                                         value={draft.alias}
                                                         onChange={(event) =>
                                                             updateVariantDraft(draft.key, {
-                                                                alias: event.target.value.toUpperCase(),
+                                                                alias: event.target.value,
                                                             })
                                                         }
-                                                        placeholder="e.g. SAGE SET"
-                                                        pattern={'[A-Za-z0-9][A-Za-z0-9 ._\\-]*'}
+                                                        placeholder="e.g. Sage green tea set"
                                                         maxLength={80}
                                                         className={inputStyle}
                                                     />
-                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional lookup name or legacy code.</span>
+                                                    <span className="mt-1 block text-[10px] text-cream/40">Optional text; it does not need to be unique.</span>
                                                 </label>
                                                 <label>
                                                     <span className="mb-1.5 block text-xs text-cream/60">Swatch</span>

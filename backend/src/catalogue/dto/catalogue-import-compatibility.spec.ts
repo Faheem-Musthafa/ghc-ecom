@@ -40,4 +40,17 @@ describe('catalogue import compatibility', () => {
 
     expect(result.barcode).toBe('16187-29-GREY');
   });
+
+  it('accepts alias as optional descriptive text', async () => {
+    const result = await validationPipe.transform(
+      {
+        sku: 'DISPLAY-SET-1',
+        alias: 'Display set — staff favourite 😊',
+        pricePaise: 690000,
+      },
+      { type: 'body', metatype: CreateVariantDto },
+    );
+
+    expect(result.alias).toBe('Display set — staff favourite 😊');
+  });
 });
