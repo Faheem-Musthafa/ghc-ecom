@@ -560,7 +560,7 @@ describe('black and gold commerce UI', () => {
         mockRoles = ['ADMIN'];
         vi.spyOn(window, 'confirm').mockReturnValue(true);
         const container = await render(<AdminPage />, '/admin/catalogue');
-        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
+        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', '', '', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
         const csv = `${catalogueCsvHeaders.join(',')}\n${values.join(',')}`;
         const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
         const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
@@ -587,7 +587,7 @@ describe('black and gold commerce UI', () => {
         const container = await render(<AdminPage />, '/admin/catalogue');
         const description = 'Long catalogue description. '.repeat(20);
         const driveUrl = 'https://drive.google.com/file/d/1ZnzuqyfO8OHUVdlToTsGxCEQSnX0atWy/view?usp=drive_link';
-        const values = ['Client Drive Product', 'Serveware', 'DRAFT', description, 'Ceramic', 'Blue', '#0000FF', 'CLIENT-DRIVE-BLUE', '', '999', '', 'TRUE', driveUrl, ''];
+        const values = ['Client Drive Product', 'Serveware', 'DRAFT', description, 'Ceramic', 'Blue', '#0000FF', '', '', 'CLIENT-DRIVE-BLUE', '', '999', '', 'TRUE', driveUrl, ''];
         const csv = `${catalogueCsvHeaders.join(',')}\n${values.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')}`;
         const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
         const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
@@ -607,6 +607,31 @@ describe('black and gold commerce UI', () => {
             /\/admin\/catalogue\/products\/[^/]+\/images$/.test(String(request)) && init?.method === 'POST' && init.body instanceof FormData)).toBe(true);
     });
 
+    it('downloads a repeated option image once and reuses it across imported combinations', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const driveUrl = 'https://drive.google.com/file/d/reused-image/view?usp=drive_link';
+        const rows = [
+            ['Reusable Image Set', 'Serveware', 'DRAFT', 'Description', 'Ceramic', 'Green', '#008000', 'Large', '1', 'REUSE-GREEN-L-1', '', '999', '', 'TRUE', driveUrl, ''],
+            ['Reusable Image Set', 'Serveware', 'DRAFT', 'Description', 'Ceramic', 'Green', '#008000', 'Large', '2', 'REUSE-GREEN-L-2', '', '1799', '', 'TRUE', driveUrl, ''],
+        ];
+        const csv = `${catalogueCsvHeaders.join(',')}\n${rows.map((row) => row.map((value) => `"${value}"`).join(',')).join('\n')}`;
+        const file = { name: 'reused-image.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
+        const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+        await act(async () => {
+            input?.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((resolve) => window.setTimeout(resolve, 450));
+        });
+
+        expect(fetchMock.mock.calls.filter(([request]) => String(request).startsWith('/google-drive?id='))).toHaveLength(1);
+        expect(fetchMock.mock.calls.filter(([request, init]) =>
+            /\/admin\/catalogue\/products\/[^/]+\/images$/.test(String(request)) && init?.method === 'POST')).toHaveLength(1);
+    });
+
     it('shows catalogue import progress in a modal until image processing finishes', async () => {
         mockAuthenticated = true;
         mockRoles = ['ADMIN'];
@@ -617,7 +642,7 @@ describe('black and gold commerce UI', () => {
         });
         const container = await render(<AdminPage />, '/admin/catalogue');
         const driveUrl = 'https://drive.google.com/file/d/17Ek09Bk3NjFvdUgxTUtd4fjH94yYkis6/view?usp=drive_link';
-        const values = ['Modal Import Product', 'Serveware', 'DRAFT', 'Description', 'Ceramic', 'Gold', '#C5A059', 'MODAL-IMPORT-GOLD', '', '999', '', 'TRUE', driveUrl, ''];
+        const values = ['Modal Import Product', 'Serveware', 'DRAFT', 'Description', 'Ceramic', 'Gold', '#C5A059', '', '', 'MODAL-IMPORT-GOLD', '', '999', '', 'TRUE', driveUrl, ''];
         const csv = `${catalogueCsvHeaders.join(',')}\n${values.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')}`;
         const file = { name: 'modal-import.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
         const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
@@ -650,7 +675,7 @@ describe('black and gold commerce UI', () => {
         mockImportedProductFailure = true;
         vi.spyOn(window, 'confirm').mockReturnValue(true);
         const container = await render(<AdminPage />, '/admin/catalogue');
-        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
+        const values = ['Dinner Plate', 'Dinner Sets', 'DRAFT', '', '', 'Blue', '#0000FF', '', '', 'DINNER-PLATE', '', '999', '', 'TRUE', '', ''];
         const csv = `${catalogueCsvHeaders.join(',')}\n${values.join(',')}`;
         const file = { name: 'catalogue.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
         const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');

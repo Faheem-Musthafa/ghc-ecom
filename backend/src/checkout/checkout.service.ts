@@ -150,32 +150,67 @@ export class CheckoutService {
   }
 
   private itemsSnapshot(cart: CartWithItems): Prisma.InputJsonArray {
-    return cart.items.map((item) => ({
-      variantId: item.variantId,
-      sku: item.variant.sku,
-      alias: item.variant.alias,
-      productName: item.variant.product.name,
-      productSlug: item.variant.product.slug,
-      categoryName: item.variant.product.category?.name ?? null,
-      productDescription:
-        item.variant.product.shortDescription ?? item.variant.product.description ?? null,
-      productMaterial: item.variant.product.material ?? null,
-      color: this.variantColor(item.variant.attributes),
-      imageUrl:
-        item.variant.images?.[0]?.thumbnailUrl ??
-        item.variant.product.images?.[0]?.thumbnailUrl ??
-        null,
-      quantity: item.quantity,
-      unitPricePaise: item.variant.pricePaise,
-      lineTotalPaise: item.variant.pricePaise * item.quantity,
-      attributes: item.variant.attributes,
-    })) as Prisma.InputJsonArray;
+    return cart.items.map((item) => {
+      const options = this.variantOptions(item.variant.attributes);
+      const image = [...item.variant.imageLinks].sort(
+        (left, right) =>
+          left.image.sortOrder - right.image.sortOrder ||
+          left.image.createdAt.getTime() - right.image.createdAt.getTime(),
+      )[0]?.image;
+      return {
+        variantId: item.variantId,
+        sku: item.variant.sku,
+        alias: item.variant.alias,
+        productName: item.variant.product.name,
+        productSlug: item.variant.product.slug,
+        categoryName: item.variant.product.category?.name ?? null,
+        productDescription:
+          item.variant.product.shortDescription ?? item.variant.product.description ?? null,
+        productMaterial: item.variant.product.material ?? null,
+        ...options,
+        optionLabel: this.optionLabel(options),
+        imageUrl: image?.thumbnailUrl ?? item.variant.product.images?.[0]?.thumbnailUrl ?? null,
+        quantity: item.quantity,
+        unitPricePaise: item.variant.pricePaise,
+        lineTotalPaise: item.variant.pricePaise * item.quantity,
+        attributes: item.variant.attributes,
+      };
+    }) as Prisma.InputJsonArray;
   }
 
-  private variantColor(attributes: Prisma.JsonValue): string | null {
-    if (!attributes || Array.isArray(attributes) || typeof attributes !== 'object') return null;
-    const color = (attributes as Prisma.JsonObject).color;
-    return typeof color === 'string' && color.trim() ? color.trim() : null;
+  private variantOptions(attributes: Prisma.JsonValue): {
+    color: string | null;
+    size: string | null;
+    packQuantity: number | null;
+  } {
+    if (!attributes || Array.isArray(attributes) || typeof attributes !== 'object') {
+      return { color: null, size: null, packQuantity: null };
+    }
+    const record = attributes as Prisma.JsonObject;
+    return {
+      color: typeof record.color === 'string' && record.color.trim() ? record.color.trim() : null,
+      size: typeof record.size === 'string' && record.size.trim() ? record.size.trim() : null,
+      packQuantity:
+        typeof record.packQuantity === 'number' &&
+        Number.isInteger(record.packQuantity) &&
+        record.packQuantity > 0
+          ? record.packQuantity
+          : null,
+    };
+  }
+
+  private optionLabel(options: {
+    color: string | null;
+    size: string | null;
+    packQuantity: number | null;
+  }): string {
+    return [
+      options.color,
+      options.size,
+      options.packQuantity ? `Pack of ${options.packQuantity}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   private async validateCoupon(

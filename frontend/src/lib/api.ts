@@ -341,7 +341,7 @@ export const api = {
             { method: 'POST', body: form },
             { auth: true, timeoutMs: 45_000 },
         ),
-    updateProductImage: (productId: string, imageId: string, input: { variantId: string | null; altText?: string; sortOrder?: number }) =>
+    updateProductImage: (productId: string, imageId: string, input: { variantIds?: string[]; variantId?: string | null; altText?: string; sortOrder?: number }) =>
         request<ProductImage>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
     deleteProductImage: (productId: string, imageId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }, { auth: true }),

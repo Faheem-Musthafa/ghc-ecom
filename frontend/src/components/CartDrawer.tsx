@@ -43,7 +43,7 @@ const CartDrawer = () => {
                                 <div className="flex items-start justify-between gap-4">
                                     <div>
                                         <h3 className="font-display text-lg font-semibold text-cream line-clamp-1">{item.productName}</h3>
-                                        <p className="mt-0.5 text-xs text-cream/45">{item.color || item.sku}</p>
+                                        <p className="mt-0.5 text-xs text-cream/45">{item.optionLabel || item.color || item.sku}</p>
                                     </div>
                                     <button disabled={loading} onClick={() => { void removeItem(item.variantId).catch(() => undefined); }} className="text-xs text-cream/40 underline-offset-4 hover:text-gold-300 hover:underline">Remove</button>
                                 </div>

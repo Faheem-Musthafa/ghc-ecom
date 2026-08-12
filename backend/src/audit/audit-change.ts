@@ -1,11 +1,11 @@
 import { Prisma } from '@prisma/client';
 
-type AuditScalar = string | number | boolean | Date | null | undefined;
+type AuditValue = Prisma.JsonValue | Date | undefined;
 type AuditSnapshot = object;
 
-const jsonScalar = (value: AuditScalar): string | number | boolean | null => {
+const jsonValue = (value: AuditValue): Prisma.InputJsonValue => {
   if (value instanceof Date) return value.toISOString();
-  return value ?? null;
+  return (value ?? null) as Prisma.InputJsonValue;
 };
 
 export const auditChangeMetadata = (
@@ -15,12 +15,12 @@ export const auditChangeMetadata = (
   fields: readonly string[],
 ): Prisma.InputJsonObject => {
   const changes: Record<string, Prisma.InputJsonValue> = {};
-  const previousSnapshot = before as Record<string, AuditScalar>;
-  const nextSnapshot = after as Record<string, AuditScalar>;
+  const previousSnapshot = before as Record<string, AuditValue>;
+  const nextSnapshot = after as Record<string, AuditValue>;
   for (const field of fields) {
-    const previous = jsonScalar(previousSnapshot[field]);
-    const next = jsonScalar(nextSnapshot[field]);
-    if (previous === next) continue;
+    const previous = jsonValue(previousSnapshot[field]);
+    const next = jsonValue(nextSnapshot[field]);
+    if (JSON.stringify(previous) === JSON.stringify(next)) continue;
     changes[field] = { before: previous, after: next };
   }
   return { entityLabel, changes };

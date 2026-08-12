@@ -56,7 +56,7 @@ const CartPage = () => {
                                         />
                                         <div>
                                             <h3 className="font-display text-xl font-semibold text-cream">{item.productName}</h3>
-                                            <p className="text-xs text-cream/50 mt-1">{item.color || item.sku}</p>
+                                            <p className="text-xs text-cream/50 mt-1">{item.optionLabel || item.color || item.sku}</p>
                                         </div>
                                     </div>
 

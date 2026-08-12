@@ -38,6 +38,7 @@ import { inventoryCsvExport, inventoryCsvTemplate, parseInventoryCsv, validateIn
 import { fallbackImage, rupees, shortDate, slugify, titleCase } from '../lib/commerce';
 import { downloadGoogleDriveImage } from '../lib/google-drive';
 import { openTrustedUrl } from '../lib/navigation';
+import { productImageVariantIds, variantOptionLabel } from '../lib/product-options';
 import { basisPointsToPercent, localDateBoundaryIso, percentToBasisPoints } from '../lib/promotions';
 import { readSpreadsheetText } from '../lib/spreadsheet-import';
 import { AppRole, AuditLog, Category, Coupon, CreatedStaffUser, InventoryLevel, OperationsSnapshot, Order, Product, ProductVariant, StaffUser, Warehouse } from '../types';
@@ -59,12 +60,12 @@ const productSummary = (description: string): string => {
 const uploadGoogleDriveImage = async (
     productId: string,
     driveUrl: string,
-    metadata: { variantId?: string; altText: string; sortOrder?: number },
+    metadata: { variantIds?: string[]; altText: string; sortOrder?: number },
 ) => {
     const file = await downloadGoogleDriveImage(driveUrl);
     const form = new FormData();
     form.set('file', file);
-    if (metadata.variantId) form.set('variantId', metadata.variantId);
+    if (metadata.variantIds?.length) form.set('variantIds', JSON.stringify(metadata.variantIds));
     form.set('altText', metadata.altText);
     if (metadata.sortOrder !== undefined) form.set('sortOrder', String(metadata.sortOrder));
     return api.uploadProductImage(productId, form);
@@ -734,7 +735,7 @@ const OrdersAdmin = () => {
                                                         <div>
                                                             <p className="font-semibold text-cream">{item.productName}</p>
                                                             {item.categoryName && <p className="mt-0.5 text-[10px] uppercase tracking-wider text-gold-400/75">{item.categoryName}</p>}
-                                                            <p className="mt-0.5 text-cream/60">Colour: {item.color || item.sku}</p>
+                                                            <p className="mt-0.5 text-cream/60">Option: {item.optionLabel || item.color || item.sku}</p>
                                                             {item.productDescription && <p className="mt-1 max-w-xs text-[10px] leading-relaxed text-cream/45">{item.productDescription}</p>}
                                                             {item.productMaterial && <p className="mt-1 text-[10px] text-cream/45">Material: {item.productMaterial}</p>}
                                                             {item.productSlug && (
@@ -789,12 +790,15 @@ interface VariantDraft {
     alias: string;
     color: string;
     colorHex: string;
+    size: string;
+    packQuantity: string;
     priceRupees: string;
     compareAtPriceRupees: string;
     isActive: boolean;
     attributes: Record<string, unknown>;
     images: File[];
     driveImageUrls: string;
+    imageScope: 'color' | 'exact';
 }
 
 interface CatalogueImportProgress {
@@ -915,6 +919,10 @@ const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
     alias: variant?.alias || '',
     color: variant ? variantAttribute(variant, 'color') : '',
     colorHex: variantAttribute(variant || ({ attributes: {} } as ProductVariant), 'colorHex') || '#C5A059',
+    size: variant ? variantAttribute(variant, 'size') : '',
+    packQuantity: variant?.attributes && typeof variant.attributes.packQuantity === 'number'
+        ? String(variant.attributes.packQuantity)
+        : '',
     priceRupees: variant ? paiseToRupeesInput(variant.pricePaise) : '',
     compareAtPriceRupees: variant?.compareAtPricePaise
         ? paiseToRupeesInput(variant.compareAtPricePaise)
@@ -923,7 +931,22 @@ const createVariantDraft = (variant?: ProductVariant): VariantDraft => ({
     attributes: variant?.attributes || {},
     images: [],
     driveImageUrls: '',
+    imageScope: 'color',
 });
+
+const assignmentMode = (variantIds: string[], drafts: VariantDraft[]): string => {
+    if (variantIds.length === 0) return 'shared';
+    const assigned = [...variantIds].sort().join(',');
+    for (const color of [...new Set(drafts.map((draft) => draft.color.trim()).filter(Boolean))]) {
+        const colorIds = drafts
+            .filter((draft) => draft.id && draft.color.trim().toLocaleLowerCase() === color.toLocaleLowerCase())
+            .map((draft) => draft.id!)
+            .sort()
+            .join(',');
+        if (colorIds && colorIds === assigned) return `color:${color}`;
+    }
+    return 'exact';
+};
 
 const CatalogueAdmin = () => {
     const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products');
@@ -936,7 +959,7 @@ const CatalogueAdmin = () => {
     const [openProductModal, setOpenProductModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([createVariantDraft()]);
-    const [imageAssignments, setImageAssignments] = useState<Record<string, string | null>>({});
+    const [imageAssignments, setImageAssignments] = useState<Record<string, string[]>>({});
 
     const [openCategoryModal, setOpenCategoryModal] = useState(false);
     const [editingCategory, setEditingCategory] = useState<Category | null>(null);
@@ -976,7 +999,7 @@ const CatalogueAdmin = () => {
     const openProductEditor = (product: Product | null) => {
         setEditingProduct(product);
         setVariantDrafts(product?.variants.length ? product.variants.map(createVariantDraft) : [createVariantDraft()]);
-        setImageAssignments(Object.fromEntries((product?.images || []).map((image) => [image.id, image.variantId || null])));
+        setImageAssignments(Object.fromEntries((product?.images || []).map((image) => [image.id, productImageVariantIds(image)])));
         setError('');
         setOpenProductModal(true);
     };
@@ -1004,6 +1027,9 @@ const CatalogueAdmin = () => {
                 const sku = variant.sku.trim().toUpperCase();
                 if (!sku) {
                     throw new Error(`SKU is required for option ${index + 1}.`);
+                }
+                if (variant.packQuantity && (!/^\d+$/.test(variant.packQuantity) || Number(variant.packQuantity) < 1)) {
+                    throw new Error(`Pack quantity for option ${index + 1} must be a positive whole number.`);
                 }
                 const previousIndex = skuOwners.get(sku);
                 if (previousIndex !== undefined) {
@@ -1038,6 +1064,7 @@ const CatalogueAdmin = () => {
                 productName = product.name;
             }
 
+            const savedVariants = new Map<string, ProductVariant>();
             for (const draft of variantDrafts) {
                 const color = draft.color.trim();
                 const input = {
@@ -1049,23 +1076,35 @@ const CatalogueAdmin = () => {
                         : null,
                     attributes: draft.attributes,
                     ...(color ? { color, colorHex: draft.colorHex } : {}),
+                    size: draft.size.trim() || null,
+                    packQuantity: draft.packQuantity ? Number(draft.packQuantity) : null,
                     isActive: draft.isActive,
                 };
                 const savedVariant = draft.id ? await api.updateVariant(draft.id, input) : await api.createVariant(productId, input);
+                savedVariants.set(draft.key, savedVariant);
+            }
 
+            for (const draft of variantDrafts) {
+                const savedVariant = savedVariants.get(draft.key)!;
+                const color = draft.color.trim();
+                const variantIds = draft.imageScope === 'color' && color
+                    ? variantDrafts
+                        .filter((candidate) => candidate.color.trim().toLocaleLowerCase() === color.toLocaleLowerCase())
+                        .map((candidate) => savedVariants.get(candidate.key)!.id)
+                    : [savedVariant.id];
                 for (const [index, file] of draft.images.entries()) {
                     const imageForm = new FormData();
                     imageForm.set('file', file);
-                    imageForm.set('variantId', savedVariant.id);
-                    imageForm.set('altText', `${productName} — ${color || draft.sku}`);
+                    imageForm.set('variantIds', JSON.stringify(variantIds));
+                    imageForm.set('altText', `${productName} — ${variantOptionLabel(savedVariant)}`);
                     imageForm.set('sortOrder', String(index));
                     await api.uploadProductImage(productId, imageForm);
                 }
 
                 for (const [index, driveUrl] of driveImageLinks(draft.driveImageUrls).entries()) {
                     await uploadGoogleDriveImage(productId, driveUrl, {
-                        variantId: savedVariant.id,
-                        altText: `${productName} — ${color || draft.sku}`,
+                        variantIds,
+                        altText: `${productName} — ${variantOptionLabel(savedVariant)}`,
                         sortOrder: draft.images.length + index,
                     });
                 }
@@ -1073,9 +1112,10 @@ const CatalogueAdmin = () => {
 
             if (editingProduct) {
                 for (const image of editingProduct.images) {
-                    const variantId = imageAssignments[image.id] ?? null;
-                    if (variantId !== (image.variantId ?? null)) {
-                        await api.updateProductImage(productId, image.id, { variantId });
+                    const variantIds = [...(imageAssignments[image.id] ?? [])].sort();
+                    const existingVariantIds = [...productImageVariantIds(image)].sort();
+                    if (JSON.stringify(variantIds) !== JSON.stringify(existingVariantIds)) {
+                        await api.updateProductImage(productId, image.id, { variantIds });
                     }
                 }
             }
@@ -1284,6 +1324,7 @@ const CatalogueAdmin = () => {
                 const existingVariants = new Map(
                     (products.find((product) => product.slug === slug)?.variants || []).map((variant) => [variant.sku, variant]),
                 );
+                const importedImagesByLink = new Map<string, { imageId: string; variantIds: Set<string>; shared: boolean }>();
                 for (const row of productRows) {
                     setBulkImportProgress((current) => current ? {
                         ...current,
@@ -1302,6 +1343,8 @@ const CatalogueAdmin = () => {
                             attributes: existingVariant?.attributes || {},
                             ...(row.color ? { color: row.color } : {}),
                             ...(row.color_hex ? { colorHex: row.color_hex.toUpperCase() } : {}),
+                            size: row.size || null,
+                            packQuantity: row.pack_quantity ? Number(row.pack_quantity) : null,
                             isActive: row.is_active ? importBoolean(row.is_active)! : true,
                         };
                         const savedVariant = existingVariant
@@ -1327,12 +1370,27 @@ const CatalogueAdmin = () => {
                                 ...current,
                                 detail: `Downloading image ${index + 1} for option ${row.sku}…`,
                             } : current);
-                            const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
-                                variantId: savedVariant.id,
-                                altText: `${base.product_name} — ${row.color || row.sku}`,
-                                sortOrder: index,
-                            });
-                            undoActions.push(() => api.deleteProductImage(savedProduct.id, importedImage.id));
+                            const previousImage = importedImagesByLink.get(driveUrl);
+                            if (previousImage) {
+                                if (!previousImage.shared) {
+                                    previousImage.variantIds.add(savedVariant.id);
+                                    await api.updateProductImage(savedProduct.id, previousImage.imageId, {
+                                        variantIds: [...previousImage.variantIds],
+                                    });
+                                }
+                            } else {
+                                const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
+                                    variantIds: [savedVariant.id],
+                                    altText: `${base.product_name} — ${variantOptionLabel(savedVariant)}`,
+                                    sortOrder: index,
+                                });
+                                importedImagesByLink.set(driveUrl, {
+                                    imageId: importedImage.id,
+                                    variantIds: new Set([savedVariant.id]),
+                                    shared: false,
+                                });
+                                undoActions.push(() => api.deleteProductImage(savedProduct.id, importedImage.id));
+                            }
                         }
                     } catch (caught) {
                         const message = caught instanceof Error ? caught.message : 'Variant save failed.';
@@ -1347,11 +1405,23 @@ const CatalogueAdmin = () => {
                         detail: `Downloading shared image ${index + 1} for “${base.product_name}”…`,
                     } : current);
                     try {
-                        const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
-                            altText: base.product_name,
-                            sortOrder: index,
-                        });
-                        undoActions.push(() => api.deleteProductImage(savedProduct.id, importedImage.id));
+                        const previousImage = importedImagesByLink.get(driveUrl);
+                        if (previousImage) {
+                            previousImage.shared = true;
+                            previousImage.variantIds.clear();
+                            await api.updateProductImage(savedProduct.id, previousImage.imageId, { variantIds: [] });
+                        } else {
+                            const importedImage = await uploadGoogleDriveImage(savedProduct.id, driveUrl, {
+                                altText: base.product_name,
+                                sortOrder: index,
+                            });
+                            importedImagesByLink.set(driveUrl, {
+                                imageId: importedImage.id,
+                                variantIds: new Set(),
+                                shared: true,
+                            });
+                            undoActions.push(() => api.deleteProductImage(savedProduct.id, importedImage.id));
+                        }
                     } catch (caught) {
                         const message = caught instanceof Error ? caught.message : 'Shared image import failed.';
                         importErrors.push(`Product “${slug}” shared image: ${message}`);
@@ -1768,10 +1838,10 @@ const CatalogueAdmin = () => {
                                 <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div>
                                         <h3 id="product-options-heading" className="font-display text-xl text-cream">
-                                            Colours and options
+                                            Colour, size and pack combinations
                                         </h3>
                                         <p className="mt-1 text-xs leading-5 text-cream/55">
-                                            Each option has a required unique SKU. Alias name is optional descriptive text for staff.
+                                            Add one exact sellable combination per row. Each combination keeps its own SKU, price and stock.
                                         </p>
                                     </div>
                                     <button
@@ -1779,7 +1849,7 @@ const CatalogueAdmin = () => {
                                         onClick={() => setVariantDrafts((current) => [...current, createVariantDraft()])}
                                         className="flex min-h-11 items-center gap-2 border border-gold-400/45 px-3 text-xs font-semibold text-gold-200 hover:border-gold-300 hover:text-gold-100"
                                     >
-                                        <IconPlus size={14} /> Add colour
+                                        <IconPlus size={14} /> Add combination
                                     </button>
                                 </div>
 
@@ -1838,6 +1908,28 @@ const CatalogueAdmin = () => {
                                                         maxLength={80}
                                                         className={inputStyle}
                                                         required
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Size (optional)</span>
+                                                    <input
+                                                        value={draft.size}
+                                                        onChange={(event) => updateVariantDraft(draft.key, { size: event.target.value })}
+                                                        placeholder="e.g. Large"
+                                                        maxLength={80}
+                                                        className={inputStyle}
+                                                    />
+                                                </label>
+                                                <label>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Pack quantity (optional)</span>
+                                                    <input
+                                                        type="number"
+                                                        value={draft.packQuantity}
+                                                        onChange={(event) => updateVariantDraft(draft.key, { packQuantity: event.target.value })}
+                                                        min="1"
+                                                        step="1"
+                                                        placeholder="e.g. 2"
+                                                        className={inputStyle}
                                                     />
                                                 </label>
                                                 <label>
@@ -1907,7 +1999,7 @@ const CatalogueAdmin = () => {
                                                     />
                                                 </label>
                                                 <label className="sm:col-span-2">
-                                                    <span className="mb-1.5 block text-xs text-cream/60">Images for this option</span>
+                                                    <span className="mb-1.5 block text-xs text-cream/60">Images for this combination</span>
                                                     <input
                                                         type="file"
                                                         accept="image/jpeg,image/png,image/webp,image/gif"
@@ -1919,6 +2011,17 @@ const CatalogueAdmin = () => {
                                                         }
                                                         className="block w-full text-xs text-cream/50 file:mr-3 file:h-11 file:border-0 file:bg-gold-400 file:px-4 file:text-xs file:font-bold file:text-obsidian"
                                                     />
+                                                </label>
+                                                <label className="sm:col-span-2">
+                                                    <span className="mb-1.5 block text-xs text-cream/60">New image assignment</span>
+                                                    <select
+                                                        value={draft.imageScope}
+                                                        onChange={(event) => updateVariantDraft(draft.key, { imageScope: event.target.value as VariantDraft['imageScope'] })}
+                                                        className={inputStyle}
+                                                    >
+                                                        <option value="color">Every combination with this colour</option>
+                                                        <option value="exact">This exact combination only</option>
+                                                    </select>
                                                 </label>
                                                 <label className="sm:col-span-2">
                                                     <span className="mb-1.5 block text-xs text-cream/60">Google Drive image links</span>
@@ -1962,33 +2065,57 @@ const CatalogueAdmin = () => {
                                         Assign existing images
                                     </h3>
                                     <p className="mt-1 text-xs text-cream/55">
-                                        Choose which colour owns each older image. Shared images appear after every colour’s own photos.
+                                        Keep an image product-wide, reuse it for every combination of one colour, or choose exact combinations.
                                     </p>
                                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                                        {editingProduct.images.map((image) => (
-                                            <div key={image.id} className="flex items-center gap-3 bg-obsidian/55 p-2">
+                                        {editingProduct.images.map((image) => {
+                                            const assignedIds = imageAssignments[image.id] ?? [];
+                                            const mode = assignmentMode(assignedIds, variantDrafts);
+                                            return (
+                                            <div key={image.id} className="flex items-start gap-3 bg-obsidian/55 p-2">
                                                 <img src={image.thumbnailUrl} alt={image.altText} className="size-16 shrink-0 object-cover" />
                                                 <label className="min-w-0 flex-1">
                                                     <span className="mb-1 block text-[11px] text-cream/55">Gallery assignment</span>
                                                     <select
-                                                        value={imageAssignments[image.id] || ''}
-                                                        onChange={(event) =>
-                                                            setImageAssignments((current) => ({
-                                                                ...current,
-                                                                [image.id]: event.target.value || null,
-                                                            }))
-                                                        }
+                                                        value={mode}
+                                                        onChange={(event) => {
+                                                            const value = event.target.value;
+                                                            let variantIds: string[] = [];
+                                                            if (value === 'exact') variantIds = assignedIds.length ? assignedIds : variantDrafts.flatMap((draft) => draft.id ? [draft.id] : []).slice(0, 1);
+                                                            else if (value.startsWith('color:')) {
+                                                                const color = value.slice('color:'.length);
+                                                                variantIds = variantDrafts.flatMap((draft) => draft.id && draft.color.trim() === color ? [draft.id] : []);
+                                                            }
+                                                            setImageAssignments((current) => ({ ...current, [image.id]: variantIds }));
+                                                        }}
                                                         className="field h-10 w-full text-xs"
                                                     >
-                                                        <option value="">Shared across all options</option>
-                                                        {variantDrafts
-                                                            .filter((draft) => draft.id)
-                                                            .map((draft) => (
-                                                                <option key={draft.id} value={draft.id}>
-                                                                    {draft.color || draft.sku}
-                                                                </option>
-                                                            ))}
+                                                        <option value="shared">Shared across the product</option>
+                                                        {[...new Set(variantDrafts.map((draft) => draft.color.trim()).filter(Boolean))].map((color) => (
+                                                            <option key={color} value={`color:${color}`}>Every {color} combination</option>
+                                                        ))}
+                                                        <option value="exact">Selected exact combinations</option>
                                                     </select>
+                                                    {mode === 'exact' && (
+                                                        <span className="mt-2 grid gap-1.5">
+                                                            {variantDrafts.filter((draft) => draft.id).map((draft) => (
+                                                                <span key={draft.id} className="flex items-center gap-2 text-[11px] text-cream/65">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={assignedIds.includes(draft.id!)}
+                                                                        onChange={(event) => setImageAssignments((current) => ({
+                                                                            ...current,
+                                                                            [image.id]: event.target.checked
+                                                                                ? [...new Set([...(current[image.id] ?? []), draft.id!])]
+                                                                                : (current[image.id] ?? []).filter((id) => id !== draft.id),
+                                                                        }))}
+                                                                        className="size-4 accent-gold-400"
+                                                                    />
+                                                                    {draft.color || 'No colour'} · {draft.size || 'No size'} · {draft.packQuantity ? `Pack of ${draft.packQuantity}` : 'Single'}
+                                                                </span>
+                                                            ))}
+                                                        </span>
+                                                    )}
                                                 </label>
                                                 <button
                                                     type="button"
@@ -2007,7 +2134,8 @@ const CatalogueAdmin = () => {
                                                     <IconTrash size={15} />
                                                 </button>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </section>
                             )}
@@ -2195,11 +2323,13 @@ const InventoryAdmin = () => {
         >();
         for (const p of products) {
             for (const v of p.variants) {
-                const image = p.images.find((item) => item.variantId === v.id) || p.images[0];
+                const image = p.images.find((item) => productImageVariantIds(item).includes(v.id))
+                    || p.images.find((item) => productImageVariantIds(item).length === 0)
+                    || p.images[0];
                 const color = variantAttribute(v, 'color');
                 const colorHex = variantAttribute(v, 'colorHex');
                 map.set(v.id, {
-                    label: color ? `${p.name} · ${color} · ${v.sku}` : `${p.name} · ${v.sku}`,
+                    label: `${p.name} · ${variantOptionLabel(v)} · ${v.sku}`,
                     sku: v.sku,
                     alias: v.alias || '',
                     name: p.name,

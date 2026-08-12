@@ -228,7 +228,14 @@ describe('CatalogueService', () => {
       service.createVariant(
         'actor-id',
         'product-id',
-        { sku: 'sku-1', alias: 'Gold display — popular', pricePaise: 10_000 },
+        {
+          sku: 'sku-1',
+          alias: 'Gold display — popular',
+          color: ' Green ',
+          size: ' Large ',
+          packQuantity: 2,
+          pricePaise: 10_000,
+        },
         {},
       ),
     ).resolves.toEqual(variant);
@@ -237,6 +244,7 @@ describe('CatalogueService', () => {
       data: expect.objectContaining({
         sku: 'SKU-1',
         alias: 'Gold display — popular',
+        attributes: expect.objectContaining({ color: 'Green', size: 'Large', packQuantity: 2 }),
       }),
     });
 
@@ -385,17 +393,33 @@ describe('CatalogueService', () => {
     });
   });
 
-  it('assigns a product image only to a variant owned by that product', async () => {
-    const image = { id: 'image-id', productId: 'product-id', variantId: null };
-    const updated = { ...image, variantId: 'variant-id' };
-    const prisma = {
+  it('assigns a stored product image to multiple variants owned by that product', async () => {
+    const image = {
+      id: 'image-id',
+      productId: 'product-id',
+      altText: 'Green set',
+      sortOrder: 0,
+      sourceFilename: 'green.webp',
+      variantLinks: [],
+    };
+    const updated = {
+      ...image,
+      variantLinks: [{ variantId: 'variant-id-1' }, { variantId: 'variant-id-2' }],
+    };
+    const transaction = {
       productImage: {
-        findFirst: jest.fn().mockResolvedValue(image),
-        update: jest.fn().mockResolvedValue(updated),
+        update: jest.fn().mockResolvedValue(image),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(updated),
       },
-      productVariant: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'variant-id' }),
+      productImageVariant: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+        createMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
+    };
+    const prisma = {
+      productImage: { findFirst: jest.fn().mockResolvedValue(image) },
+      productVariant: { count: jest.fn().mockResolvedValue(2) },
+      $transaction: jest.fn((callback) => callback(transaction)),
     };
     const service = new CatalogueService(
       prisma as never,
@@ -409,23 +433,34 @@ describe('CatalogueService', () => {
         'actor-id',
         'product-id',
         'image-id',
-        { variantId: 'variant-id' },
+        { variantIds: ['variant-id-1', 'variant-id-2'] },
         {},
       ),
     ).resolves.toEqual(updated);
-    expect(prisma.productVariant.findFirst).toHaveBeenCalledWith({
-      where: { id: 'variant-id', productId: 'product-id' },
-      select: { id: true },
+    expect(prisma.productVariant.count).toHaveBeenCalledWith({
+      where: { id: { in: ['variant-id-1', 'variant-id-2'] }, productId: 'product-id' },
     });
+    expect(transaction.productImageVariant.createMany).toHaveBeenCalledWith({
+      data: [
+        { imageId: 'image-id', variantId: 'variant-id-1' },
+        { imageId: 'image-id', variantId: 'variant-id-2' },
+      ],
+      skipDuplicates: true,
+    });
+    expect(supabase.uploadProductImage).not.toHaveBeenCalled();
   });
 
   it('rejects an image assignment to another product variant', async () => {
     const prisma = {
       productImage: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'image-id', productId: 'product-id' }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'image-id',
+          productId: 'product-id',
+          variantLinks: [],
+        }),
         update: jest.fn(),
       },
-      productVariant: { findFirst: jest.fn().mockResolvedValue(null) },
+      productVariant: { count: jest.fn().mockResolvedValue(0) },
     };
     const service = new CatalogueService(
       prisma as never,
@@ -442,7 +477,7 @@ describe('CatalogueService', () => {
         { variantId: 'other-variant-id' },
         {},
       ),
-    ).rejects.toThrow('Image variant does not belong to this product');
+    ).rejects.toThrow('An image variant does not belong to this product');
     expect(prisma.productImage.update).not.toHaveBeenCalled();
   });
 });

@@ -33,7 +33,7 @@ const product: Product = {
             alias: 'NOIR GOLD',
             pricePaise: 129_950,
             compareAtPricePaise: 149_900,
-            attributes: { color: 'Gold', colorHex: '#C5A059' },
+            attributes: { color: 'Gold', colorHex: '#C5A059', size: 'Large', packQuantity: 2 },
             isActive: true,
             availableStock: 4,
         },
@@ -52,6 +52,8 @@ describe('catalogue CSV', () => {
             'material',
             'color',
             'color_hex',
+            'size',
+            'pack_quantity',
             'sku',
             'alias',
             'price_rupees',
@@ -72,6 +74,8 @@ describe('catalogue CSV', () => {
             material: 'Stoneware',
             color: 'Gold',
             color_hex: '#C5A059',
+            size: 'Large',
+            pack_quantity: '2',
             sku: 'GHC-NOIR-GOLD',
             alias: 'NOIR GOLD',
             price_rupees: '1299.5',
@@ -94,7 +98,7 @@ describe('catalogue CSV', () => {
         expect(rows[0]).toMatchObject({
             product_name: 'Noir Gold Tea Set',
             product_slug: 'noir-gold-tea-set',
-            sku: 'EXAMPLE-TEA-GOLD',
+            sku: 'EXAMPLE-TEA-GOLD-L-1',
         });
         expect(rows[2]).toMatchObject({
             product_name: 'Handcrafted Serving Bowl',
@@ -144,5 +148,16 @@ describe('catalogue CSV', () => {
         expect(importRupeesToPaise('1299.50')).toBe(129_950);
         expect(importRupeesToPaise('12.999')).toBeUndefined();
         expect(driveLinksFromCsvCell('https://drive.google.com/a | https://drive.google.com/b')).toHaveLength(2);
+        expect(driveLinksFromCsvCell('https://drive.google.com/a | https://drive.google.com/a')).toEqual(['https://drive.google.com/a']);
+    });
+
+    it('keeps old colour-only CSV files compatible and validates pack quantities', () => {
+        const legacyCsv = 'product_name,category_name,status,color,sku,price_rupees\nLegacy Cup,Cups,DRAFT,Green,LEGACY-GREEN,499';
+        const [legacy] = parseCatalogueCsv(legacyCsv);
+        expect(legacy).toMatchObject({ size: '', pack_quantity: '', color: 'Green' });
+        expect(validateCatalogueCsvRows([legacy])).toEqual([]);
+
+        legacy.pack_quantity = '1.5';
+        expect(validateCatalogueCsvRows([legacy])).toContain('Row 2: pack_quantity must be a positive whole number.');
     });
 });

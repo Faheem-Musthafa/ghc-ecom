@@ -104,7 +104,7 @@ const OrderDetailPage = () => {
                                         />
                                         <div>
                                             <h2 className="font-display text-xl font-bold text-cream">{item.productName}</h2>
-                                            <p className="mt-1 text-xs text-cream/45">{item.quantity} × {item.color || item.sku}</p>
+                                            <p className="mt-1 text-xs text-cream/45">{item.quantity} × {item.optionLabel || item.color || item.sku}</p>
                                         </div>
                                         <strong className="font-display text-lg font-bold text-gold-300">{rupees(item.lineTotalPaise)}</strong>
                                     </article>

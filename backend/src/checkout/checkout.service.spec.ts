@@ -26,6 +26,7 @@ describe('CheckoutService', () => {
             alias: 'GOLD SET',
             attributes: { color: 'Gold' },
             pricePaise: 1_100,
+            imageLinks: [],
             product: {
               name: 'Stored Product',
               images: [],
@@ -123,6 +124,7 @@ describe('CheckoutService', () => {
               sku: 'SKU',
               pricePaise: 10_000,
               attributes: { color: 'Gold' },
+              imageLinks: [],
               product: { name: 'Product', images: [] },
             },
           },

@@ -45,7 +45,10 @@ const productInclude = {
       },
     },
   },
-  images: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
+  images: {
+    orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
+    include: { variantLinks: { select: { variantId: true } } },
+  },
   videos: { orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }] },
 } satisfies Prisma.ProductInclude;
 
@@ -100,11 +103,13 @@ const VARIANT_AUDIT_FIELDS = [
   'alias',
   'color',
   'colorHex',
+  'size',
+  'packQuantity',
   'pricePaise',
   'compareAtPricePaise',
   'isActive',
 ] as const;
-const IMAGE_AUDIT_FIELDS = ['altText', 'variantId', 'sortOrder', 'sourceFilename'] as const;
+const IMAGE_AUDIT_FIELDS = ['altText', 'variantIds', 'sortOrder', 'sourceFilename'] as const;
 const VIDEO_AUDIT_FIELDS = ['altText', 'sortOrder', 'sourceFilename'] as const;
 
 @Injectable()
@@ -436,7 +441,7 @@ export class CatalogueService {
     this.validateVariantPrices(input.pricePaise, input.compareAtPricePaise);
     const variant = await this.mutate(() =>
       this.prisma.$transaction(async (transaction) => {
-        const { color, colorHex, attributes, barcode, ...variantInput } = input;
+        const { color, colorHex, size, packQuantity, attributes, barcode, ...variantInput } = input;
         const alias = input.alias === undefined ? barcode : input.alias;
         const normalizedAlias = alias?.trim() || null;
         const created = await transaction.productVariant.create({
@@ -444,8 +449,10 @@ export class CatalogueService {
             ...variantInput,
             sku: input.sku.toUpperCase(),
             alias:
-              input.alias === undefined ? normalizedAlias?.toUpperCase() ?? null : normalizedAlias,
-            attributes: this.variantAttributes(attributes, color, colorHex),
+              input.alias === undefined
+                ? (normalizedAlias?.toUpperCase() ?? null)
+                : normalizedAlias,
+            attributes: this.variantAttributes(attributes, color, colorHex, size, packQuantity),
             productId,
           },
         });
@@ -494,7 +501,7 @@ export class CatalogueService {
         : input.compareAtPricePaise,
     );
     const variant = await this.mutate(() => {
-      const { color, colorHex, attributes, barcode, ...variantInput } = input;
+      const { color, colorHex, size, packQuantity, attributes, barcode, ...variantInput } = input;
       const alias = input.alias === undefined ? barcode : input.alias;
       const normalizedAlias = alias?.trim() || null;
       return this.prisma.productVariant.update({
@@ -502,12 +509,20 @@ export class CatalogueService {
         data: {
           ...variantInput,
           sku: input.sku?.toUpperCase(),
-          alias: alias === undefined
-            ? undefined
-            : input.alias === undefined
-              ? normalizedAlias?.toUpperCase() ?? null
-              : normalizedAlias,
-          attributes: this.variantAttributes(attributes, color, colorHex, existing.attributes),
+          alias:
+            alias === undefined
+              ? undefined
+              : input.alias === undefined
+                ? (normalizedAlias?.toUpperCase() ?? null)
+                : normalizedAlias,
+          attributes: this.variantAttributes(
+            attributes,
+            color,
+            colorHex,
+            size,
+            packQuantity,
+            existing.attributes,
+          ),
         },
       });
     });
@@ -583,11 +598,19 @@ export class CatalogueService {
     context: RequestContext,
   ): Promise<ProductImage> {
     await this.requireProduct(productId);
-    await this.requireVariantForProduct(productId, metadata.variantId);
+    const variantIds = this.imageVariantIds(metadata);
+    await this.requireVariantsForProduct(productId, variantIds);
     const image = await this.processAndStoreImage(productId, file);
     try {
-      const record = await this.prisma.productImage.create({
-        data: this.imageData(productId, file, metadata, image),
+      const record = await this.prisma.$transaction(async (transaction) => {
+        const created = await transaction.productImage.create({
+          data: this.imageData(productId, file, metadata, image),
+        });
+        await this.createImageVariantLinks(transaction, created.id, variantIds);
+        return transaction.productImage.findUniqueOrThrow({
+          where: { id: created.id },
+          include: { variantLinks: { select: { variantId: true } } },
+        });
       });
       await this.auditMutation(
         actorId,
@@ -595,7 +618,12 @@ export class CatalogueService {
         'product_image',
         record.id,
         context,
-        auditChangeMetadata(record.altText, {}, record, IMAGE_AUDIT_FIELDS),
+        auditChangeMetadata(
+          record.altText,
+          {},
+          this.imageAuditSnapshot(record),
+          IMAGE_AUDIT_FIELDS,
+        ),
       );
       return record;
     } catch (error) {
@@ -618,22 +646,30 @@ export class CatalogueService {
     if (!previous) {
       throw new NotFoundException('Product image not found');
     }
-    await this.requireVariantForProduct(productId, metadata.variantId);
+    const requestedVariantIds = this.imageVariantIds(metadata);
+    const previousWithLinks = await this.prisma.productImage.findUnique({
+      where: { id: previous.id },
+      include: { variantLinks: { select: { variantId: true } } },
+    });
+    const variantIds =
+      metadata.variantIds !== undefined || metadata.variantId !== undefined
+        ? requestedVariantIds
+        : (previousWithLinks?.variantLinks.map((link) => link.variantId) ?? []);
+    await this.requireVariantsForProduct(productId, variantIds);
 
     const image = await this.processAndStoreImage(productId, file);
     let replacement: ProductImage;
     try {
       replacement = await this.prisma.$transaction(async (transaction) => {
         const created = await transaction.productImage.create({
-          data: this.imageData(
-            productId,
-            file,
-            { ...metadata, variantId: metadata.variantId ?? previous.variantId ?? undefined },
-            image,
-          ),
+          data: this.imageData(productId, file, metadata, image),
         });
+        await this.createImageVariantLinks(transaction, created.id, variantIds);
         await transaction.productImage.delete({ where: { id: previous.id } });
-        return created;
+        return transaction.productImage.findUniqueOrThrow({
+          where: { id: created.id },
+          include: { variantLinks: { select: { variantId: true } } },
+        });
       });
     } catch (error) {
       await this.tryRemove(image.derivatives.map(({ path }) => path));
@@ -648,7 +684,12 @@ export class CatalogueService {
       replacement.id,
       context,
       {
-        ...auditChangeMetadata(replacement.altText, previous, replacement, IMAGE_AUDIT_FIELDS),
+        ...auditChangeMetadata(
+          replacement.altText,
+          this.imageAuditSnapshot(previousWithLinks ?? previous),
+          this.imageAuditSnapshot(replacement),
+          IMAGE_AUDIT_FIELDS,
+        ),
         replacedImageId: previous.id,
       },
     );
@@ -664,14 +705,37 @@ export class CatalogueService {
   ): Promise<ProductImage> {
     const image = await this.prisma.productImage.findFirst({
       where: { id: imageId, productId },
+      include: { variantLinks: { select: { variantId: true } } },
     });
     if (!image) {
       throw new NotFoundException('Product image not found');
     }
-    await this.requireVariantForProduct(productId, input.variantId ?? undefined);
-    const updated = await this.prisma.productImage.update({
-      where: { id: imageId },
-      data: input,
+    const hasVariantUpdate = input.variantIds !== undefined || input.variantId !== undefined;
+    const variantIds =
+      input.variantIds ??
+      (input.variantId === undefined
+        ? image.variantLinks.map((link) => link.variantId)
+        : input.variantId === null
+          ? []
+          : [input.variantId]);
+    await this.requireVariantsForProduct(productId, variantIds);
+    const imageInput = {
+      ...(input.altText !== undefined ? { altText: input.altText } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+    };
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await transaction.productImage.update({
+        where: { id: imageId },
+        data: imageInput,
+      });
+      if (hasVariantUpdate) {
+        await transaction.productImageVariant.deleteMany({ where: { imageId } });
+        await this.createImageVariantLinks(transaction, imageId, variantIds);
+      }
+      return transaction.productImage.findUniqueOrThrow({
+        where: { id: imageId },
+        include: { variantLinks: { select: { variantId: true } } },
+      });
     });
     await this.auditMutation(
       actorId,
@@ -679,7 +743,12 @@ export class CatalogueService {
       'product_image',
       imageId,
       context,
-      auditChangeMetadata(updated.altText, image, updated, IMAGE_AUDIT_FIELDS),
+      auditChangeMetadata(
+        updated.altText,
+        this.imageAuditSnapshot(image),
+        this.imageAuditSnapshot(updated),
+        IMAGE_AUDIT_FIELDS,
+      ),
     );
     return updated;
   }
@@ -817,6 +886,8 @@ export class CatalogueService {
       alias: variant.alias,
       color: typeof attributes.color === 'string' ? attributes.color : null,
       colorHex: typeof attributes.colorHex === 'string' ? attributes.colorHex : null,
+      size: typeof attributes.size === 'string' ? attributes.size : null,
+      packQuantity: typeof attributes.packQuantity === 'number' ? attributes.packQuantity : null,
       pricePaise: variant.pricePaise,
       compareAtPricePaise: variant.compareAtPricePaise,
       isActive: variant.isActive,
@@ -831,7 +902,12 @@ export class CatalogueService {
       compareAtPricePaise: null,
       isActive: true,
     });
-    return snapshot.color ? `${snapshot.color} · ${variant.sku}` : variant.sku;
+    const options = [
+      snapshot.color,
+      snapshot.size,
+      typeof snapshot.packQuantity === 'number' ? `Pack of ${snapshot.packQuantity}` : null,
+    ].filter((value): value is string => typeof value === 'string' && Boolean(value));
+    return options.length ? `${options.join(' · ')} · ${variant.sku}` : variant.sku;
   }
 
   private productData(
@@ -885,14 +961,13 @@ export class CatalogueService {
     return product;
   }
 
-  private async requireVariantForProduct(productId: string, variantId?: string): Promise<void> {
-    if (!variantId) return;
-    const variant = await this.prisma.productVariant.findFirst({
-      where: { id: variantId, productId },
-      select: { id: true },
+  private async requireVariantsForProduct(productId: string, variantIds: string[]): Promise<void> {
+    if (variantIds.length === 0) return;
+    const variants = await this.prisma.productVariant.count({
+      where: { id: { in: variantIds }, productId },
     });
-    if (!variant) {
-      throw new BadRequestException('Image variant does not belong to this product');
+    if (variants !== variantIds.length) {
+      throw new BadRequestException('An image variant does not belong to this product');
     }
   }
 
@@ -937,7 +1012,6 @@ export class CatalogueService {
     const large = this.derivative(derivatives, 'large');
     return {
       productId,
-      variantId: metadata.variantId,
       altText: metadata.altText,
       sortOrder: metadata.sortOrder ?? 0,
       sourceFilename: basename(file.originalname).slice(0, 255) || 'upload',
@@ -966,6 +1040,8 @@ export class CatalogueService {
     input: Record<string, unknown> | undefined,
     color: string | undefined,
     colorHex: string | undefined,
+    size: string | null | undefined,
+    packQuantity: number | null | undefined,
     existing?: Prisma.JsonValue,
   ): Prisma.InputJsonValue {
     const base =
@@ -973,7 +1049,41 @@ export class CatalogueService {
     const attributes = { ...base, ...(input ?? {}) } as Record<string, Prisma.JsonValue>;
     if (color !== undefined) attributes.color = color.trim();
     if (colorHex !== undefined) attributes.colorHex = colorHex.toUpperCase();
+    if (size === null) delete attributes.size;
+    else if (size !== undefined) attributes.size = size.trim();
+    if (packQuantity === null) delete attributes.packQuantity;
+    else if (packQuantity !== undefined) attributes.packQuantity = packQuantity;
     return attributes as Prisma.InputJsonValue;
+  }
+
+  private imageVariantIds(metadata: ProductImageMetadataDto): string[] {
+    return [...new Set(metadata.variantIds ?? (metadata.variantId ? [metadata.variantId] : []))];
+  }
+
+  private async createImageVariantLinks(
+    transaction: Prisma.TransactionClient,
+    imageId: string,
+    variantIds: string[],
+  ): Promise<void> {
+    if (variantIds.length === 0) return;
+    await transaction.productImageVariant.createMany({
+      data: variantIds.map((variantId) => ({ imageId, variantId })),
+      skipDuplicates: true,
+    });
+  }
+
+  private imageAuditSnapshot(image: {
+    altText: string;
+    sortOrder: number;
+    sourceFilename: string;
+    variantLinks?: Array<{ variantId: string }>;
+  }): Record<string, string | number | string[]> {
+    return {
+      altText: image.altText,
+      variantIds: image.variantLinks?.map((link) => link.variantId) ?? [],
+      sortOrder: image.sortOrder,
+      sourceFilename: image.sourceFilename,
+    };
   }
 
   private derivative(

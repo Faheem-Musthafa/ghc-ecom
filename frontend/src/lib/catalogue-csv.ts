@@ -9,6 +9,8 @@ export const catalogueCsvHeaders = [
     'material',
     'color',
     'color_hex',
+    'size',
+    'pack_quantity',
     'sku',
     'alias',
     'price_rupees',
@@ -45,8 +47,10 @@ export const catalogueCsvTemplate = (): string => csv([
         'Ceramic',
         'Gold',
         '#C9A35B',
-        'EXAMPLE-TEA-GOLD',
-        'Gold tea set',
+        'Large',
+        '1',
+        'EXAMPLE-TEA-GOLD-L-1',
+        'Gold large tea set',
         '1299',
         '1499',
         'TRUE',
@@ -61,10 +65,12 @@ export const catalogueCsvTemplate = (): string => csv([
         'Ceramic',
         'Sage Green',
         '#9CAF88',
-        'EXAMPLE-TEA-SAGE',
-        'Sage green tea set',
-        '1349',
-        '1549',
+        'Large',
+        '2',
+        'EXAMPLE-TEA-SAGE-L-2',
+        'Sage large two-pack',
+        '2399',
+        '2699',
         'TRUE',
         '',
         '',
@@ -77,6 +83,8 @@ export const catalogueCsvTemplate = (): string => csv([
         'Stoneware',
         'Natural',
         '#D8C3A5',
+        'Medium',
+        '',
         'EXAMPLE-BOWL-NATURAL',
         'Natural serving bowl',
         '899',
@@ -92,6 +100,11 @@ const attributeText = (attributes: Record<string, unknown> | undefined, key: str
     return typeof value === 'string' ? value : '';
 };
 
+const attributeNumber = (attributes: Record<string, unknown> | undefined, key: string): string => {
+    const value = attributes?.[key];
+    return typeof value === 'number' ? String(value) : '';
+};
+
 export const catalogueCsvExport = (products: Product[]): string => {
     const rows: string[][] = [catalogueCsvHeaders.slice()];
     for (const product of products) {
@@ -104,6 +117,8 @@ export const catalogueCsvExport = (products: Product[]): string => {
                 product.material || '',
                 attributeText(variant.attributes, 'color'),
                 attributeText(variant.attributes, 'colorHex'),
+                attributeText(variant.attributes, 'size'),
+                attributeNumber(variant.attributes, 'packQuantity'),
                 variant.sku,
                 variant.alias || '',
                 String(variant.pricePaise / 100),
@@ -197,10 +212,10 @@ export const importRupeesToPaise = (value: string): number | undefined => {
 };
 
 export const driveLinksFromCsvCell = (value: string): string[] =>
-    value
+    [...new Set(value
         .split(/\||\r?\n/)
         .map((link) => link.trim())
-        .filter(Boolean);
+        .filter(Boolean))];
 
 export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
     const errors: string[] = [];
@@ -227,6 +242,10 @@ export const validateCatalogueCsvRows = (rows: CatalogueCsvRow[]): string[] => {
             else if (pricePaise !== undefined && compareAt < pricePaise) errors.push(`${prefix}: compare-at price cannot be lower than price.`);
         }
         if (row.color_hex && !/^#[0-9A-Fa-f]{6}$/.test(row.color_hex)) errors.push(`${prefix}: color_hex must look like #C5A059.`);
+        if (row.size.length > 80) errors.push(`${prefix}: size must be 80 characters or fewer.`);
+        if (row.pack_quantity && (!/^\d+$/.test(row.pack_quantity) || Number(row.pack_quantity) < 1 || !Number.isSafeInteger(Number(row.pack_quantity)))) {
+            errors.push(`${prefix}: pack_quantity must be a positive whole number.`);
+        }
         if (row.is_active && importBoolean(row.is_active) === undefined) errors.push(`${prefix}: is_active must be TRUE or FALSE.`);
 
         for (const link of [...driveLinksFromCsvCell(row.option_google_drive_image_links), ...driveLinksFromCsvCell(row.shared_google_drive_image_links)]) {
