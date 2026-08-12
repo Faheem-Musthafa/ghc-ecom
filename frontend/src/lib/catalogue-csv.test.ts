@@ -118,11 +118,26 @@ describe('catalogue CSV', () => {
             expect.arrayContaining([
                 'Row 3: category_name is required.',
                 'Row 3: sku duplicates row 2.',
-                'Row 3: alias duplicates row 2.',
                 'Row 3: price_rupees must be a non-negative amount with at most two decimals.',
                 'Row 3: is_active must be TRUE or FALSE.',
             ]),
         );
+    });
+
+    it('allows duplicate aliases and preserves alias text while keeping SKUs unique', () => {
+        const rows = parseCatalogueCsv(catalogueCsvExport([product]));
+        rows[0].alias = 'Gift set — popular 😊';
+        rows.push({
+            ...rows[0],
+            sourceRow: 3,
+            sku: 'GHC-NOIR-SAGE-2',
+        });
+
+        expect(validateCatalogueCsvRows(rows)).toEqual([]);
+        expect(rows.map((row) => row.alias)).toEqual([
+            'Gift set — popular 😊',
+            'Gift set — popular 😊',
+        ]);
     });
 
     it('converts rupee inputs and pipe-separated Drive links', () => {

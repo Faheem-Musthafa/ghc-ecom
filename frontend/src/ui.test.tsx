@@ -133,10 +133,12 @@ let mockAuthenticated = false;
 let mockRoles: string[] = [];
 let currentProduct = product;
 let mockImportedProductFailure = false;
+let mockDriveImageGate: Promise<void> | null = null;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.startsWith('https://drive.usercontent.google.com/download')) {
+    if (url.startsWith('/google-drive?id=')) {
+        if (mockDriveImageGate) await mockDriveImageGate;
         return new Response(new Uint8Array([137, 80, 78, 71]), {
             status: 200,
             headers: {
@@ -306,6 +308,7 @@ describe('black and gold commerce UI', () => {
         mockRoles = [];
         currentProduct = product;
         mockImportedProductFailure = false;
+        mockDriveImageGate = null;
         saveSession(null);
         vi.stubGlobal('fetch', fetchMock);
         fetchMock.mockClear();
@@ -508,6 +511,12 @@ describe('black and gold commerce UI', () => {
         expect(container.textContent).not.toContain('Catalogue Manager');
         expect(container.textContent).not.toContain('Option name');
         expect(container.querySelector('input[name="dimensions"]')).toBeNull();
+        expect(document.body.textContent).toContain('SKU (unique, required)');
+        expect(document.body.textContent).toContain('Alias name (optional)');
+        const aliasInput = document.body.querySelector<HTMLInputElement>('input[placeholder="e.g. Sage green tea set"]');
+        expect(aliasInput?.type).toBe('text');
+        expect(aliasInput?.hasAttribute('required')).toBe(false);
+        expect(aliasInput?.hasAttribute('pattern')).toBe(false);
     });
 
     it('keeps the product editor inside the viewport with independently scrolling content', async () => {
@@ -571,7 +580,7 @@ describe('black and gold commerce UI', () => {
         expect(JSON.parse(String(productRequest?.[1]?.body))).toMatchObject({ categoryId: 'new-category-id' });
     });
 
-    it('limits imported summaries and transfers Drive images through the browser upload path', async () => {
+    it('limits imported summaries and transfers Drive images through the same-origin download path', async () => {
         mockAuthenticated = true;
         mockRoles = ['ADMIN'];
         vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -593,9 +602,46 @@ describe('black and gold commerce UI', () => {
             String(request).endsWith('/admin/catalogue/products') && init?.method === 'POST');
         const productBody = JSON.parse(String(productRequest?.[1]?.body)) as { shortDescription: string };
         expect(productBody.shortDescription.length).toBeLessThanOrEqual(300);
-        expect(fetchMock.mock.calls.some(([request]) => String(request).endsWith('/google-drive'))).toBe(false);
+        expect(fetchMock.mock.calls.some(([request]) => String(request).startsWith('/google-drive?id='))).toBe(true);
         expect(fetchMock.mock.calls.some(([request, init]) =>
             /\/admin\/catalogue\/products\/[^/]+\/images$/.test(String(request)) && init?.method === 'POST' && init.body instanceof FormData)).toBe(true);
+    });
+
+    it('shows catalogue import progress in a modal until image processing finishes', async () => {
+        mockAuthenticated = true;
+        mockRoles = ['ADMIN'];
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        let releaseDriveImage: (() => void) | undefined;
+        mockDriveImageGate = new Promise<void>((resolve) => {
+            releaseDriveImage = resolve;
+        });
+        const container = await render(<AdminPage />, '/admin/catalogue');
+        const driveUrl = 'https://drive.google.com/file/d/17Ek09Bk3NjFvdUgxTUtd4fjH94yYkis6/view?usp=drive_link';
+        const values = ['Modal Import Product', 'Serveware', 'DRAFT', 'Description', 'Ceramic', 'Gold', '#C5A059', 'MODAL-IMPORT-GOLD', '', '999', '', 'TRUE', driveUrl, ''];
+        const csv = `${catalogueCsvHeaders.join(',')}\n${values.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')}`;
+        const file = { name: 'modal-import.csv', text: vi.fn().mockResolvedValue(csv) } as unknown as File;
+        const input = container.querySelector<HTMLInputElement>('input[type="file"][accept*=".csv"]');
+        Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+        await act(async () => {
+            input?.dispatchEvent(new Event('change', { bubbles: true }));
+            await new Promise((resolve) => window.setTimeout(resolve, 100));
+        });
+
+        const importDialog = document.body.querySelector('[aria-labelledby="catalogue-import-dialog-title"]');
+        expect(importDialog).not.toBeNull();
+        expect(importDialog?.textContent).toContain('Catalogue import in progress');
+        expect(importDialog?.textContent).toContain('modal-import.csv');
+        expect(importDialog?.textContent).toContain('Downloading image 1 for option MODAL-IMPORT-GOLD');
+        expect(importDialog?.querySelector('[role="progressbar"]')).not.toBeNull();
+
+        await act(async () => {
+            releaseDriveImage?.();
+            await new Promise((resolve) => window.setTimeout(resolve, 350));
+        });
+
+        expect(document.body.querySelector('[aria-labelledby="catalogue-import-dialog-title"]')).toBeNull();
+        expect(container.textContent).toContain('Bulk import finished');
     });
 
     it('removes an auto-created category when the rest of the import fails', async () => {

@@ -271,7 +271,7 @@ model ProductVariant {
   id                  String                 @id @default(uuid()) @db.Uuid
   productId           String                 @map("product_id") @db.Uuid
   sku                 String                 @unique
-  alias               String?                @unique
+  alias               String?
   pricePaise          Int                    @map("price_paise")
   compareAtPricePaise Int?                   @map("compare_at_price_paise")
   attributes          Json                   @default("{}")

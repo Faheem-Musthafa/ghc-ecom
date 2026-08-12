@@ -161,8 +161,8 @@ availability, image, and landing-page selection to agree
 - A variant option combination is unique within its product.
 - A normalized scanner identifier is unique across active variants. Do not allow
   one scan to resolve to two sellable variants.
-- An alias can be unique per namespace or seller policy, but alias lookup must
-  detect ambiguity instead of silently selecting a variant.
+- An alias is optional descriptive text and is not an identifier; duplicate alias
+  names are allowed and operational lookups use the globally unique SKU instead.
 - Inventory balances are unique by `(variantId, locationId)` and quantities cannot
   become negative unless the explicit backorder policy allows sale below zero.
 - Every inventory change creates an immutable movement/audit record with an
