@@ -20,7 +20,9 @@ export interface ProductVariant {
 
 export interface ProductImage {
     id: string;
+    /** @deprecated Older API responses only. */
     variantId?: string | null;
+    variantLinks?: Array<{ variantId: string }>;
     thumbnailUrl: string;
     mediumUrl: string;
     largeUrl: string;
@@ -91,6 +93,9 @@ export interface CartItem {
     productDescription?: string | null;
     productMaterial?: string | null;
     color?: string | null;
+    size?: string | null;
+    packQuantity?: number | null;
+    optionLabel?: string;
     imageUrl: string | null;
     attributes?: Record<string, unknown>;
     quantity: number;

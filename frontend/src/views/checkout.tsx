@@ -390,7 +390,7 @@ const CheckoutPage = () => {
                                 <img src={item.imageUrl || fallbackImage} alt="" className="aspect-square object-cover rounded-sm border border-gold-500/20 bg-obsidian" />
                                 <div>
                                     <h4 className="text-xs font-medium text-cream">{item.productName}</h4>
-                                    <p className="text-[10px] text-cream/40">{item.quantity} × {item.color || item.sku}</p>
+                                    <p className="text-[10px] text-cream/40">{item.quantity} × {item.optionLabel || item.color || item.sku}</p>
                                 </div>
                                 <strong className="text-xs font-semibold text-gold-300">{rupees(item.lineTotalPaise)}</strong>
                             </article>

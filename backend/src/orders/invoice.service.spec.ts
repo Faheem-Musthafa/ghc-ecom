@@ -13,6 +13,7 @@ describe('InvoiceService', () => {
         sku: 'SKU-1',
         productName: 'Herbal Product',
         color: 'Gold',
+        optionLabel: 'Gold · Large · Pack of 2',
         quantity: 2,
         unitPricePaise: 10_000,
         lineTotalPaise: 20_000,

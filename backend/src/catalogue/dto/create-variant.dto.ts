@@ -8,6 +8,7 @@ import {
   Matches,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateVariantDto {
@@ -53,6 +54,19 @@ export class CreateVariantDto {
   @IsString()
   @Matches(/^#[0-9A-Fa-f]{6}$/)
   colorHex?: string;
+
+  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  size?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== null)
+  @IsInt()
+  @Min(1)
+  packQuantity?: number | null;
 
   @IsOptional()
   @IsBoolean()

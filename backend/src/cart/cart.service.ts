@@ -16,9 +16,8 @@ const cartInclude = {
     include: {
       variant: {
         include: {
-          images: {
-            orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
-            take: 1,
+          imageLinks: {
+            include: { image: true },
           },
           product: {
             include: {
@@ -26,7 +25,7 @@ const cartInclude = {
                 select: { name: true },
               },
               images: {
-                where: { variantId: null },
+                where: { variantLinks: { none: {} } },
                 orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
                 take: 1,
               },
@@ -50,6 +49,9 @@ export interface CartView {
     sku: string;
     productName: string;
     color: string | null;
+    size: string | null;
+    packQuantity: number | null;
+    optionLabel: string;
     imageUrl: string | null;
     quantity: number;
     unitPricePaise: number;
@@ -91,6 +93,8 @@ interface CartViewRow {
   sku: string | null;
   productName: string | null;
   color: string | null;
+  size: string | null;
+  packQuantity: number | null;
   imageUrl: string | null;
   quantity: number | null;
   unitPricePaise: number | null;
@@ -365,20 +369,26 @@ export class CartService {
   }
 
   view(cart: CartWithItems): CartView {
-    const items = cart.items.map((item) => ({
-      id: item.id,
-      variantId: item.variantId,
-      sku: item.variant.sku,
-      productName: item.variant.product.name,
-      color: this.variantColor(item.variant.attributes),
-      imageUrl:
-        item.variant.images[0]?.thumbnailUrl ??
-        item.variant.product.images[0]?.thumbnailUrl ??
-        null,
-      quantity: item.quantity,
-      unitPricePaise: item.variant.pricePaise,
-      lineTotalPaise: item.variant.pricePaise * item.quantity,
-    }));
+    const items = cart.items.map((item) => {
+      const options = this.variantOptions(item.variant.attributes);
+      const image = [...item.variant.imageLinks].sort(
+        (left, right) =>
+          left.image.sortOrder - right.image.sortOrder ||
+          left.image.createdAt.getTime() - right.image.createdAt.getTime(),
+      )[0]?.image;
+      return {
+        id: item.id,
+        variantId: item.variantId,
+        sku: item.variant.sku,
+        productName: item.variant.product.name,
+        ...options,
+        optionLabel: this.optionLabel(options),
+        imageUrl: image?.thumbnailUrl ?? item.variant.product.images[0]?.thumbnailUrl ?? null,
+        quantity: item.quantity,
+        unitPricePaise: item.variant.pricePaise,
+        lineTotalPaise: item.variant.pricePaise * item.quantity,
+      };
+    });
     return {
       id: cart.id,
       status: cart.status,
@@ -409,6 +419,12 @@ export class CartService {
         variant.sku,
         product.name as "productName",
         variant.attributes ->> 'color' as color,
+        variant.attributes ->> 'size' as size,
+        case
+          when jsonb_typeof(variant.attributes -> 'packQuantity') = 'number'
+          then (variant.attributes ->> 'packQuantity')::integer
+          else null
+        end as "packQuantity",
         coalesce(variant_image.thumbnail_url, product_image.thumbnail_url) as "imageUrl",
         item.quantity,
         variant.price_paise as "unitPricePaise"
@@ -418,15 +434,20 @@ export class CartService {
       left join public.products as product on product.id = variant.product_id
       left join lateral (
         select image.thumbnail_url
-        from public.product_images as image
-        where image.variant_id = variant.id
+        from public.product_image_variants as association
+        join public.product_images as image on image.id = association.image_id
+        where association.variant_id = variant.id
         order by image.sort_order, image.created_at
         limit 1
       ) as variant_image on true
       left join lateral (
         select image.thumbnail_url
         from public.product_images as image
-        where image.product_id = product.id and image.variant_id is null
+        where image.product_id = product.id
+          and not exists (
+            select 1 from public.product_image_variants as association
+            where association.image_id = image.id
+          )
         order by image.sort_order, image.created_at
         limit 1
       ) as product_image on true
@@ -453,13 +474,19 @@ export class CartService {
       ) {
         return [];
       }
+      const options = {
+        color: row.color,
+        size: row.size,
+        packQuantity: row.packQuantity,
+      };
       return [
         {
           id: row.itemId,
           variantId: row.variantId,
           sku: row.sku,
           productName: row.productName,
-          color: row.color,
+          ...options,
+          optionLabel: this.optionLabel(options),
           imageUrl: row.imageUrl,
           quantity: row.quantity,
           unitPricePaise: row.unitPricePaise,
@@ -498,10 +525,39 @@ export class CartService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private variantColor(attributes: Prisma.JsonValue): string | null {
-    if (!attributes || Array.isArray(attributes) || typeof attributes !== 'object') return null;
-    const color = (attributes as Prisma.JsonObject).color;
-    return typeof color === 'string' && color.trim() ? color.trim() : null;
+  private variantOptions(attributes: Prisma.JsonValue): {
+    color: string | null;
+    size: string | null;
+    packQuantity: number | null;
+  } {
+    if (!attributes || Array.isArray(attributes) || typeof attributes !== 'object') {
+      return { color: null, size: null, packQuantity: null };
+    }
+    const record = attributes as Prisma.JsonObject;
+    const color =
+      typeof record.color === 'string' && record.color.trim() ? record.color.trim() : null;
+    const size = typeof record.size === 'string' && record.size.trim() ? record.size.trim() : null;
+    const packQuantity =
+      typeof record.packQuantity === 'number' &&
+      Number.isInteger(record.packQuantity) &&
+      record.packQuantity > 0
+        ? record.packQuantity
+        : null;
+    return { color, size, packQuantity };
+  }
+
+  private optionLabel(options: {
+    color: string | null;
+    size: string | null;
+    packQuantity: number | null;
+  }): string {
+    return [
+      options.color,
+      options.size,
+      options.packQuantity ? `Pack of ${options.packQuantity}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
   }
 
   private cartExpiry(): Date {

@@ -15,7 +15,7 @@ export interface AuditFactRow {
 const entityLabels: Record<string, string> = {
     category: 'Category',
     product: 'Product',
-    product_variant: 'Colour option',
+    product_variant: 'Product combination',
     product_image: 'Product image',
     product_video: 'Product video',
     inventory_level: 'Inventory level',
@@ -36,6 +36,9 @@ const fieldLabels: Record<string, string> = {
     categoryId: 'Category',
     color: 'Colour',
     colorHex: 'Colour hex',
+    size: 'Size',
+    packQuantity: 'Pack quantity',
+    variantIds: 'Assigned combinations',
     entityLabel: 'Record',
     lowStockThreshold: 'Low-stock threshold',
     onHand: 'On hand',

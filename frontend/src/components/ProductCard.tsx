@@ -4,7 +4,7 @@ import { Link } from '../lib/router';
 import { useCart } from '../contexts/CartContext';
 import { useWishlist } from '../contexts/WishlistContext';
 import { fallbackImage, rupees } from '../lib/commerce';
-import { primaryImageForVariant, productHasColourOptions } from '../lib/product-options';
+import { lowestPricedVariant, primaryImageForVariant, productHasColourOptions, variantPricesDiffer } from '../lib/product-options';
 import { Product } from '../types';
 import { IconHeart } from './Icons';
 
@@ -14,7 +14,8 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
     const [adding, setAdding] = useState(false);
     const [error, setError] = useState('');
 
-    const variant = product.variants?.[0];
+    const variant = lowestPricedVariant(product) ?? product.variants?.[0];
+    const hasVariablePrices = variantPricesDiffer(product);
     const outOfStock = !variant || variant.availableStock <= 0;
     const image = primaryImageForVariant(product, variant)?.mediumUrl || fallbackImage;
     const isWishlisted = isInWishlist(product.id);
@@ -71,7 +72,7 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
                 </h3>
                 <div className="mt-3 flex items-center justify-between gap-4">
                     <div className="flex items-baseline gap-2">
-                        <span className="text-sm font-semibold tabular-nums text-cream">{variant ? rupees(variant.pricePaise) : 'Unavailable'}</span>
+                        <span className="text-sm font-semibold tabular-nums text-cream">{variant ? `${hasVariablePrices ? 'From ' : ''}${rupees(variant.pricePaise)}` : 'Unavailable'}</span>
                         {hasDiscount && <s className="text-xs tabular-nums text-cream/60">{rupees(variant!.compareAtPricePaise!)}</s>}
                     </div>
                     {product.variants.length > 1 ? (
@@ -79,7 +80,7 @@ const ProductCard = ({ product, priority = false }: { product: Product; priority
                             to={`/product/${product.slug}`}
                             className="grid min-h-11 place-items-center px-2 text-sm font-semibold text-gold-300 hover:text-gold-100"
                         >
-                            {productHasColourOptions(product) ? 'Choose colour' : 'Choose option'}
+                            {productHasColourOptions(product) ? 'Choose options' : 'Choose option'}
                         </Link>
                     ) : (
                         <button

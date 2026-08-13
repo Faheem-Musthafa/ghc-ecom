@@ -24,9 +24,17 @@ describe('CartService', () => {
           variant: {
             id: 'variant-id',
             sku: 'SKU-1',
-            attributes: { color: 'Gold' },
+            attributes: { color: 'Gold', size: 'Large', packQuantity: 2 },
             pricePaise: 12_500,
-            images: [{ thumbnailUrl: 'https://images.test/variant-thumbnail.webp' }],
+            imageLinks: [
+              {
+                image: {
+                  thumbnailUrl: 'https://images.test/variant-thumbnail.webp',
+                  sortOrder: 0,
+                  createdAt: new Date(),
+                },
+              },
+            ],
             product: {
               name: 'Stored Product',
               images: [{ thumbnailUrl: 'https://images.test/thumbnail.webp' }],
@@ -43,6 +51,7 @@ describe('CartService', () => {
           unitPricePaise: 12_500,
           lineTotalPaise: 37_500,
           imageUrl: 'https://images.test/variant-thumbnail.webp',
+          optionLabel: 'Gold · Large · Pack of 2',
         },
       ],
     });
@@ -63,7 +72,7 @@ describe('CartService', () => {
             sku: 'SKU-1',
             attributes: { color: 'Sage Green' },
             pricePaise: 12_500,
-            images: [],
+            imageLinks: [],
             product: {
               name: 'Stored Product',
               images: [{ thumbnailUrl: 'https://images.test/shared-thumbnail.webp' }],
