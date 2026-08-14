@@ -221,7 +221,7 @@ const Overview = () => {
                     <h3 className="font-display text-xl text-cream">Common actions</h3>
                     <p className="mt-1 text-xs text-cream/50">Add products, reconcile stock, or create a promotion.</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="admin-quick-actions grid w-full grid-cols-1 gap-2 min-[460px]:grid-cols-3 sm:w-auto sm:gap-3">
                     <a href="/admin/catalogue" className="button-primary gap-2">
                         <IconPlus size={16} /> Add Product
                     </a>
@@ -335,7 +335,7 @@ const OrdersTable = ({
     onInspect?: (order: Order) => void;
 }) => (
     <div className={`${box} overflow-x-auto`}>
-        <table className="w-full min-w-[1050px] text-left text-sm">
+        <table className="admin-responsive-table w-full min-w-[1050px] text-left text-sm">
             <thead className="border-b border-gold-500/20 text-[10px] font-bold uppercase tracking-[0.2em] text-gold-400 bg-obsidian/50">
                 <tr>
                     <th className="p-4">Order #</th>
@@ -360,18 +360,18 @@ const OrdersTable = ({
 
                     return (
                         <tr key={order.id} className="transition-colors hover:bg-gold-400/[.03]">
-                            <td className="p-4 font-display text-lg text-cream">{order.orderNumber}</td>
-                            <td className="p-4 text-xs text-cream/50">{shortDate(order.createdAt)}</td>
-                            <td className="p-4 text-xs">
+                            <td data-label="Order" className="p-4 font-display text-lg text-cream">{order.orderNumber}</td>
+                            <td data-label="Placed" className="p-4 text-xs text-cream/50">{shortDate(order.createdAt)}</td>
+                            <td data-label="Customer" className="p-4 text-xs">
                                 <p className="font-medium text-cream">{order.addressSnapshot?.recipientName || 'Customer'}</p>
                                 <p className="mt-0.5 text-cream/45">{order.addressSnapshot?.email || 'No email'}</p>
                             </td>
-                            <td className="p-4">
+                            <td data-label="Status" className="p-4">
                                 <span className={`inline-block rounded-full border px-3 py-1 text-[10px] font-bold tracking-wider ${statusColor}`}>
                                     {titleCase(order.status)}
                                 </span>
                             </td>
-                            <td className="p-4 text-xs">
+                            <td data-label="Payment" className="p-4 text-xs">
                                 {payment ? (
                                     <>
                                         <p className="font-medium text-cream">{titleCase(payment.status)}</p>
@@ -381,9 +381,9 @@ const OrdersTable = ({
                                     <span className="text-cream/45">Awaiting payment</span>
                                 )}
                             </td>
-                            <td className="p-4 text-xs text-cream/60">{order.itemsSnapshot?.length || 0} line items</td>
-                            <td className="p-4 text-right font-semibold text-gold-300">{rupees(order.totalPaise)}</td>
-                            <td className="p-4 text-center">
+                            <td data-label="Items" className="p-4 text-xs text-cream/60">{order.itemsSnapshot?.length || 0} line items</td>
+                            <td data-label="Total" className="p-4 text-right font-semibold text-gold-300">{rupees(order.totalPaise)}</td>
+                            <td data-label="Actions" className="p-4 text-center">
                                 <div className="flex items-center justify-center gap-2">
                                     {onInspect && (
                                         <button
@@ -542,7 +542,7 @@ const OrdersAdmin = () => {
                     <button className="bg-gold-400 px-5 text-xs font-bold uppercase tracking-wider text-obsidian hover:bg-gold-300">Search</button>
                 </form>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="admin-filter-pills flex max-w-full flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
                     {['ALL', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map((st) => (
                         <button
                             key={st}
@@ -583,11 +583,11 @@ const OrdersAdmin = () => {
             {/* Order Inspector Modal */}
             {inspectingOrder && (
                 <AdminModalLayer>
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-black/85 p-2 backdrop-blur-sm sm:items-center sm:p-4">
                     <div
                         ref={orderDialogRef}
                         tabIndex={-1}
-                        className="w-full max-w-3xl rounded-sm border border-gold-500/30 bg-carbon p-6 shadow-2xl max-h-[90vh] overflow-y-auto outline-none"
+                        className="max-h-[calc(100svh-1rem)] w-full max-w-3xl overflow-y-auto rounded-sm border border-gold-500/30 bg-carbon p-4 shadow-2xl outline-none sm:max-h-[90vh] sm:p-6"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="admin-order-dialog-title"
@@ -709,8 +709,8 @@ const OrdersAdmin = () => {
                         {/* Items Snapshot Table */}
                         <div className="mt-6">
                             <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gold-400">Ordered Line Items</h4>
-                            <div className="border border-gold-500/20 bg-obsidian/40 rounded-sm overflow-hidden">
-                                <table className="w-full text-left text-xs">
+                            <div className="overflow-hidden rounded-sm border border-gold-500/20 bg-obsidian/40">
+                                <table className="admin-responsive-table w-full text-left text-xs">
                                     <thead className="border-b border-gold-500/15 bg-carbon text-[9px] uppercase tracking-wider text-cream/40">
                                         <tr>
                                             <th className="p-3">Product details</th>
@@ -724,7 +724,7 @@ const OrdersAdmin = () => {
                                     <tbody className="divide-y divide-gold-500/10">
                                         {(inspectingOrder.itemsSnapshot || []).map((item, idx) => (
                                             <tr key={idx}>
-                                                <td className="p-3">
+                                                <td data-label="Product" className="p-3">
                                                     <div className="flex min-w-[240px] gap-3">
                                                         <img
                                                             src={item.imageUrl || fallbackImage}
@@ -746,11 +746,11 @@ const OrdersAdmin = () => {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="p-3 text-cream/60">
+                                                <td data-label="SKU / Alias" className="p-3 text-cream/60">
                                                     <p>{item.sku || 'No SKU'}</p>
                                                     <p className="mt-1 text-[10px] text-cream/40">Alias: {item.alias || '—'}</p>
                                                 </td>
-                                                <td className="p-3 text-cream/60">
+                                                <td data-label="Options" className="p-3 text-cream/60">
                                                     {orderItemAttributes(item.attributes).length > 0 ? (
                                                         <div className="flex max-w-40 flex-wrap gap-1">
                                                             {orderItemAttributes(item.attributes).map(([key, value]) => (
@@ -763,9 +763,9 @@ const OrdersAdmin = () => {
                                                         <span className="text-cream/40">No options</span>
                                                     )}
                                                 </td>
-                                                <td className="p-3 text-right text-cream/70">{rupees(item.unitPricePaise)}</td>
-                                                <td className="p-3 text-center text-cream/80 font-bold">{item.quantity}</td>
-                                                <td className="p-3 text-right font-semibold text-gold-300">{rupees(item.lineTotalPaise)}</td>
+                                                <td data-label="Price" className="p-3 text-right text-cream/70">{rupees(item.unitPricePaise)}</td>
+                                                <td data-label="Quantity" className="p-3 text-center text-cream/80 font-bold">{item.quantity}</td>
+                                                <td data-label="Line total" className="p-3 text-right font-semibold text-gold-300">{rupees(item.lineTotalPaise)}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -1609,8 +1609,8 @@ const CatalogueAdmin = () => {
             {activeTab === 'products' ? (
                 <div>
                     {/* Search & Filters */}
-                    <div className="mb-6 flex flex-wrap gap-4">
-                        <div className="flex flex-1 min-w-[240px] border border-gold-500/25 bg-carbon rounded-sm">
+                    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:gap-4">
+                        <div className="flex min-w-0 flex-1 rounded-sm border border-gold-500/25 bg-carbon sm:col-span-2 lg:min-w-[240px]">
                             <IconSearch className="m-3 text-gold-400" />
                             <input
                                 value={searchQuery}
@@ -1622,7 +1622,7 @@ const CatalogueAdmin = () => {
                         <select
                             value={categoryFilter}
                             onChange={(e) => setCategoryFilter(e.target.value)}
-                            className="h-11 border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none rounded-sm"
+                            className="h-11 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none lg:w-auto"
                         >
                             <option value="">All Categories</option>
                             {categories.map((cat) => (
@@ -1634,7 +1634,7 @@ const CatalogueAdmin = () => {
                         <select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value)}
-                            className="h-11 border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none rounded-sm"
+                            className="h-11 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none lg:w-auto"
                         >
                             <option value="">All Statuses</option>
                             <option value="PUBLISHED">Published</option>
@@ -1645,7 +1645,7 @@ const CatalogueAdmin = () => {
 
                     {/* Products Table */}
                     <div className={`${box} overflow-x-auto`}>
-                        <table className="w-full min-w-[850px] text-left text-sm">
+                        <table className="admin-responsive-table w-full min-w-[850px] text-left text-sm">
                             <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                                 <tr>
                                     <th className="p-4">Product</th>
@@ -1659,7 +1659,7 @@ const CatalogueAdmin = () => {
                             <tbody className="divide-y divide-gold-500/10">
                                 {filteredProducts.map((product) => (
                                     <tr key={product.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                        <td className="p-4">
+                                        <td data-label="Product" className="p-4">
                                             <div className="flex items-center gap-3">
                                                 <img
                                                     src={product.images[0]?.thumbnailUrl || fallbackImage}
@@ -1672,9 +1672,9 @@ const CatalogueAdmin = () => {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-4 text-xs text-cream/50">{product.category?.name || 'Unassigned'}</td>
-                                        <td className="p-4 text-xs text-cream/70">{product.variants?.length || 0} variant(s)</td>
-                                        <td className="p-4">
+                                        <td data-label="Category" className="p-4 text-xs text-cream/50">{product.category?.name || 'Unassigned'}</td>
+                                        <td data-label="Variants" className="p-4 text-xs text-cream/70">{product.variants?.length || 0} variant(s)</td>
+                                        <td data-label="Status" className="p-4">
                                             <span
                                                 className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                                                     product.status === 'PUBLISHED'
@@ -1685,10 +1685,10 @@ const CatalogueAdmin = () => {
                                                 {titleCase(product.status)}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-right font-medium text-gold-300">
+                                        <td data-label="Price" className="p-4 text-right font-medium text-gold-300">
                                             {product.variants[0] ? rupees(product.variants[0].pricePaise) : '—'}
                                         </td>
-                                        <td className="p-4 text-center">
+                                        <td data-label="Actions" className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <button
                                                     onClick={() => {
@@ -1718,7 +1718,7 @@ const CatalogueAdmin = () => {
             ) : (
                 /* Category Management View */
                 <div className={`${box} overflow-x-auto`}>
-                    <table className="w-full min-w-[560px] text-left text-sm">
+                    <table className="admin-responsive-table w-full min-w-[560px] text-left text-sm">
                         <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                             <tr>
                                 <th className="p-4">Category Name</th>
@@ -1729,8 +1729,8 @@ const CatalogueAdmin = () => {
                         <tbody className="divide-y divide-gold-500/10">
                             {categories.map((cat) => (
                                 <tr key={cat.id}>
-                                    <td className="p-4 font-display text-lg text-cream">{cat.name}</td>
-                                    <td className="p-4">
+                                    <td data-label="Category" className="p-4 font-display text-lg text-cream">{cat.name}</td>
+                                    <td data-label="Status" className="p-4">
                                         <span
                                             className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                                                 cat.isPublished ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-gold-300'
@@ -1739,7 +1739,7 @@ const CatalogueAdmin = () => {
                                             {cat.isPublished ? 'Published' : 'Draft'}
                                         </span>
                                     </td>
-                                    <td className="p-4 text-center">
+                                    <td data-label="Actions" className="p-4 text-center">
                                         <div className="flex justify-center gap-2"><button
                                             onClick={() => {
                                                 setEditingCategory(cat);
@@ -2520,8 +2520,8 @@ const InventoryAdmin = () => {
             )}
 
             {/* Filter Bar */}
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-1 min-w-[260px] border border-gold-500/25 bg-carbon rounded-sm">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex min-w-0 flex-1 rounded-sm border border-gold-500/25 bg-carbon sm:min-w-[260px]">
                     <IconSearch className="m-3 text-gold-400" />
                     <input
                         value={searchQuery}
@@ -2532,7 +2532,7 @@ const InventoryAdmin = () => {
                 </div>
                 <button
                     onClick={() => setLowStockOnly(!lowStockOnly)}
-                    className={`flex items-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-semibold transition-colors ${
+                    className={`flex min-h-11 w-full items-center justify-center gap-2 rounded-sm border px-4 py-2.5 text-xs font-semibold transition-colors sm:w-auto ${
                         lowStockOnly ? 'border-red-500/40 bg-red-950/40 text-red-200' : 'border-gold-500/25 bg-carbon text-cream/60 hover:border-gold-400'
                     }`}
                 >
@@ -2559,7 +2559,7 @@ const InventoryAdmin = () => {
 
             {/* Inventory Table */}
             <div className={`${box} overflow-x-auto`}>
-                <table className="w-full min-w-[860px] text-left text-sm">
+                <table className="admin-responsive-table w-full min-w-[860px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
                             <th className="p-4">SKU / Alias / Item</th>
@@ -2580,7 +2580,7 @@ const InventoryAdmin = () => {
 
                             return (
                                 <tr key={level.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                    <td className="p-4 font-medium text-cream">
+                                    <td data-label="Item" className="p-4 font-medium text-cream">
                                         <div className="flex items-center gap-3">
                                             <img
                                                 src={info?.imageUrl || fallbackImage}
@@ -2623,19 +2623,19 @@ const InventoryAdmin = () => {
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="p-4 text-xs text-cream/60">
+                                    <td data-label="Warehouse" className="p-4 text-xs text-cream/60">
                                         {warehousesMap.get(level.warehouseId)?.name || level.warehouseId}
                                         {warehousesMap.get(level.warehouseId) && (
                                             <span className="ml-2 text-[10px] text-gold-400">{warehousesMap.get(level.warehouseId)?.code}</span>
                                         )}
                                     </td>
-                                    <td className="p-4 text-center font-display text-base text-cream">{level.onHand}</td>
-                                    <td className="p-4 text-center text-cream/50">{level.reserved}</td>
-                                    <td className={`p-4 text-center font-display text-lg font-bold ${isLow ? 'text-red-400' : 'text-emerald-400'}`}>
+                                    <td data-label="On hand" className="p-4 text-center font-display text-base text-cream">{level.onHand}</td>
+                                    <td data-label="Reserved" className="p-4 text-center text-cream/50">{level.reserved}</td>
+                                    <td data-label="Available" className={`p-4 text-center font-display text-lg font-bold ${isLow ? 'text-red-400' : 'text-emerald-400'}`}>
                                         {available}
                                     </td>
-                                    <td className="p-4 text-center text-cream/40">{level.lowStockThreshold}</td>
-                                    <td className="p-4 text-center">
+                                    <td data-label="Low threshold" className="p-4 text-center text-cream/40">{level.lowStockThreshold}</td>
+                                    <td data-label="Health" className="p-4 text-center">
                                         <span
                                             className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                                                 isLow
@@ -2646,7 +2646,7 @@ const InventoryAdmin = () => {
                                             {isLow ? 'Low Stock Warning' : 'Stocked'}
                                         </span>
                                     </td>
-                                    <td className="p-4 text-center">
+                                    <td data-label="Actions" className="p-4 text-center">
                                         <button
                                             onClick={() => setEditingLevel(level)}
                                             className="rounded-sm border border-gold-500/25 bg-carbon px-3 py-1.5 text-xs text-gold-300 hover:border-gold-400"
@@ -2862,7 +2862,7 @@ const PromotionsAdmin = () => {
 
             {/* Coupons Table */}
             <div className={`${box} overflow-x-auto`}>
-                <table className="w-full min-w-[750px] text-left text-sm">
+                <table className="admin-responsive-table w-full min-w-[750px] text-left text-sm">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
                             <th className="p-4">Coupon Code</th>
@@ -2877,14 +2877,14 @@ const PromotionsAdmin = () => {
                     <tbody className="divide-y divide-gold-500/10">
                         {coupons.map((c) => (
                             <tr key={c.id} className="transition-colors hover:bg-gold-400/[.03]">
-                                <td className="p-4 font-mono font-bold text-gold-300 text-base">{c.code}</td>
-                                <td className="p-4 font-semibold text-cream">{c.type === 'PERCENT' ? `${basisPointsToPercent(c.value)}% OFF` : rupees(c.value)}</td>
-                                <td className="p-4 text-cream/50 text-xs">{rupees(c.minimumSubtotalPaise)}</td>
-                                <td className="p-4 text-cream/70 text-xs">{c.usageLimit ?? 'Unlimited'}</td>
-                                <td className="p-4 text-cream/40 text-xs">
+                                <td data-label="Coupon" className="p-4 font-mono text-base font-bold text-gold-300">{c.code}</td>
+                                <td data-label="Discount" className="p-4 font-semibold text-cream">{c.type === 'PERCENT' ? `${basisPointsToPercent(c.value)}% OFF` : rupees(c.value)}</td>
+                                <td data-label="Min spend" className="p-4 text-xs text-cream/50">{rupees(c.minimumSubtotalPaise)}</td>
+                                <td data-label="Usage limit" className="p-4 text-xs text-cream/70">{c.usageLimit ?? 'Unlimited'}</td>
+                                <td data-label="Valid period" className="p-4 text-xs text-cream/40">
                                     {shortDate(c.startsAt)} → {shortDate(c.endsAt)}
                                 </td>
-                                <td className="p-4 text-center">
+                                <td data-label="Status" className="p-4 text-center">
                                     <span
                                         className={`inline-block rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
                                             c.isActive ? 'border-emerald-500/30 text-emerald-300' : 'border-gold-500/30 text-cream/40'
@@ -2893,7 +2893,7 @@ const PromotionsAdmin = () => {
                                         {c.isActive ? 'Active' : 'Inactive'}
                                     </span>
                                 </td>
-                                <td className="p-4 text-center"><div className="flex justify-center gap-2"><button onClick={() => void editCouponValue(c)} className="border border-gold-500/30 px-3 py-2 text-xs text-gold-300">Edit</button><button onClick={() => void toggleCoupon(c)} className="border border-gold-500/30 px-3 py-2 text-xs text-gold-300">{c.isActive ? 'Deactivate' : 'Activate'}</button></div></td>
+                                <td data-label="Actions" className="p-4 text-center"><div className="flex justify-center gap-2"><button onClick={() => void editCouponValue(c)} className="border border-gold-500/30 px-3 py-2 text-xs text-gold-300">Edit</button><button onClick={() => void toggleCoupon(c)} className="border border-gold-500/30 px-3 py-2 text-xs text-gold-300">{c.isActive ? 'Deactivate' : 'Activate'}</button></div></td>
                             </tr>
                         ))}
                     </tbody>
@@ -3004,7 +3004,7 @@ const AuditLogsAdmin = () => {
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
 
             <div className={`${box} overflow-x-auto`}>
-                <table className="w-full min-w-[1100px] text-left text-xs">
+                <table className="admin-responsive-table w-full min-w-[1100px] text-left text-xs">
                     <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                         <tr>
                             <th className="p-4">When</th>
@@ -3020,25 +3020,25 @@ const AuditLogsAdmin = () => {
                             const facts = auditFactRows(log);
                             return (
                                 <tr key={log.id} className="align-top transition-colors hover:bg-gold-400/[.03]">
-                                    <td className="p-4 text-cream/55">
+                                    <td data-label="When" className="p-4 text-cream/55">
                                         <time dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleString('en-IN')}</time>
                                     </td>
-                                    <td className="p-4">
+                                    <td data-label="Staff" className="p-4">
                                         <p className="font-medium text-cream">{log.actorLabel || (log.actorId ? 'Unknown staff member' : 'System')}</p>
                                         {log.actorId && <p className="mt-1 font-mono text-[10px] text-cream/35">{log.actorId}</p>}
                                     </td>
-                                    <td className="p-4">
+                                    <td data-label="Action" className="p-4">
                                         <p className="font-semibold text-gold-300">{auditActionLabel(log)}</p>
                                         <p className="mt-1 text-cream/75">{auditEntityLabel(log)}</p>
                                         <p className="mt-1 font-mono text-[10px] text-cream/35">
                                             {log.entityType}{log.entityId ? ` · ${log.entityId}` : ''}
                                         </p>
                                     </td>
-                                    <td className="p-4">
+                                    <td data-label="Changes" className="p-4">
                                         {changes.length > 0 || facts.length > 0 ? (
                                             <div className="space-y-2.5">
                                                 {changes.map((change) => (
-                                                    <div key={change.field} className="grid grid-cols-[minmax(110px,0.45fr)_1fr] gap-3">
+                                                    <div key={change.field} className="grid gap-1.5 sm:grid-cols-[minmax(110px,0.45fr)_1fr] sm:gap-3">
                                                         <span className="text-cream/50">{change.field}</span>
                                                         <span className="text-cream/80">
                                                             <span className="text-cream/45 line-through decoration-cream/25">{change.before}</span>
@@ -3057,7 +3057,7 @@ const AuditLogsAdmin = () => {
                                             <span className="text-cream/35">No field details recorded</span>
                                         )}
                                     </td>
-                                    <td className="p-4 text-cream/55">
+                                    <td data-label="Source" className="p-4 text-cream/55">
                                         <p>{log.ipAddress || 'Internal'}</p>
                                         {log.userAgent && <p className="mt-1 max-w-56 truncate text-[10px] text-cream/35" title={log.userAgent}>{log.userAgent}</p>}
                                     </td>
@@ -3144,7 +3144,7 @@ const OperationsAdmin = () => {
             </div>
 
             {ops && (
-                <div className="mt-6 flex items-center justify-between border-t border-gold-500/15 pt-4 text-xs text-cream/40">
+                <div className="mt-6 flex flex-col gap-2 border-t border-gold-500/15 pt-4 text-xs text-cream/40 sm:flex-row sm:items-center sm:justify-between">
                     <span>Telemetry check timestamp: {new Date(ops.checkedAt).toLocaleString('en-IN')}</span>
                     <span className="text-emerald-400">All system components operating nominal</span>
                 </div>
@@ -3372,16 +3372,16 @@ const UsersAdmin = () => {
             <NotificationToast message={error} type="error" onClose={() => setError('')} />
             <NotificationToast message={successMsg} type="success" onClose={() => setSuccessMsg('')} />
 
-            <div className="mb-7 grid grid-cols-3 border-y border-[#dedbd2] bg-white">
-                <div className="border-r border-[#e5e2da] px-3 py-4 sm:px-5">
+            <div className="mb-7 grid grid-cols-1 border-y border-[#dedbd2] bg-white min-[420px]:grid-cols-3">
+                <div className="border-b border-[#e5e2da] px-4 py-4 min-[420px]:border-b-0 min-[420px]:border-r min-[420px]:px-3 sm:px-5">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Team members</p>
                     <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : staffUsers.length}</p>
                 </div>
-                <div className="border-r border-[#e5e2da] px-3 py-4 sm:px-5">
+                <div className="border-b border-[#e5e2da] px-4 py-4 min-[420px]:border-b-0 min-[420px]:border-r min-[420px]:px-3 sm:px-5">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Administrators</p>
                     <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : administratorCount}</p>
                 </div>
-                <div className="px-3 py-4 sm:px-5">
+                <div className="px-4 py-4 min-[420px]:px-3 sm:px-5">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Access model</p>
                     <p className="mt-1 text-xs font-semibold leading-5 text-[#343934] sm:text-sm">4 role-based levels</p>
                 </div>

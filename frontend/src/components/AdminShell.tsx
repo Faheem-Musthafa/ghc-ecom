@@ -164,7 +164,7 @@ const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, chi
             )}
 
             <div className="admin-workspace-main min-w-0 lg:ml-[264px]">
-                <header className="sticky top-0 z-30 flex h-[68px] items-center justify-between border-b border-[#dedbd2] bg-[#f9f8f4]/90 px-4 backdrop-blur-xl sm:px-7 lg:px-10">
+                <header className="sticky top-0 z-30 flex min-h-[64px] items-center justify-between gap-2 border-b border-[#dedbd2] bg-[#f9f8f4]/90 px-3 py-2 backdrop-blur-xl sm:h-[68px] sm:px-7 sm:py-0 lg:px-10">
                     <div className="flex min-w-0 items-center gap-3">
                         <button onClick={() => setMobileOpen(true)} className="grid size-11 shrink-0 place-items-center rounded-xl text-[#343934] hover:bg-[#e9e6de] lg:hidden" aria-label="Open navigation">
                             <IconMenu size={21} />
@@ -180,14 +180,14 @@ const AdminShell: React.FC<AdminShellProps> = ({ title, description, action, chi
                     </Link>
                 </header>
 
-                <main id="admin-main" className="admin-content mx-auto w-full max-w-[1540px] px-4 pb-12 pt-7 sm:px-7 lg:px-10 lg:pb-16 lg:pt-10">
-                    <header className="mb-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                <main id="admin-main" className="admin-content mx-auto w-full max-w-[1540px] px-3 pb-10 pt-5 min-[380px]:px-4 sm:px-7 sm:pt-7 lg:px-10 lg:pb-16 lg:pt-10">
+                    <header className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-end md:justify-between md:gap-5">
                         <div className="min-w-0">
                             <p className="text-xs font-semibold text-[#9b671d]">Workspace <span className="mx-1.5 text-[#b9b6ad]">/</span> {title}</p>
-                            <h1 className="mt-2 text-3xl font-bold leading-tight tracking-[-0.035em] text-[#20241f] sm:text-[2.5rem]">{title}</h1>
+                            <h1 className="mt-2 text-[1.75rem] font-bold leading-tight tracking-[-0.035em] text-[#20241f] sm:text-[2.5rem]">{title}</h1>
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#696e67]">{description}</p>
                         </div>
-                        {action && <div className="shrink-0">{action}</div>}
+                        {action && <div className="admin-page-actions w-full shrink-0 md:w-auto">{action}</div>}
                     </header>
                     {children}
                 </main>
