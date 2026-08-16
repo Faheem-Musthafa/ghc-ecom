@@ -56,9 +56,15 @@ npm run dev:frontend
 ```
 
 For device testing on LAN, keep the Next.js host enabled and set `FRONTEND_ORIGIN` to the
-exact device-facing origin. Never use wildcard CORS. Browser auth uses credentialed
-`HttpOnly` cookies, so use one stable hostname rather than alternating between
-`localhost`, `127.0.0.1`, and a LAN IP.
+exact primary device-facing origin. To allow other exact browser origins, set
+`FRONTEND_ORIGINS` to a comma-separated list; the primary `FRONTEND_ORIGIN` is always
+included. Never use wildcard CORS. Browser auth uses credentialed `HttpOnly` cookies,
+so use stable hostnames rather than alternating between `localhost`, `127.0.0.1`, and a
+LAN IP.
+
+Production rejects localhost origins by default. For a deliberate local-to-production
+testing setup, add the localhost origin to `FRONTEND_ORIGINS` and set
+`ALLOW_LOCALHOST_CORS_IN_PRODUCTION=true`.
 
 ## 5. Verify
 
@@ -82,7 +88,8 @@ Frontend:
 | `NEXT_PUBLIC_SITE_URL` | Canonical public storefront origin |
 
 Backend values are documented in `backend/.env.example`. Production should set
-`NODE_ENV=production`, `ENABLE_SWAGGER=false`, exact `FRONTEND_ORIGIN`, and correct
-`TRUST_PROXY_HOPS`. `CSRF_SECRET` must be unique per environment and at least 32
-characters. `SESSION_REFRESH_TTL_SECONDS` controls browser refresh-cookie lifetime;
-the default is 30 days.
+`NODE_ENV=production`, `ENABLE_SWAGGER=false`, exact `FRONTEND_ORIGIN`, any additional
+exact HTTPS origins in `FRONTEND_ORIGINS`, and correct `TRUST_PROXY_HOPS`.
+`CSRF_SECRET` must be unique per environment and at least 32 characters.
+`SESSION_REFRESH_TTL_SECONDS` controls browser refresh-cookie lifetime; the default is
+30 days.

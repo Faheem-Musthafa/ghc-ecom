@@ -52,6 +52,70 @@ describe('validateEnvironment', () => {
     ).toBe('https://www.glockery.com');
   });
 
+  it('parses additional comma-separated CORS origins and includes the primary origin', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        FRONTEND_ORIGINS: 'https://admin.glockery.com, https://preview.glockery.com/',
+      }).FRONTEND_ORIGINS,
+    ).toEqual([
+      'http://localhost:3000',
+      'https://admin.glockery.com',
+      'https://preview.glockery.com',
+    ]);
+  });
+
+  it('rejects an invalid additional CORS origin', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        FRONTEND_ORIGINS: 'https://admin.glockery.com, not-a-url',
+      }),
+    ).toThrow('FRONTEND_ORIGINS: contains an invalid URL: not-a-url');
+  });
+
+  it('rejects localhost CORS in production unless explicitly enabled', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        FRONTEND_ORIGIN: 'https://shop.example.com',
+        FRONTEND_ORIGINS: 'http://localhost:3000',
+        API_PUBLIC_URL: 'https://api.example.com',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+        ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
+      }),
+    ).toThrow(
+      'FRONTEND_ORIGINS.0: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed',
+    );
+
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        FRONTEND_ORIGINS: 'https://admin.example.com',
+        API_PUBLIC_URL: 'https://api.example.com',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+        ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
+      }),
+    ).toThrow('FRONTEND_ORIGIN: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed');
+  });
+
+  it('allows localhost CORS in production only with an explicit opt-in', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        FRONTEND_ORIGIN: 'https://shop.example.com',
+        FRONTEND_ORIGINS: 'http://localhost:3000',
+        ALLOW_LOCALHOST_CORS_IN_PRODUCTION: 'true',
+        API_PUBLIC_URL: 'https://api.example.com',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+        ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
+      }).FRONTEND_ORIGINS,
+    ).toEqual(['https://shop.example.com', 'http://localhost:3000']);
+  });
+
   it('rejects the development CSRF secret in production', () => {
     expect(() =>
       validateEnvironment({

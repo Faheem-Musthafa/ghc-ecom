@@ -50,7 +50,7 @@ export function configureApplication(app: NestExpressApplication): void {
     }),
   );
   app.enableCors({
-    origin: config.getOrThrow<string>('FRONTEND_ORIGIN'),
+    origin: config.getOrThrow<string[]>('FRONTEND_ORIGINS'),
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [

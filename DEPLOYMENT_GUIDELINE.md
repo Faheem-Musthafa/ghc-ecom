@@ -180,6 +180,10 @@ HOST=0.0.0.0
 PORT=3001
 
 FRONTEND_ORIGIN=https://shop.example.com
+# Optional: additional exact credentialed CORS origins, comma-separated.
+FRONTEND_ORIGINS=https://admin.example.com
+# Set true only for deliberate local-browser access to the production API.
+ALLOW_LOCALHOST_CORS_IN_PRODUCTION=false
 API_PUBLIC_URL=https://api.example.com
 
 CSRF_SECRET=PASTE_A_SECURE_RANDOM_VALUE

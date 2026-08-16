@@ -8,6 +8,33 @@ function normalizeOrigin(value: string): string {
   return new URL(value).origin;
 }
 
+function parseOrigins(value: string, context: z.RefinementCtx): string[] {
+  const values = value.split(',').map((origin) => origin.trim());
+
+  if (values.length === 0 || values.some((origin) => origin.length === 0)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'must be a comma-separated list of one or more URLs',
+    });
+    return z.NEVER;
+  }
+
+  const origins: string[] = [];
+  for (const value of values) {
+    const parsed = z.string().url().safeParse(value);
+    if (!parsed.success) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `contains an invalid URL: ${value}`,
+      });
+      continue;
+    }
+    origins.push(normalizeOrigin(value));
+  }
+
+  return [...new Set(origins)];
+}
+
 function emptyStringToUndefined(value: unknown): unknown {
   return value === '' ? undefined : value;
 }
@@ -44,6 +71,14 @@ const environmentSchema = z
       .max(31_536_000)
       .default(2_592_000),
     FRONTEND_ORIGIN: z.string().url().transform(normalizeOrigin),
+    FRONTEND_ORIGINS: z.preprocess(
+      emptyStringToUndefined,
+      z.string().transform(parseOrigins).optional(),
+    ),
+    ALLOW_LOCALHOST_CORS_IN_PRODUCTION: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     API_PUBLIC_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     DIRECT_URL: z.string().url(),
@@ -91,15 +126,31 @@ const environmentSchema = z
       });
     }
     if (environment.NODE_ENV === 'production') {
-      const frontend = new URL(environment.FRONTEND_ORIGIN);
       const api = new URL(environment.API_PUBLIC_URL);
       const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
-      if (frontend.protocol !== 'https:' || localHosts.has(frontend.hostname)) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['FRONTEND_ORIGIN'],
-          message: 'must use a public HTTPS origin in production',
-        });
+      const frontendOrigins = [
+        { origin: environment.FRONTEND_ORIGIN, path: ['FRONTEND_ORIGIN'] },
+        ...(environment.FRONTEND_ORIGINS ?? []).map((origin, index) => ({
+          origin,
+          path: ['FRONTEND_ORIGINS', index],
+        })),
+      ];
+      for (const { origin, path } of frontendOrigins) {
+        const frontend = new URL(origin);
+        const isLocalhost = localHosts.has(frontend.hostname);
+        const localhostIsExplicitlyAllowed =
+          environment.ALLOW_LOCALHOST_CORS_IN_PRODUCTION && isLocalhost;
+        if (
+          (frontend.protocol !== 'https:' && !localhostIsExplicitlyAllowed) ||
+          (isLocalhost && !localhostIsExplicitlyAllowed)
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path,
+            message:
+              'must use a public HTTPS origin in production unless localhost CORS is explicitly allowed',
+          });
+        }
       }
       if (api.protocol !== 'https:' || localHosts.has(api.hostname)) {
         context.addIssue({
@@ -133,7 +184,14 @@ const environmentSchema = z
         }
       }
     }
-  });
+  })
+  .transform((environment) => ({
+    ...environment,
+    // FRONTEND_ORIGIN remains the primary URL for redirects; always allow it in CORS.
+    FRONTEND_ORIGINS: [
+      ...new Set([environment.FRONTEND_ORIGIN, ...(environment.FRONTEND_ORIGINS ?? [])]),
+    ],
+  }));
 
 export type Environment = z.infer<typeof environmentSchema>;
 
