@@ -11,6 +11,10 @@ PostgreSQL/Supabase remains external.
    secret manager. Set exact HTTPS `FRONTEND_ORIGIN` and `API_PUBLIC_URL`; use the
    optional comma-separated `FRONTEND_ORIGINS` for additional credentialed CORS origins.
    Generate a unique `CSRF_SECRET` with `openssl rand -base64 48`.
+
+   `localhost` origins are rejected in production unless
+   `ALLOW_LOCALHOST_CORS_IN_PRODUCTION=true` is explicitly configured for a local testing
+   workflow.
 3. Build reviewed commit:
 
    ```bash

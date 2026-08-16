@@ -62,6 +62,10 @@ included. Never use wildcard CORS. Browser auth uses credentialed `HttpOnly` coo
 so use stable hostnames rather than alternating between `localhost`, `127.0.0.1`, and a
 LAN IP.
 
+Production rejects localhost origins by default. For a deliberate local-to-production
+testing setup, add the localhost origin to `FRONTEND_ORIGINS` and set
+`ALLOW_LOCALHOST_CORS_IN_PRODUCTION=true`.
+
 ## 5. Verify
 
 ```bash

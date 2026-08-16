@@ -74,7 +74,7 @@ describe('validateEnvironment', () => {
     ).toThrow('FRONTEND_ORIGINS: contains an invalid URL: not-a-url');
   });
 
-  it('requires every configured CORS origin to use public HTTPS in production', () => {
+  it('rejects localhost CORS in production unless explicitly enabled', () => {
     expect(() =>
       validateEnvironment({
         ...validEnvironment,
@@ -85,7 +85,9 @@ describe('validateEnvironment', () => {
         CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
         ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
       }),
-    ).toThrow('FRONTEND_ORIGINS.0: must use a public HTTPS origin in production');
+    ).toThrow(
+      'FRONTEND_ORIGINS.0: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed',
+    );
 
     expect(() =>
       validateEnvironment({
@@ -96,7 +98,22 @@ describe('validateEnvironment', () => {
         CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
         ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
       }),
-    ).toThrow('FRONTEND_ORIGIN: must use a public HTTPS origin in production');
+    ).toThrow('FRONTEND_ORIGIN: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed');
+  });
+
+  it('allows localhost CORS in production only with an explicit opt-in', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        FRONTEND_ORIGIN: 'https://shop.example.com',
+        FRONTEND_ORIGINS: 'http://localhost:3000',
+        ALLOW_LOCALHOST_CORS_IN_PRODUCTION: 'true',
+        API_PUBLIC_URL: 'https://api.example.com',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+        ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
+      }).FRONTEND_ORIGINS,
+    ).toEqual(['https://shop.example.com', 'http://localhost:3000']);
   });
 
   it('rejects the development CSRF secret in production', () => {

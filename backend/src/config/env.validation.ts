@@ -75,6 +75,10 @@ const environmentSchema = z
       emptyStringToUndefined,
       z.string().transform(parseOrigins).optional(),
     ),
+    ALLOW_LOCALHOST_CORS_IN_PRODUCTION: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     API_PUBLIC_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     DIRECT_URL: z.string().url(),
@@ -133,11 +137,18 @@ const environmentSchema = z
       ];
       for (const { origin, path } of frontendOrigins) {
         const frontend = new URL(origin);
-        if (frontend.protocol !== 'https:' || localHosts.has(frontend.hostname)) {
+        const isLocalhost = localHosts.has(frontend.hostname);
+        const localhostIsExplicitlyAllowed =
+          environment.ALLOW_LOCALHOST_CORS_IN_PRODUCTION && isLocalhost;
+        if (
+          (frontend.protocol !== 'https:' && !localhostIsExplicitlyAllowed) ||
+          (isLocalhost && !localhostIsExplicitlyAllowed)
+        ) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path,
-            message: 'must use a public HTTPS origin in production',
+            message:
+              'must use a public HTTPS origin in production unless localhost CORS is explicitly allowed',
           });
         }
       }
