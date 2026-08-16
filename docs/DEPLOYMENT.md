@@ -8,8 +8,9 @@ PostgreSQL/Supabase remains external.
 1. Provision Linux host with Docker, DNS, TLS reverse proxy/load balancer, and private
    firewall. Expose only 80/443.
 2. Copy `backend/.env.example` to `backend/.env` and inject production values from
-   secret manager. Set exact HTTPS `FRONTEND_ORIGIN` and `API_PUBLIC_URL`. Generate a
-   unique `CSRF_SECRET` with `openssl rand -base64 48`.
+   secret manager. Set exact HTTPS `FRONTEND_ORIGIN` and `API_PUBLIC_URL`; use the
+   optional comma-separated `FRONTEND_ORIGINS` for additional credentialed CORS origins.
+   Generate a unique `CSRF_SECRET` with `openssl rand -base64 48`.
 3. Build reviewed commit:
 
    ```bash
