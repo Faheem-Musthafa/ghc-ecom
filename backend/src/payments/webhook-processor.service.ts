@@ -21,6 +21,9 @@ interface RazorpayWebhookPayload {
   };
 }
 
+const MAX_WEBHOOK_ATTEMPTS = 8;
+const PROCESSING_LEASE_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class WebhookProcessorService {
   constructor(
@@ -33,11 +36,19 @@ export class WebhookProcessorService {
     const claimed = await this.prisma.webhookEvent.updateMany({
       where: {
         id: eventId,
-        status: { in: [WebhookStatus.RECEIVED, WebhookStatus.FAILED] },
+        attempts: { lt: MAX_WEBHOOK_ATTEMPTS },
+        OR: [
+          { status: { in: [WebhookStatus.RECEIVED, WebhookStatus.FAILED] } },
+          {
+            status: WebhookStatus.PROCESSING,
+            processingStartedAt: { lte: this.leaseCutoff() },
+          },
+        ],
       },
       data: {
         status: WebhookStatus.PROCESSING,
         attempts: { increment: 1 },
+        processingStartedAt: new Date(),
         lastError: null,
       },
     });
@@ -53,6 +64,7 @@ export class WebhookProcessorService {
         data: {
           status: WebhookStatus.PROCESSED,
           processedAt: new Date(),
+          processingStartedAt: null,
           lastError: null,
         },
       });
@@ -61,11 +73,40 @@ export class WebhookProcessorService {
         where: { id: eventId },
         data: {
           status: WebhookStatus.FAILED,
+          processingStartedAt: null,
           lastError: error instanceof Error ? error.message.slice(0, 1000) : 'Unknown error',
         },
       });
       throw error;
     }
+  }
+
+  async processPending(limit = 25): Promise<number> {
+    const events = await this.prisma.webhookEvent.findMany({
+      where: {
+        attempts: { lt: MAX_WEBHOOK_ATTEMPTS },
+        OR: [
+          { status: { in: [WebhookStatus.RECEIVED, WebhookStatus.FAILED] } },
+          {
+            status: WebhookStatus.PROCESSING,
+            processingStartedAt: { lte: this.leaseCutoff() },
+          },
+        ],
+      },
+      select: { id: true },
+      orderBy: { receivedAt: 'asc' },
+      take: Math.min(Math.max(limit, 1), 100),
+    });
+    let processed = 0;
+    for (const event of events) {
+      await this.process(event.id);
+      processed += 1;
+    }
+    return processed;
+  }
+
+  private leaseCutoff(): Date {
+    return new Date(Date.now() - PROCESSING_LEASE_MS);
   }
 
   private async handle(payload: RazorpayWebhookPayload): Promise<void> {

@@ -217,6 +217,7 @@ export const ProductDetailPage = ({ initialProduct, initialSlug }: ProductDetail
                             <div data-product-gallery="thumbs" className="mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 no-scrollbar sm:gap-3">
                                 {gallery.map((item, index) => (
                                     <button
+                                        type="button"
                                         key={item.id}
                                         onClick={() => {
                                             setActiveImage(index);

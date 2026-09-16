@@ -15,6 +15,7 @@ export interface RazorpayOrder {
   receipt: string | null;
   status: 'created' | 'attempted' | 'paid';
   notes: Record<string, string>;
+  created_at?: number;
 }
 
 export interface RazorpayPayment {
@@ -69,6 +70,19 @@ export class RazorpayService {
 
   fetchOrder(orderId: string): Promise<RazorpayOrder> {
     return this.request<RazorpayOrder>(`/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  async findOrderByReceipt(receipt: string, createdAfter: Date): Promise<RazorpayOrder | null> {
+    const from = Math.max(0, Math.floor(createdAfter.getTime() / 1000) - 300);
+    for (let skip = 0; skip < 1_000; skip += 100) {
+      const response = await this.request<{ items: RazorpayOrder[] }>(
+        `/orders?from=${from}&count=100&skip=${skip}`,
+      );
+      const match = response.items.find((order) => order.receipt === receipt);
+      if (match) return match;
+      if (response.items.length < 100) return null;
+    }
+    return null;
   }
 
   fetchPayment(paymentId: string): Promise<RazorpayPayment> {

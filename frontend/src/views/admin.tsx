@@ -36,7 +36,6 @@ import {
 } from '../lib/catalogue-csv';
 import { inventoryCsvExport, inventoryCsvTemplate, parseInventoryCsv, validateInventoryCsvRows } from '../lib/inventory-csv';
 import { fallbackImage, rupees, shortDate, slugify, titleCase } from '../lib/commerce';
-import { downloadGoogleDriveImage } from '../lib/google-drive';
 import { openTrustedUrl } from '../lib/navigation';
 import { productImageVariantIds, variantOptionLabel } from '../lib/product-options';
 import { basisPointsToPercent, localDateBoundaryIso, percentToBasisPoints } from '../lib/promotions';
@@ -62,13 +61,7 @@ const uploadGoogleDriveImage = async (
     driveUrl: string,
     metadata: { variantIds?: string[]; altText: string; sortOrder?: number },
 ) => {
-    const file = await downloadGoogleDriveImage(driveUrl);
-    const form = new FormData();
-    form.set('file', file);
-    if (metadata.variantIds?.length) form.set('variantIds', JSON.stringify(metadata.variantIds));
-    form.set('altText', metadata.altText);
-    if (metadata.sortOrder !== undefined) form.set('sortOrder', String(metadata.sortOrder));
-    return api.uploadProductImage(productId, form);
+    return api.importGoogleDriveImage(productId, { driveUrl, ...metadata });
 };
 
 const orderItemAttributes = (attributes?: Record<string, unknown>): Array<[string, string]> => {
