@@ -5,6 +5,7 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
+import { FssPaymentsService } from './fss/fss-payments.service';
 import { PaymentsService, ReconciliationResult } from './payments.service';
 
 class ReconcilePaymentsDto {
@@ -20,10 +21,18 @@ class ReconcilePaymentsDto {
 @UseGuards(SupabaseAuthGuard, RolesGuard)
 @Roles(AppRole.ADMIN, AppRole.SUPPORT_AGENT)
 export class PaymentAdminController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly fssPayments: FssPaymentsService,
+  ) {}
 
   @Post('reconcile')
   reconcile(@Body() input: ReconcilePaymentsDto): Promise<ReconciliationResult> {
     return this.payments.reconcilePending(input.limit);
+  }
+
+  @Post('reconcile/fss')
+  reconcileFss(@Body() input: ReconcilePaymentsDto): Promise<ReconciliationResult> {
+    return this.fssPayments.reconcilePending(input.limit);
   }
 }

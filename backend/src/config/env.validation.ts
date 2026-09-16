@@ -95,6 +95,31 @@ const environmentSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    // FSS bank payment gateway (redirect flow). Only validated when enabled.
+    FSS_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    FSS_MERCHANT_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    FSS_MERCHANT_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    FSS_RESOURCE_KEY: z.preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .refine((value) => [16, 24, 32].includes(Buffer.byteLength(value, 'utf8')), {
+          message: 'must be a 16, 24 or 32 byte AES key',
+        })
+        .optional(),
+    ),
+    FSS_PAYMENT_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    FSS_RESPONSE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    FSS_ERROR_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    FSS_RESPONSE_MODE: z.enum(['redirect-body', 'http-redirect']).default('redirect-body'),
+    FSS_CURRENCY_CODE: z
+      .string()
+      .regex(/^\d{3}$/, 'must be a 3-digit ISO 4217 numeric code')
+      .default('356'),
+    FSS_LANGUAGE_ID: z.string().min(1).default('USA'),
     EMAIL_FROM: z.string().min(1).refine(isEmailFrom, 'must be an email or Name <email>'),
     RESEND_API_KEY: z.string().min(1),
     NOTIFICATION_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
@@ -124,6 +149,33 @@ const environmentSchema = z
         path: ['CSRF_SECRET'],
         message: 'must be a production secret',
       });
+    }
+    if (environment.FSS_ENABLED) {
+      for (const key of [
+        'FSS_MERCHANT_ID',
+        'FSS_MERCHANT_PASSWORD',
+        'FSS_RESOURCE_KEY',
+        'FSS_PAYMENT_URL',
+      ] as const) {
+        if (!environment[key]) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: 'is required when FSS_ENABLED=true',
+          });
+        }
+      }
+      if (
+        environment.NODE_ENV === 'production' &&
+        environment.FSS_PAYMENT_URL &&
+        new URL(environment.FSS_PAYMENT_URL).protocol !== 'https:'
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['FSS_PAYMENT_URL'],
+          message: 'must use HTTPS in production',
+        });
+      }
     }
     if (environment.NODE_ENV === 'production') {
       const api = new URL(environment.API_PUBLIC_URL);

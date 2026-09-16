@@ -98,7 +98,9 @@ describe('validateEnvironment', () => {
         CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
         ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true',
       }),
-    ).toThrow('FRONTEND_ORIGIN: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed');
+    ).toThrow(
+      'FRONTEND_ORIGIN: must use a public HTTPS origin in production unless localhost CORS is explicitly allowed',
+    );
   });
 
   it('allows localhost CORS in production only with an explicit opt-in', () => {
@@ -151,5 +153,58 @@ describe('validateEnvironment', () => {
     expect(
       validateEnvironment({ ...production, ALLOW_TEST_PAYMENTS_IN_PRODUCTION: 'true' }),
     ).toMatchObject({ ALLOW_TEST_PAYMENTS_IN_PRODUCTION: true });
+  });
+
+  it('keeps the FSS gateway optional until it is enabled', () => {
+    expect(validateEnvironment(validEnvironment)).toMatchObject({
+      FSS_ENABLED: false,
+      FSS_RESPONSE_MODE: 'redirect-body',
+      FSS_CURRENCY_CODE: '356',
+      FSS_LANGUAGE_ID: 'USA',
+    });
+    expect(
+      validateEnvironment({ ...validEnvironment, FSS_MERCHANT_ID: '' }).FSS_MERCHANT_ID,
+    ).toBeUndefined();
+  });
+
+  it('requires merchant credentials and gateway URL when FSS is enabled', () => {
+    expect(() => validateEnvironment({ ...validEnvironment, FSS_ENABLED: 'true' })).toThrow(
+      /FSS_MERCHANT_ID: is required when FSS_ENABLED=true.*FSS_PAYMENT_URL: is required/,
+    );
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        FSS_ENABLED: 'true',
+        FSS_MERCHANT_ID: 'TP0001',
+        FSS_MERCHANT_PASSWORD: 'secret',
+        FSS_RESOURCE_KEY: 'k'.repeat(32),
+        FSS_PAYMENT_URL: 'https://test-gateway.example.bank/PGServlet',
+        FSS_RESPONSE_MODE: 'http-redirect',
+      }),
+    ).toMatchObject({ FSS_ENABLED: true, FSS_RESPONSE_MODE: 'http-redirect' });
+  });
+
+  it('rejects FSS resource keys that are not valid AES key sizes', () => {
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, FSS_RESOURCE_KEY: 'too-short' }),
+    ).toThrow('must be a 16, 24 or 32 byte AES key');
+  });
+
+  it('rejects a plain HTTP FSS gateway URL in production', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        NODE_ENV: 'production',
+        FRONTEND_ORIGIN: 'https://shop.example.com',
+        API_PUBLIC_URL: 'https://api.example.com',
+        CSRF_SECRET: 'production-csrf-secret-that-is-at-least-32-characters',
+        RAZORPAY_KEY_ID: 'rzp_live_key',
+        FSS_ENABLED: 'true',
+        FSS_MERCHANT_ID: 'TP0001',
+        FSS_MERCHANT_PASSWORD: 'secret',
+        FSS_RESOURCE_KEY: 'k'.repeat(32),
+        FSS_PAYMENT_URL: 'http://test-gateway.example.bank/PGServlet',
+      }),
+    ).toThrow('FSS_PAYMENT_URL: must use HTTPS in production');
   });
 });

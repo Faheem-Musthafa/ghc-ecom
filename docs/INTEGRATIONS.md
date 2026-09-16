@@ -47,6 +47,48 @@ a stable versioned SRI artifact; do not self-host or pin an unofficial copy with
 written provider support. Treat the exact allowlisted vendor origin as a reviewed
 supply-chain dependency.
 
+## FSS bank payment gateway
+
+The FSS (Financial Software & Systems) integration is a non-seamless redirect
+flow used by several Indian bank gateways. It runs alongside Razorpay and is
+disabled until `FSS_ENABLED=true`.
+
+1. Send the bank the details in `docs/FSS_TEST_KIT_FORM.md` to obtain the TEST
+   KIT (tranportal ID, password, terminal resource key, and gateway URL).
+2. Configure the backend from the kit:
+
+   ```env
+   FSS_ENABLED=true
+   FSS_MERCHANT_ID=TRANPORTAL_ID
+   FSS_MERCHANT_PASSWORD=TRANPORTAL_PASSWORD
+   FSS_RESOURCE_KEY=TERMINAL_RESOURCE_KEY
+   FSS_PAYMENT_URL=https://TEST_GATEWAY_HOST/PGServlet
+   ```
+
+   `FSS_RESPONSE_URL` / `FSS_ERROR_URL` default to
+   `API_PUBLIC_URL + /api/v1/payments/fss/response` and `/error`; register the same
+   values with the bank. In production these resolve to
+   `https://www.glockery.com/api/v1/payments/fss/...` because the storefront
+   proxies `/api/*` to the API.
+3. Switch the storefront to the bank page with `NEXT_PUBLIC_PAYMENT_GATEWAY=fss`
+   and allow the gateway origin in the CSP form-action list with
+   `PAYMENT_FORM_ACTION_ORIGINS=https://TEST_GATEWAY_HOST` (both are build-time
+   variables for `frontend/`).
+4. Flow: `POST /checkout/fss/intent` creates a pending order with a numeric
+   `fssTrackId` and returns the encrypted `trandata` form; the browser posts it to
+   the bank; the bank calls the Response URL; the API decrypts, verifies the
+   amount, confirms or fails the order idempotently, and answers
+   `REDIRECT=<storefront>/checkout/result?order=…&outcome=…`. Plaintext or
+   undecryptable callbacks are never trusted — the API runs an inquiry
+   (`action=8`) first. Pending FSS orders are reconciled every five minutes via
+   the same inquiry (`POST /admin/payments/reconcile/fss` runs it on demand).
+5. Refunds for FSS payments are manual (bank merchant portal); the API refuses
+   to route them through Razorpay and logs a warning when an FSS-paid order is
+   cancelled.
+6. Before go-live, verify with the bank kit: field names and result codes in
+   `backend/src/payments/fss/fss-gateway.service.ts`, and the AES IV in
+   `fss-codec.ts`. Everything else is wire-format independent.
+
 ## Redis and BullMQ
 
 - Use TLS/authenticated managed Redis in production.

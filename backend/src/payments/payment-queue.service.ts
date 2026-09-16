@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
+import { FssPaymentsService } from './fss/fss-payments.service';
 import { PaymentsService } from './payments.service';
 import { WebhookProcessorService } from './webhook-processor.service';
 
@@ -17,6 +18,7 @@ export class PaymentQueueService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly webhookProcessor: WebhookProcessorService,
     private readonly payments: PaymentsService,
+    private readonly fssPayments: FssPaymentsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -67,6 +69,8 @@ export class PaymentQueueService implements OnModuleInit, OnModuleDestroy {
       await this.webhookProcessor.process(job.data.eventId);
       return;
     }
+    await this.webhookProcessor.processPending();
     await this.payments.reconcilePending();
+    await this.fssPayments.reconcilePending();
   }
 }

@@ -1,5 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
-import { Order, OrderStatus, QuoteStatus } from '@prisma/client';
+import { Order, OrderStatus, PaymentProvider, QuoteStatus } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentsService } from './payments.service';
@@ -39,7 +39,10 @@ describe('PaymentsService', () => {
     shippingPaise: quote.shippingPaise,
     taxPaise: quote.taxPaise,
     totalPaise: quote.totalPaise,
+    paymentProvider: PaymentProvider.RAZORPAY,
     razorpayOrderId: null,
+    providerOrderClaimedAt: null,
+    fssTrackId: null,
     paymentExpiresAt: quote.expiresAt,
     confirmedAt: null,
     createdAt: new Date(),
@@ -48,13 +51,13 @@ describe('PaymentsService', () => {
   let existingOrder: Order | null;
   let prisma: {
     checkoutQuote: { findUnique: jest.Mock };
-    order: { findUnique: jest.Mock; findMany: jest.Mock };
+    order: { findUnique: jest.Mock; findMany: jest.Mock; updateMany: jest.Mock };
     $transaction: jest.Mock;
     $executeRaw: jest.Mock;
   };
   let transaction: {
     $executeRaw: jest.Mock;
-    order: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+    order: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock; updateMany: jest.Mock };
     payment: { findUnique: jest.Mock; upsert: jest.Mock };
   };
   let carts: { requireAccessibleCart: jest.Mock; requireOwnedCart: jest.Mock };
@@ -64,6 +67,7 @@ describe('PaymentsService', () => {
     verifyCheckoutSignature: jest.Mock;
     fetchPayment: jest.Mock;
     fetchOrder: jest.Mock;
+    findOrderByReceipt: jest.Mock;
     fetchPaymentsForOrder: jest.Mock;
   };
   let service: PaymentsService;
@@ -82,6 +86,7 @@ describe('PaymentsService', () => {
           existingOrder = { ...pendingOrder, razorpayOrderId: 'order_provider_1' };
           return Promise.resolve(existingOrder);
         }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       payment: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -91,8 +96,16 @@ describe('PaymentsService', () => {
     prisma = {
       checkoutQuote: { findUnique: jest.fn().mockResolvedValue(quote) },
       order: {
-        findUnique: jest.fn().mockResolvedValue(pendingOrder),
+        findUnique: jest.fn(() => Promise.resolve(existingOrder ?? pendingOrder)),
         findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockImplementation(() => {
+          existingOrder = {
+            ...pendingOrder,
+            razorpayOrderId: 'order_provider_1',
+            providerOrderClaimedAt: null,
+          };
+          return Promise.resolve({ count: 1 });
+        }),
       },
       $transaction: jest.fn((callback: (client: typeof transaction) => Promise<unknown>) =>
         callback(transaction),
@@ -119,6 +132,7 @@ describe('PaymentsService', () => {
       verifyCheckoutSignature: jest.fn(),
       fetchPayment: jest.fn(),
       fetchOrder: jest.fn(),
+      findOrderByReceipt: jest.fn().mockResolvedValue(null),
       fetchPaymentsForOrder: jest.fn(),
     };
     service = new PaymentsService(
@@ -144,6 +158,33 @@ describe('PaymentsService', () => {
     expect(razorpay.createOrder).toHaveBeenCalledWith(
       expect.objectContaining({ amount: quote.totalPaise, currency: 'INR' }),
     );
+  });
+
+  it('recovers a provider order after a crashed attachment without creating a duplicate', async () => {
+    existingOrder = {
+      ...pendingOrder,
+      providerOrderClaimedAt: new Date(Date.now() - 5 * 60_000),
+    };
+    razorpay.findOrderByReceipt.mockResolvedValue({
+      id: 'order_provider_1',
+      entity: 'order',
+      amount: quote.totalPaise,
+      amount_paid: 0,
+      amount_due: quote.totalPaise,
+      currency: 'INR',
+      receipt: 'GHC-TEST-1',
+      status: 'created',
+      notes: { local_order_id: pendingOrder.id },
+    });
+
+    await expect(
+      service.createIntent({ quoteId: quote.id }, undefined, 'guest-token'),
+    ).resolves.toMatchObject({
+      razorpayOrderId: 'order_provider_1',
+    });
+
+    expect(razorpay.findOrderByReceipt).toHaveBeenCalledWith('GHC-TEST-1', pendingOrder.createdAt);
+    expect(razorpay.createOrder).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid checkout signature before fetching or confirming payment', async () => {

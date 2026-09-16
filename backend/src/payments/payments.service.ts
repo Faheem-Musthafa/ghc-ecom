@@ -1,22 +1,14 @@
-import { randomUUID } from 'node:crypto';
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import {
-  CheckoutQuote,
-  Order,
-  OrderStatus,
-  PaymentStatus,
-  Prisma,
-  QuoteStatus,
-} from '@prisma/client';
+import { Order, OrderStatus, PaymentProvider, PaymentStatus, Prisma } from '@prisma/client';
 import { CartService } from '../cart/cart.service';
 import { PrismaService } from '../database/prisma.service';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
+import { orderCreateData, requireActiveQuote, toInputJson } from './order-factory';
 import { VerifyRazorpayPaymentDto } from './dto/verify-razorpay-payment.dto';
 import { RazorpayOrder, RazorpayPayment, RazorpayService } from './razorpay.service';
 
@@ -41,6 +33,8 @@ export interface ReconciliationResult {
   errors: number;
 }
 
+const PROVIDER_ORDER_CLAIM_MS = 2 * 60 * 1000;
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -59,51 +53,81 @@ export class PaymentsService {
       throw new NotFoundException('Checkout quote not found');
     }
     await this.carts.requireAccessibleCart(quote.cartId, authorization, guestToken);
-    this.requireActiveQuote(quote);
+    requireActiveQuote(quote);
 
-    const order = await this.prisma.$transaction(
-      async (transaction) => {
-        await transaction.$executeRaw`select pg_advisory_xact_lock(
+    const claimed = await this.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`select pg_advisory_xact_lock(
           hashtextextended(${quote.id}::text, 0)
         )`;
-        const existing = await transaction.order.findUnique({ where: { quoteId: quote.id } });
-        if (existing?.razorpayOrderId) {
-          return existing;
-        }
-        const localOrder =
-          existing ??
-          (await transaction.order.create({
-            data: {
-              orderNumber: this.orderNumber(),
-              quoteId: quote.id,
-              cartId: quote.cartId,
-              userId: quote.userId,
-              couponId: quote.couponId,
-              currency: quote.currency,
-              itemsSnapshot: this.jsonValue(quote.itemsSnapshot),
-              addressSnapshot: this.jsonValue(quote.addressSnapshot),
-              subtotalPaise: quote.subtotalPaise,
-              discountPaise: quote.discountPaise,
-              shippingPaise: quote.shippingPaise,
-              taxPaise: quote.taxPaise,
-              totalPaise: quote.totalPaise,
-              paymentExpiresAt: quote.expiresAt,
+      const existing = await transaction.order.findUnique({ where: { quoteId: quote.id } });
+      if (existing?.razorpayOrderId) {
+        return { order: existing, acquired: false, recovery: false };
+      }
+      if (existing && existing.paymentProvider !== PaymentProvider.RAZORPAY) {
+        throw new ConflictException('Order is already assigned to another payment gateway');
+      }
+      const claimTime = new Date();
+      if (!existing) {
+        const order = await transaction.order.create({
+          data: {
+            ...orderCreateData(quote, PaymentProvider.RAZORPAY),
+            providerOrderClaimedAt: claimTime,
+          },
+        });
+        return { order, acquired: true, recovery: false };
+      }
+      const claim = await transaction.order.updateMany({
+        where: {
+          id: existing.id,
+          razorpayOrderId: null,
+          OR: [
+            { providerOrderClaimedAt: null },
+            {
+              providerOrderClaimedAt: {
+                lte: new Date(Date.now() - PROVIDER_ORDER_CLAIM_MS),
+              },
             },
-          }));
-        const providerOrder = await this.razorpay.createOrder({
-          amount: localOrder.totalPaise,
-          currency: localOrder.currency,
-          receipt: localOrder.orderNumber.slice(0, 40),
-          notes: { local_order_id: localOrder.id },
-        });
-        this.assertMatchingOrder(localOrder, providerOrder);
-        return transaction.order.update({
-          where: { id: localOrder.id },
-          data: { razorpayOrderId: providerOrder.id },
-        });
+          ],
+        },
+        data: { providerOrderClaimedAt: claimTime },
+      });
+      return {
+        order: { ...existing, providerOrderClaimedAt: claimTime },
+        acquired: claim.count === 1,
+        recovery: claim.count === 1 && existing.providerOrderClaimedAt !== null,
+      };
+    });
+
+    if (claimed.order.razorpayOrderId) return this.intentView(claimed.order);
+    if (!claimed.acquired) {
+      throw new ConflictException('Payment setup is already in progress; retry shortly');
+    }
+
+    const receipt = claimed.order.orderNumber.slice(0, 40);
+    const recoveredOrder = claimed.recovery
+      ? await this.razorpay.findOrderByReceipt(receipt, claimed.order.createdAt)
+      : null;
+    const providerOrder =
+      recoveredOrder ??
+      (await this.razorpay.createOrder({
+        amount: claimed.order.totalPaise,
+        currency: claimed.order.currency,
+        receipt,
+        notes: { local_order_id: claimed.order.id },
+      }));
+    this.assertMatchingOrder(claimed.order, providerOrder);
+    await this.prisma.order.updateMany({
+      where: {
+        id: claimed.order.id,
+        paymentProvider: PaymentProvider.RAZORPAY,
+        razorpayOrderId: null,
       },
-      { timeout: 20_000 },
-    );
+      data: { razorpayOrderId: providerOrder.id, providerOrderClaimedAt: null },
+    });
+    const order = await this.prisma.order.findUnique({ where: { id: claimed.order.id } });
+    if (!order?.razorpayOrderId) {
+      throw new ConflictException('Payment setup could not be saved; retry shortly');
+    }
     return this.intentView(order);
   }
 
@@ -242,6 +266,7 @@ export class PaymentsService {
     const orders = await this.prisma.order.findMany({
       where: {
         status: OrderStatus.PAYMENT_PENDING,
+        paymentProvider: PaymentProvider.RAZORPAY,
         razorpayOrderId: { not: null },
       },
       orderBy: { createdAt: 'asc' },
@@ -279,17 +304,12 @@ export class PaymentsService {
     return result;
   }
 
-  private requireActiveQuote(quote: CheckoutQuote): void {
-    if (quote.status !== QuoteStatus.ACTIVE || quote.expiresAt <= new Date()) {
-      throw new BadRequestException('Checkout quote has expired');
-    }
-    if (quote.totalPaise <= 0 || quote.currency !== 'INR') {
-      throw new BadRequestException('Checkout quote cannot be paid');
-    }
-  }
-
   private assertMatchingOrder(order: Order, providerOrder: RazorpayOrder): void {
-    if (providerOrder.amount !== order.totalPaise || providerOrder.currency !== order.currency) {
+    if (
+      providerOrder.amount !== order.totalPaise ||
+      providerOrder.currency !== order.currency ||
+      providerOrder.receipt !== order.orderNumber.slice(0, 40)
+    ) {
       throw new ConflictException('Razorpay order amount or currency mismatch');
     }
   }
@@ -325,19 +345,11 @@ export class PaymentsService {
     };
   }
 
-  private orderNumber(): string {
-    return `GHC-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
-  }
-
   private providerDate(timestamp?: number): Date | undefined {
     return timestamp ? new Date(timestamp * 1000) : undefined;
   }
 
   private json(value: object): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-  }
-
-  private jsonValue(value: Prisma.JsonValue): Prisma.InputJsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+    return toInputJson(value);
   }
 }

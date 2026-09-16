@@ -9,8 +9,11 @@ import { useCart } from '../contexts/CartContext';
 import { useDialog } from '../hooks/useDialog';
 import { api, getCartIdentity, saveGuestOrderAccess } from '../lib/api';
 import { fallbackImage, rupees } from '../lib/commerce';
+import { PAYMENT_GATEWAY_LABEL, resolvePaymentGateway, submitGatewayForm } from '../lib/payment-gateway';
 import { formatRazorpayContact, resolveCheckoutEmail } from '../lib/razorpay';
 import { Address, CheckoutQuote, Order, PaymentIntent, ShippingAddressInput } from '../types';
+
+const paymentGateway = resolvePaymentGateway();
 
 type RazorpaySuccess = {
     razorpay_payment_id: string;
@@ -69,6 +72,7 @@ const CheckoutPage = () => {
     const [paymentFailed, setPaymentFailed] = useState(false);
     const [error, setError] = useState('');
     const isMounted = useRef(false);
+    const leavingForGateway = useRef(false);
     const paymentBlocking = paymentStage !== 'idle' && paymentStage !== 'gateway' && !paymentFailed;
     const paymentDialogRef = useDialog<HTMLDivElement>(paymentBlocking, () => undefined, { focusInitial: false });
 
@@ -141,6 +145,19 @@ const CheckoutPage = () => {
 
             if (!isMounted.current) return;
             setQuote(createdQuote);
+
+            if (paymentGateway === 'fss') {
+                // Redirect flow: the bank hosts the payment page and returns the customer
+                // to /checkout/result via the API Response URL.
+                const bankIntent = await api.fssPaymentIntent(createdQuote.id);
+                if (!isMounted.current) return;
+                const guestToken = !signedIn ? getCartIdentity()?.guestToken : undefined;
+                if (guestToken) saveGuestOrderAccess(bankIntent.orderId, guestToken);
+                leavingForGateway.current = true;
+                submitGatewayForm(bankIntent);
+                return;
+            }
+
             const intent = await api.paymentIntent(createdQuote.id);
             if (!isMounted.current) return;
             setPendingIntent(intent);
@@ -220,7 +237,8 @@ const CheckoutPage = () => {
         } catch (caught) {
             if (isMounted.current) setError(caught instanceof Error ? caught.message : 'Checkout could not be completed.');
         } finally {
-            if (isMounted.current) {
+            // Keep the overlay up while the browser navigates to the bank page.
+            if (isMounted.current && !leavingForGateway.current) {
                 setLoading(false);
                 setPaymentStage('idle');
             }
@@ -262,7 +280,7 @@ const CheckoutPage = () => {
             <header className="flex h-20 items-center justify-between gap-4 border-b border-line px-4 sm:px-10">
                 <Link to="/" className="shrink-0 text-sm font-bold tracking-[0.18em] text-cream sm:text-lg">GLOCKERY</Link>
                 <span className="flex items-center gap-2 text-right text-[9px] uppercase tracking-[0.12em] text-cream/35 sm:text-[10px] sm:tracking-[0.18em]">
-                    <IconShieldCheck size={15} className="shrink-0" /> Secure Razorpay Checkout
+                    <IconShieldCheck size={15} className="shrink-0" /> {PAYMENT_GATEWAY_LABEL[paymentGateway]}
                 </span>
             </header>
             <nav className="border-b border-line" aria-label="Checkout progress">
@@ -377,7 +395,9 @@ const CheckoutPage = () => {
                         disabled={loading || paymentStage !== 'idle'}
                         className="button-primary mt-8 h-14 w-full gap-3 disabled:opacity-50"
                     >
-                        {loading ? 'Preparing Razorpay Gateway…' : <>Pay Securely with Razorpay <IconArrowRight size={16} /></>}
+                        {loading
+                            ? (paymentGateway === 'fss' ? 'Redirecting to your bank…' : 'Preparing Razorpay Gateway…')
+                            : <>{paymentGateway === 'fss' ? 'Pay Securely via Bank Gateway' : 'Pay Securely with Razorpay'} <IconArrowRight size={16} /></>}
                     </button>
                 </form>
 

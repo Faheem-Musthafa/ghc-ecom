@@ -82,6 +82,13 @@ enum OrderStatus {
   @@map("order_status")
 }
 
+enum PaymentProvider {
+  RAZORPAY @map("razorpay")
+  FSS      @map("fss")
+
+  @@map("payment_provider")
+}
+
 enum PaymentStatus {
   CREATED    @map("created")
   AUTHORIZED @map("authorized")
@@ -508,35 +515,39 @@ model CheckoutQuote {
 }
 
 model Order {
-  id               String          @id @default(uuid()) @db.Uuid
-  orderNumber      String          @unique @map("order_number")
-  quoteId          String          @unique @map("quote_id") @db.Uuid
-  cartId           String          @map("cart_id") @db.Uuid
-  userId           String?         @map("user_id") @db.Uuid
-  couponId         String?         @map("coupon_id") @db.Uuid
-  status           OrderStatus     @default(PAYMENT_PENDING)
-  currency         String          @default("INR")
-  itemsSnapshot    Json            @map("items_snapshot")
-  addressSnapshot  Json            @map("address_snapshot")
-  subtotalPaise    Int             @map("subtotal_paise")
-  discountPaise    Int             @map("discount_paise")
-  shippingPaise    Int             @map("shipping_paise")
-  taxPaise         Int             @map("tax_paise")
-  totalPaise       Int             @map("total_paise")
-  razorpayOrderId  String?         @unique @map("razorpay_order_id")
-  paymentExpiresAt DateTime        @map("payment_expires_at") @db.Timestamptz(6)
-  confirmedAt      DateTime?       @map("confirmed_at") @db.Timestamptz(6)
-  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  quote            CheckoutQuote   @relation(fields: [quoteId], references: [id], onDelete: Restrict)
-  payments         Payment[]
-  invoice          Invoice?
-  notifications    Notification[]
-  shipments        Shipment[]
-  returns          ReturnRequest[]
+  id                     String          @id @default(uuid()) @db.Uuid
+  orderNumber            String          @unique @map("order_number")
+  quoteId                String          @unique @map("quote_id") @db.Uuid
+  cartId                 String          @map("cart_id") @db.Uuid
+  userId                 String?         @map("user_id") @db.Uuid
+  couponId               String?         @map("coupon_id") @db.Uuid
+  status                 OrderStatus     @default(PAYMENT_PENDING)
+  currency               String          @default("INR")
+  itemsSnapshot          Json            @map("items_snapshot")
+  addressSnapshot        Json            @map("address_snapshot")
+  subtotalPaise          Int             @map("subtotal_paise")
+  discountPaise          Int             @map("discount_paise")
+  shippingPaise          Int             @map("shipping_paise")
+  taxPaise               Int             @map("tax_paise")
+  totalPaise             Int             @map("total_paise")
+  paymentProvider        PaymentProvider @default(RAZORPAY) @map("payment_provider")
+  razorpayOrderId        String?         @unique @map("razorpay_order_id")
+  providerOrderClaimedAt DateTime?       @map("provider_order_claimed_at") @db.Timestamptz(6)
+  fssTrackId             String?         @unique @map("fss_track_id")
+  paymentExpiresAt       DateTime        @map("payment_expires_at") @db.Timestamptz(6)
+  confirmedAt            DateTime?       @map("confirmed_at") @db.Timestamptz(6)
+  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  quote                  CheckoutQuote   @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  payments               Payment[]
+  invoice                Invoice?
+  notifications          Notification[]
+  shipments              Shipment[]
+  returns                ReturnRequest[]
 
   @@index([userId, createdAt])
   @@index([status, paymentExpiresAt])
+  @@index([paymentProvider, status, paymentExpiresAt])
   @@index([cartId, status, paymentExpiresAt])
   @@index([orderNumber(ops: raw("gin_trgm_ops"))], type: Gin, map: "orders_order_number_trgm_idx")
   @@index([razorpayOrderId(ops: raw("gin_trgm_ops"))], type: Gin, map: "orders_razorpay_order_id_trgm_idx")
@@ -557,18 +568,19 @@ model Invoice {
 }
 
 model OutboxEvent {
-  id            String       @id @default(uuid()) @db.Uuid
-  aggregateType String       @map("aggregate_type")
-  aggregateId   String       @map("aggregate_id")
-  eventType     String       @map("event_type")
-  dedupeKey     String       @unique @map("dedupe_key")
-  payload       Json
-  status        OutboxStatus @default(PENDING)
-  attempts      Int          @default(0)
-  availableAt   DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
-  lastError     String?      @map("last_error")
-  processedAt   DateTime?    @map("processed_at") @db.Timestamptz(6)
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                  String       @id @default(uuid()) @db.Uuid
+  aggregateType       String       @map("aggregate_type")
+  aggregateId         String       @map("aggregate_id")
+  eventType           String       @map("event_type")
+  dedupeKey           String       @unique @map("dedupe_key")
+  payload             Json
+  status              OutboxStatus @default(PENDING)
+  attempts            Int          @default(0)
+  availableAt         DateTime     @default(now()) @map("available_at") @db.Timestamptz(6)
+  processingStartedAt DateTime?    @map("processing_started_at") @db.Timestamptz(6)
+  lastError           String?      @map("last_error")
+  processedAt         DateTime?    @map("processed_at") @db.Timestamptz(6)
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([status, availableAt])
   @@map("outbox_events")
@@ -596,19 +608,21 @@ model Notification {
 }
 
 model Payment {
-  id                String        @id @default(uuid()) @db.Uuid
-  orderId           String        @map("order_id") @db.Uuid
-  razorpayPaymentId String        @unique @map("razorpay_payment_id")
+  id                String          @id @default(uuid()) @db.Uuid
+  orderId           String          @map("order_id") @db.Uuid
+  provider          PaymentProvider @default(RAZORPAY)
+  razorpayPaymentId String?         @unique @map("razorpay_payment_id")
+  fssTransactionId  String?         @unique @map("fss_transaction_id")
   status            PaymentStatus
-  amountPaise       Int           @map("amount_paise")
-  currency          String        @default("INR")
-  signatureVerified Boolean       @default(false) @map("signature_verified")
+  amountPaise       Int             @map("amount_paise")
+  currency          String          @default("INR")
+  signatureVerified Boolean         @default(false) @map("signature_verified")
   method            String?
-  capturedAt        DateTime?     @map("captured_at") @db.Timestamptz(6)
-  rawPayload        Json          @default("{}") @map("raw_payload")
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  order             Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  capturedAt        DateTime?       @map("captured_at") @db.Timestamptz(6)
+  rawPayload        Json            @default("{}") @map("raw_payload")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  order             Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
   refunds           Refund[]
 
   @@index([orderId, status])
@@ -707,15 +721,16 @@ model Refund {
 }
 
 model WebhookEvent {
-  id              String        @id @default(uuid()) @db.Uuid
-  providerEventId String        @unique @map("provider_event_id")
-  eventType       String        @map("event_type")
-  status          WebhookStatus @default(RECEIVED)
-  payload         Json
-  attempts        Int           @default(0)
-  lastError       String?       @map("last_error")
-  processedAt     DateTime?     @map("processed_at") @db.Timestamptz(6)
-  receivedAt      DateTime      @default(now()) @map("received_at") @db.Timestamptz(6)
+  id                  String        @id @default(uuid()) @db.Uuid
+  providerEventId     String        @unique @map("provider_event_id")
+  eventType           String        @map("event_type")
+  status              WebhookStatus @default(RECEIVED)
+  payload             Json
+  attempts            Int           @default(0)
+  processingStartedAt DateTime?     @map("processing_started_at") @db.Timestamptz(6)
+  lastError           String?       @map("last_error")
+  processedAt         DateTime?     @map("processed_at") @db.Timestamptz(6)
+  receivedAt          DateTime      @default(now()) @map("received_at") @db.Timestamptz(6)
 
   @@index([status, receivedAt])
   @@map("webhook_events")

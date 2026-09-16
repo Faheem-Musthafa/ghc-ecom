@@ -8,6 +8,7 @@ import {
     Coupon,
     CreateCouponInput,
     CreatedCart,
+    FssPaymentIntent,
     InventoryLevel,
     OperationsSnapshot,
     Order,
@@ -297,6 +298,10 @@ export const api = {
             },
             cartOptions(),
         ),
+    fssPaymentIntent: (quoteId: string) =>
+        request<FssPaymentIntent>('/checkout/fss/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
+    fssPaymentStatus: (orderId: string) =>
+        request<Order>('/payments/fss/status', { method: 'POST', body: JSON.stringify({ orderId }) }, cartOptions()),
 
     profile: () => request<Profile>('/me/profile', {}, { auth: true }),
     updateProfile: (input: Partial<Pick<Profile, 'fullName' | 'phone'>>) =>
@@ -339,6 +344,15 @@ export const api = {
         request<ProductImage>(
             `/admin/catalogue/products/${productId}/images`,
             { method: 'POST', body: form },
+            { auth: true, timeoutMs: 45_000 },
+        ),
+    importGoogleDriveImage: (
+        productId: string,
+        input: { driveUrl: string; variantIds?: string[]; altText: string; sortOrder?: number },
+    ) =>
+        request<ProductImage>(
+            `/admin/catalogue/products/${productId}/images/google-drive`,
+            { method: 'POST', body: JSON.stringify(input) },
             { auth: true, timeoutMs: 45_000 },
         ),
     updateProductImage: (productId: string, imageId: string, input: { variantIds?: string[]; variantId?: string | null; altText?: string; sortOrder?: number }) =>

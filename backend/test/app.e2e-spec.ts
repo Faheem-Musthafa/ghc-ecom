@@ -405,4 +405,32 @@ describe('Application health (e2e)', () => {
     expect(prisma.webhookEvent.create).not.toHaveBeenCalled();
     expect(paymentQueue.enqueueWebhook).not.toHaveBeenCalled();
   });
+
+  it('always answers the FSS bank callback with a merchant redirect instruction', async () => {
+    // FSS is disabled in the test environment, so the callback must still land the
+    // customer on the failure page instead of surfacing an HTTP error to the bank.
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/payments/fss/response')
+      .set('content-type', 'application/x-www-form-urlencoded')
+      .send('tranportalId=TP0001&trandata=00ff&trackid=1758000000000123456')
+      .expect(200)
+      .expect('content-type', /text\/plain/);
+
+    expect(response.text).toBe('REDIRECT=http://localhost:3000/checkout/result?outcome=failed');
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('redirects browser-side FSS returns to the storefront result page', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/payments/fss/error?trackid=1758000000000123456&result=CANCELED')
+      .expect(303)
+      .expect('location', 'http://localhost:3000/checkout/result?outcome=failed');
+  });
+
+  it('refuses to start an FSS checkout while the gateway is disabled', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/checkout/fss/intent')
+      .send({ quoteId: '0f8fad5b-d9cb-469f-a165-70867728950e' })
+      .expect(503);
+  });
 });

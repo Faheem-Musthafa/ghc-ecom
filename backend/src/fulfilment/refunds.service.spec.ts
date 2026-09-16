@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import { PaymentStatus, RefundStatus } from '@prisma/client';
+import { PaymentProvider, PaymentStatus, RefundStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { RazorpayService } from '../payments/razorpay.service';
@@ -8,7 +8,9 @@ import { RefundsService } from './refunds.service';
 describe('RefundsService', () => {
   const payment = {
     id: '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
+    provider: PaymentProvider.RAZORPAY,
     razorpayPaymentId: 'pay_1',
+    fssTransactionId: null,
     status: PaymentStatus.CAPTURED,
     amountPaise: 10_000,
     currency: 'INR',
@@ -236,5 +238,39 @@ describe('RefundsService', () => {
       idempotencyKey: 'cancel_1b4e28ba_2fa1_11d2_883f_0016d3cca427',
       reason: 'Automatic pre-fulfilment order cancellation refund',
     });
+  });
+
+  it('skips automatic refunds for bank gateway payments', async () => {
+    prisma.payment.findFirst.mockResolvedValue({
+      ...payment,
+      provider: PaymentProvider.FSS,
+      razorpayPaymentId: null,
+      fssTransactionId: 'PAY-1',
+    });
+    const create = jest.spyOn(service, 'create');
+
+    await expect(
+      service.refundOrderCancellation('1b4e28ba-2fa1-11d2-883f-0016d3cca427'),
+    ).resolves.toBeNull();
+
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('rejects manual refunds for bank gateway payments', async () => {
+    transaction.payment.findUnique.mockResolvedValue({
+      ...payment,
+      provider: PaymentProvider.FSS,
+      razorpayPaymentId: null,
+      fssTransactionId: 'PAY-1',
+    });
+
+    await expect(
+      service.create('admin-1', {
+        paymentId: payment.id,
+        amountPaise: 1_000,
+        idempotencyKey: 'refund_fss_1',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(razorpay.createRefund).not.toHaveBeenCalled();
   });
 });

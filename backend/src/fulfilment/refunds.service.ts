@@ -2,9 +2,18 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Payment, PaymentStatus, Prisma, Refund, RefundStatus, ReturnStatus } from '@prisma/client';
+import {
+  Payment,
+  PaymentProvider,
+  PaymentStatus,
+  Prisma,
+  Refund,
+  RefundStatus,
+  ReturnStatus,
+} from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { RazorpayRefund, RazorpayService } from '../payments/razorpay.service';
@@ -20,6 +29,8 @@ export interface RefundReconciliationResult {
 
 @Injectable()
 export class RefundsService {
+  private readonly logger = new Logger(RefundsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly razorpay: RazorpayService,
@@ -50,6 +61,7 @@ export class RefundsService {
         ) {
           throw new NotFoundException('Captured payment not found');
         }
+        const razorpayPaymentId = this.requireRazorpayPaymentId(payment);
         if (input.returnRequestId) {
           const request = await transaction.returnRequest.findUnique({
             where: { id: input.returnRequestId },
@@ -79,7 +91,7 @@ export class RefundsService {
           },
         });
         const provider = await this.razorpay.createRefund(
-          payment.razorpayPaymentId,
+          razorpayPaymentId,
           {
             amount: input.amountPaise,
             receipt: local.id.slice(0, 40),
@@ -87,7 +99,7 @@ export class RefundsService {
           },
           input.idempotencyKey,
         );
-        this.assertProviderRefund(payment.razorpayPaymentId, input.amountPaise, provider);
+        this.assertProviderRefund(razorpayPaymentId, input.amountPaise, provider);
         return this.persistProviderState(transaction, local, payment, provider);
       },
       { timeout: 20_000 },
@@ -115,6 +127,13 @@ export class RefundsService {
       orderBy: { createdAt: 'asc' },
     });
     if (!payment) return null;
+    if (payment.provider !== PaymentProvider.RAZORPAY) {
+      // Bank gateway refunds are manual; surface it instead of failing the outbox job.
+      this.logger.warn(
+        `Order ${orderId} was cancelled after a ${payment.provider} payment; refund it from the bank merchant portal`,
+      );
+      return null;
+    }
     const aggregate = await this.prisma.refund.aggregate({
       where: {
         paymentId: payment.id,
@@ -152,7 +171,11 @@ export class RefundsService {
     for (const refund of refunds) {
       try {
         const provider = await this.razorpay.fetchRefund(refund.razorpayRefundId!);
-        this.assertProviderRefund(refund.payment.razorpayPaymentId, refund.amountPaise, provider);
+        this.assertProviderRefund(
+          this.requireRazorpayPaymentId(refund.payment),
+          refund.amountPaise,
+          provider,
+        );
         await this.prisma.$transaction((transaction) =>
           this.persistProviderState(transaction, refund, refund.payment, provider),
         );
@@ -162,6 +185,17 @@ export class RefundsService {
       }
     }
     return result;
+  }
+
+  // Refunds are only automated for Razorpay. FSS (bank gateway) settlements must be
+  // refunded from the bank merchant portal until an FSS refund API is integrated.
+  private requireRazorpayPaymentId(payment: Payment): string {
+    if (payment.provider !== PaymentProvider.RAZORPAY || !payment.razorpayPaymentId) {
+      throw new BadRequestException(
+        'Refunds for bank gateway payments must be processed through the bank merchant portal',
+      );
+    }
+    return payment.razorpayPaymentId;
   }
 
   private requireSameRequest(refund: Refund, input: CreateRefundDto): Refund {

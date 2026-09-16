@@ -166,6 +166,22 @@ export interface PaymentIntent {
     };
 }
 
+export type PaymentProvider = 'RAZORPAY' | 'FSS';
+
+/** Redirect-flow intent: the browser posts `gateway.fields` to `gateway.url`. */
+export interface FssPaymentIntent {
+    provider: 'fss';
+    orderId: string;
+    orderNumber: string;
+    amount: number;
+    currency: string;
+    gateway: {
+        url: string;
+        method: 'POST';
+        fields: Record<string, string>;
+    };
+}
+
 export interface OrderRefund {
     id: string;
     amountPaise: number;
@@ -178,7 +194,9 @@ export interface OrderRefund {
 
 export interface OrderPayment {
     id: string;
+    provider?: PaymentProvider;
     razorpayPaymentId?: string | null;
+    fssTransactionId?: string | null;
     status: string;
     amountPaise: number;
     currency: string;
@@ -199,7 +217,9 @@ export interface Order {
     shippingPaise: number;
     taxPaise: number;
     totalPaise: number;
+    paymentProvider?: PaymentProvider;
     razorpayOrderId?: string | null;
+    fssTrackId?: string | null;
     confirmedAt?: string | null;
     createdAt: string;
     updatedAt: string;
