@@ -21,19 +21,34 @@ const readOutcome = (value: string | null): Outcome =>
 const isUuid = (value: string | null): value is string =>
     Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
 
+const isGatewayOrderId = (value: string | null): value is string => Boolean(value && /^[A-Za-z0-9]{1,20}$/.test(value));
+
+type StatusLookup = { orderId: string } | { hdfcOrderId: string };
+
+/** `?order=<uuid>` from our own links, or `?order_id=…` from the SmartGateway return URL. */
+const readLookup = (params: URLSearchParams): StatusLookup | null => {
+    const orderId = params.get('order');
+    if (isUuid(orderId)) return { orderId };
+    const hdfcOrderId = params.get('order_id');
+    if (isGatewayOrderId(hdfcOrderId)) return { hdfcOrderId };
+    return null;
+};
+
 /**
- * Landing page for the bank gateway redirect flow. The API's Response URL sends the
- * customer here with `?order=<id>&outcome=<hint>`; the order status from the API is
- * the source of truth and is polled while the bank confirmation is still pending.
+ * Landing page for the HDFC SmartGateway return URL. SmartGateway sends the customer
+ * here with `?order_id=…&status=…`; those parameters are only a hint. The order status
+ * from the API (which checks SmartGateway server-to-server) is the source of truth
+ * and is polled while the bank confirmation is still pending.
  */
 export const PaymentResultPage = () => {
     const history = useHistory();
     const { search } = useLocation();
     const { resetCart } = useCart();
     const params = new URLSearchParams(search);
-    const orderId = isUuid(params.get('order')) ? params.get('order') : null;
+    const lookup = readLookup(params);
+    const lookupKey = lookup ? JSON.stringify(lookup) : null;
     const hint = readOutcome(params.get('outcome'));
-    const [status, setStatus] = useState<'checking' | 'pending' | 'failed'>(orderId ? 'checking' : 'failed');
+    const [status, setStatus] = useState<'checking' | 'pending' | 'failed'>(lookup ? 'checking' : 'failed');
     const [error, setError] = useState('');
     const polls = useRef(0);
     const isMounted = useRef(false);
@@ -46,12 +61,12 @@ export const PaymentResultPage = () => {
     }, []);
 
     useEffect(() => {
-        if (!orderId) return;
+        if (!lookup) return;
         let timer: ReturnType<typeof setTimeout> | undefined;
 
         const check = async () => {
             try {
-                const order: Order = await api.fssPaymentStatus(orderId);
+                const order: Order = await api.hdfcPaymentStatus(lookup);
                 if (!isMounted.current) return;
                 if (order.status === 'PAYMENT_PENDING') {
                     polls.current += 1;
@@ -80,13 +95,13 @@ export const PaymentResultPage = () => {
             if (timer) clearTimeout(timer);
         };
         // resetCart/history are stable; re-running on them would restart polling.
-    }, [orderId]);
+    }, [lookupKey]);
 
     const retry = () => {
         polls.current = 0;
         setError('');
         setStatus('checking');
-        api.fssPaymentStatus(orderId!)
+        api.hdfcPaymentStatus(lookup!)
             .then((order) => {
                 if (!isMounted.current) return;
                 if (order.status === 'PAYMENT_PENDING') {
@@ -105,7 +120,7 @@ export const PaymentResultPage = () => {
             });
     };
 
-    const failed = status === 'failed' || (!orderId && hint === 'failed');
+    const failed = status === 'failed' || (!lookup && hint === 'failed');
 
     return (
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
@@ -145,7 +160,7 @@ export const PaymentResultPage = () => {
                         </p>
                         {error && <p className="mt-3 text-xs text-red-300">{error}</p>}
                         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-                            {orderId && (
+                            {lookup && (
                                 <button type="button" onClick={retry} className="button-primary h-12 px-6 gap-2">
                                     <IconRefresh size={16} /> Check again
                                 </button>

@@ -1,64 +1,36 @@
-import { describe, expect, it } from 'vitest';
-import { FssPaymentIntent } from '../types';
-import { buildGatewayForm, resolvePaymentGateway, submitGatewayForm } from './payment-gateway';
+import { describe, expect, it, vi } from 'vitest';
+import { HdfcPaymentIntent } from '../types';
+import { redirectToGateway, resolveCheckoutEmail } from './payment-gateway';
 
-const intent: FssPaymentIntent = {
-    provider: 'fss',
+const intent: HdfcPaymentIntent = {
+    provider: 'hdfc',
     orderId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
     orderNumber: 'GHC-TEST-1',
+    hdfcOrderId: 'GHCMF0ABCDE12345678',
     amount: 12_750,
     currency: 'INR',
-    gateway: {
-        url: 'https://test-gateway.example.bank/PGServlet',
-        method: 'POST',
-        fields: {
-            tranportalId: 'TP0001',
-            trandata: 'abcd1234',
-            responseURL: 'https://www.glockery.com/api/v1/payments/fss/response',
-        },
-    },
+    paymentUrl: 'https://smartgateway.hdfcuat.bank.in/orders/ordeh_1/payment-page',
 };
 
-describe('resolvePaymentGateway', () => {
-    it('defaults to Razorpay unless the bank gateway is explicitly selected', () => {
-        expect(resolvePaymentGateway(undefined)).toBe('razorpay');
-        expect(resolvePaymentGateway('')).toBe('razorpay');
-        expect(resolvePaymentGateway('razorpay')).toBe('razorpay');
-        expect(resolvePaymentGateway(' FSS ')).toBe('fss');
+describe('resolveCheckoutEmail', () => {
+    it('uses the signed-in email when the saved-address form has no email field', () => {
+        expect(resolveCheckoutEmail(null, ' customer@example.com ')).toBe('customer@example.com');
     });
 });
 
-describe('buildGatewayForm', () => {
-    it('creates a hidden POST form with one input per gateway field', () => {
-        const form = buildGatewayForm(intent);
+describe('redirectToGateway', () => {
+    it('navigates the top-level window to the hosted payment page', () => {
+        const location = { assign: vi.fn() };
 
-        expect(form.method).toBe('post');
-        expect(form.action).toBe(intent.gateway.url);
-        expect(form.style.display).toBe('none');
-        const inputs = Array.from(form.querySelectorAll('input'));
-        expect(inputs.map((input) => [input.type, input.name, input.value])).toEqual([
-            ['hidden', 'tranportalId', 'TP0001'],
-            ['hidden', 'trandata', 'abcd1234'],
-            ['hidden', 'responseURL', 'https://www.glockery.com/api/v1/payments/fss/response'],
-        ]);
+        redirectToGateway(intent, location);
+
+        expect(location.assign).toHaveBeenCalledWith(intent.paymentUrl);
     });
 
-    it('keeps gateway values as data rather than markup', () => {
-        const form = buildGatewayForm({
-            ...intent,
-            gateway: { ...intent.gateway, fields: { trandata: '"><img src=x onerror=alert(1)>' } },
-        });
+    it('refuses to send the customer to a non-HTTPS payment page', () => {
+        const location = { assign: vi.fn() };
 
-        expect(form.querySelectorAll('img')).toHaveLength(0);
-        expect(form.querySelector('input')?.value).toBe('"><img src=x onerror=alert(1)>');
-    });
-});
-
-describe('submitGatewayForm', () => {
-    it('refuses to post the customer to a non-HTTPS gateway', () => {
-        expect(() =>
-            submitGatewayForm({ ...intent, gateway: { ...intent.gateway, url: 'http://insecure.example' } }),
-        ).toThrow('HTTPS');
-        expect(document.querySelector('form[data-payment-gateway]')).toBeNull();
+        expect(() => redirectToGateway({ ...intent, paymentUrl: 'http://insecure.example' }, location)).toThrow('HTTPS');
+        expect(location.assign).not.toHaveBeenCalled();
     });
 });

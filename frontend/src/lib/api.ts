@@ -8,12 +8,11 @@ import {
     Coupon,
     CreateCouponInput,
     CreatedCart,
-    FssPaymentIntent,
+    HdfcPaymentIntent,
     InventoryLevel,
     OperationsSnapshot,
     Order,
     PaginatedProducts,
-    PaymentIntent,
     Product,
     ProductImage,
     ProductVariant,
@@ -286,22 +285,10 @@ export const api = {
         addressId?: string;
         shippingAddress?: ShippingAddressInput;
     }) => request<CheckoutQuote>('/checkout/quote', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
-    paymentIntent: (quoteId: string) => request<PaymentIntent>('/checkout/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
-    verifyPayment: (input: { razorpayPaymentId: string; razorpayOrderId: string; razorpaySignature: string }) =>
-        request<Order>('/payments/razorpay/verify', { method: 'POST', body: JSON.stringify(input) }, cartOptions()),
-    paymentStatus: (razorpayOrderId: string) =>
-        request<Order>(
-            '/payments/razorpay/status',
-            {
-                method: 'POST',
-                body: JSON.stringify({ razorpayOrderId }),
-            },
-            cartOptions(),
-        ),
-    fssPaymentIntent: (quoteId: string) =>
-        request<FssPaymentIntent>('/checkout/fss/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
-    fssPaymentStatus: (orderId: string) =>
-        request<Order>('/payments/fss/status', { method: 'POST', body: JSON.stringify({ orderId }) }, cartOptions()),
+    hdfcPaymentIntent: (quoteId: string) =>
+        request<HdfcPaymentIntent>('/checkout/hdfc/intent', { method: 'POST', body: JSON.stringify({ quoteId }) }, cartOptions()),
+    hdfcPaymentStatus: (lookup: { orderId: string } | { hdfcOrderId: string }) =>
+        request<Order>('/payments/hdfc/status', { method: 'POST', body: JSON.stringify(lookup) }, cartOptions()),
 
     profile: () => request<Profile>('/me/profile', {}, { auth: true }),
     updateProfile: (input: Partial<Pick<Profile, 'fullName' | 'phone'>>) =>

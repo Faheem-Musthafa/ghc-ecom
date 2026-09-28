@@ -368,7 +368,7 @@ const OrdersTable = ({
                                 {payment ? (
                                     <>
                                         <p className="font-medium text-cream">{titleCase(payment.status)}</p>
-                                        <p className="mt-0.5 text-cream/45">{payment.method ? titleCase(payment.method) : 'Razorpay'}</p>
+                                        <p className="mt-0.5 text-cream/45">{payment.method ? titleCase(payment.method) : 'HDFC SmartGateway'}</p>
                                     </>
                                 ) : (
                                     <span className="text-cream/45">Awaiting payment</span>
@@ -646,13 +646,13 @@ const OrdersAdmin = () => {
                                         <span className="font-display text-base text-gold-300">{rupees(inspectingOrder.totalPaise)}</span>
                                     </p>
                                     <p>
-                                        <strong className="text-cream">Razorpay order:</strong> {inspectingOrder.razorpayOrderId || 'Not created'}
+                                        <strong className="text-cream">HDFC order:</strong> {inspectingOrder.hdfcOrderId || 'Legacy (pre-HDFC) order'}
                                     </p>
                                     {inspectingOrder.payments?.map((payment) => (
                                         <div key={payment.id} className="border-t border-gold-500/10 pt-2">
                                             <p><strong className="text-cream">Payment:</strong> {titleCase(payment.status)} · {rupees(payment.amountPaise)}</p>
                                             <p><strong className="text-cream">Method:</strong> {payment.method ? titleCase(payment.method) : 'Not reported'}</p>
-                                            <p><strong className="text-cream">Payment ID:</strong> {payment.razorpayPaymentId || 'Awaiting Razorpay confirmation'}</p>
+                                            <p><strong className="text-cream">Payment ID:</strong> {payment.hdfcTransactionId || 'Not reported'}</p>
                                             {payment.capturedAt && <p><strong className="text-cream">Captured:</strong> {new Date(payment.capturedAt).toLocaleString('en-IN')}</p>}
                                             {payment.refunds.length > 0 && <p><strong className="text-cream">Refunds:</strong> {payment.refunds.map((refund) => `${titleCase(refund.status)} ${rupees(refund.amountPaise)}`).join(', ')}</p>}
                                         </div>

@@ -133,7 +133,7 @@ const pageContent: Record<
             },
             {
                 title: 'Payments',
-                body: 'Online payments are completed through Razorpay. Glockery does not ask you to enter card or UPI credentials directly into this website.',
+                body: 'Online payments are completed on the HDFC Bank SmartGateway secure payment page. Glockery does not ask you to enter card or UPI credentials directly into this website.',
             },
             {
                 title: 'Service providers',

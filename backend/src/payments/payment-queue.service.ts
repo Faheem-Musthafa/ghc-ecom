@@ -2,8 +2,8 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
-import { FssPaymentsService } from './fss/fss-payments.service';
-import { PaymentsService } from './payments.service';
+import { HdfcPaymentsService } from './hdfc/hdfc-payments.service';
+import { PrismaService } from '../database/prisma.service';
 import { WebhookProcessorService } from './webhook-processor.service';
 
 type PaymentJob = { kind: 'webhook'; eventId: string } | { kind: 'reconcile' };
@@ -17,8 +17,8 @@ export class PaymentQueueService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly webhookProcessor: WebhookProcessorService,
-    private readonly payments: PaymentsService,
-    private readonly fssPayments: FssPaymentsService,
+    private readonly prisma: PrismaService,
+    private readonly hdfcPayments: HdfcPaymentsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -70,7 +70,7 @@ export class PaymentQueueService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await this.webhookProcessor.processPending();
-    await this.payments.reconcilePending();
-    await this.fssPayments.reconcilePending();
+    await this.prisma.$executeRaw`select public.release_expired_inventory_reservations()`;
+    await this.hdfcPayments.reconcilePending();
   }
 }
