@@ -259,16 +259,8 @@ const WishlistView = () => {
         let cancelled = false;
         const loadWishlist = async () => {
             try {
-                const collected: Product[] = [];
-                let page = 1;
-                let total = 0;
-                do {
-                    const result = await api.products(new URLSearchParams({ page: String(page), limit: '100' }));
-                    collected.push(...result.items);
-                    total = result.total;
-                    page += 1;
-                } while (collected.length < total && page <= 20);
-                if (!cancelled) setProducts(collected.filter((product) => wishlistIds.includes(product.id)));
+                const saved = wishlistIds.length ? await api.productsByIds(wishlistIds) : [];
+                if (!cancelled) setProducts(saved);
             } catch (caught) {
                 if (!cancelled) setError(caught instanceof Error ? caught.message : 'Unable to load wishlist.');
             } finally {

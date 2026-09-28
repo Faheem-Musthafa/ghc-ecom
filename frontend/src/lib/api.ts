@@ -271,6 +271,17 @@ export const api = {
     categories: () => request<Category[]>('/categories'),
     products: (params = new URLSearchParams({ page: '1', limit: '48' }), signal?: AbortSignal) => request<PaginatedProducts>(`/products?${params}`, { signal }),
     product: (slug: string) => request<Product>(`/products/${encodeURIComponent(slug)}`),
+    productsByIds: async (ids: string[]): Promise<Product[]> => {
+        const unique = [...new Set(ids)];
+        const pages = await Promise.all(
+            Array.from({ length: Math.ceil(unique.length / 100) }, (_, index) =>
+                request<PaginatedProducts>(
+                    `/products?${new URLSearchParams({ ids: unique.slice(index * 100, index * 100 + 100).join(','), limit: '100' })}`,
+                ),
+            ),
+        );
+        return pages.flatMap((page) => page.items);
+    },
 
     createCart: () => request<CreatedCart>('/carts', { method: 'POST' }, { auth: authenticated() }),
     getCart: (cartId: string) => request<Cart>(`/carts/${cartId}`, {}, cartOptions()),
@@ -311,7 +322,10 @@ export const api = {
     createReturn: (id: string, reason: string) =>
         request<unknown>(`/orders/${id}/returns`, { method: 'POST', body: JSON.stringify({ reason }) }, { auth: true }),
 
-    adminProducts: (signal?: AbortSignal) => request<Product[]>('/admin/catalogue/products', { signal }, { auth: true }),
+    // List rows carry card images only and no videos; open a product with adminProduct.
+    adminProducts: (signal?: AbortSignal) =>
+        request<Product[]>('/admin/catalogue/products', { signal }, { auth: true, timeoutMs: 45_000 }),
+    adminProduct: (id: string) => request<Product>(`/admin/catalogue/products/${id}`, {}, { auth: true }),
     adminCategories: (signal?: AbortSignal) => request<Category[]>('/admin/catalogue/categories', { signal }, { auth: true }),
     createProduct: (input: unknown) => request<Product>('/admin/catalogue/products', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
     updateProduct: (id: string, input: unknown) =>
