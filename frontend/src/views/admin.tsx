@@ -720,9 +720,11 @@ const OrdersAdmin = () => {
                                                 <td data-label="Product" className="p-3">
                                                     <div className="flex min-w-[240px] gap-3">
                                                         <img
+                                                            loading="lazy"
+                                                            decoding="async"
                                                             src={item.imageUrl || fallbackImage}
                                                             alt=""
-                                                            className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-carbon object-cover"
+                                                            className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-carbon object-contain"
                                                             onError={(event) => { event.currentTarget.src = fallbackImage; }}
                                                         />
                                                         <div>
@@ -1668,9 +1670,11 @@ const CatalogueAdmin = () => {
                                         <td data-label="Product" className="p-4">
                                             <div className="flex items-center gap-3">
                                                 <img
+                                                    loading="lazy"
+                                                    decoding="async"
                                                     src={product.images[0]?.thumbnailUrl || fallbackImage}
                                                     alt=""
-                                                    className="size-12 rounded-sm border border-gold-500/20 object-cover bg-obsidian"
+                                                    className="size-12 rounded-sm border border-gold-500/20 object-contain bg-obsidian"
                                                 />
                                                 <div>
                                                     <strong className="font-display text-base font-normal text-cream">{product.name}</strong>
@@ -2078,7 +2082,7 @@ const CatalogueAdmin = () => {
                                             const mode = assignmentMode(assignedIds, variantDrafts);
                                             return (
                                             <div key={image.id} className="flex items-start gap-3 bg-obsidian/55 p-2">
-                                                <img src={image.thumbnailUrl} alt={image.altText} className="size-16 shrink-0 object-cover" />
+                                                <img loading="lazy" decoding="async" src={image.thumbnailUrl} alt={image.altText} className="size-16 shrink-0 bg-obsidian object-contain" />
                                                 <label className="min-w-0 flex-1">
                                                     <span className="mb-1 block text-[11px] text-cream/55">Gallery assignment</span>
                                                     <select
@@ -2589,10 +2593,11 @@ const InventoryAdmin = () => {
                                     <td data-label="Item" className="p-4 font-medium text-cream">
                                         <div className="flex items-center gap-3">
                                             <img
+                                                loading="lazy"
+                                                decoding="async"
                                                 src={info?.imageUrl || fallbackImage}
                                                 alt=""
-                                                loading="lazy"
-                                                className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-obsidian object-cover"
+                                                className="size-12 shrink-0 rounded-sm border border-gold-500/20 bg-obsidian object-contain"
                                                 onError={(event) => { event.currentTarget.src = fallbackImage; }}
                                             />
                                             <div>
