@@ -205,27 +205,47 @@ export class CatalogueService {
           }
         : {}),
     };
-    const skip = (query.page - 1) * query.limit;
-    const [items, total] = await Promise.all([
-      this.prisma.product.findMany({
-        relationLoadStrategy: 'join',
-        where,
-        include: {
-          ...productCardInclude,
-          variants: {
-            ...productCardInclude.variants,
-            where: { isActive: true },
-          },
+    // Stock is derived from inventory levels, so it cannot be an ORDER BY column. Rank the
+    // matching ids first (newest first, then in-stock products ahead of sold-out ones) so
+    // every page keeps that order, and load full cards only for the requested page.
+    const ranked = await this.prisma.product.findMany({
+      relationLoadStrategy: 'join',
+      where,
+      select: {
+        id: true,
+        variants: {
+          where: { isActive: true },
+          select: { inventoryLevels: productInclude.variants.include.inventoryLevels },
         },
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        skip,
-        take: query.limit,
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+      },
+      orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    const inStock = (product: (typeof ranked)[number]) =>
+      product.variants.some((variant) =>
+        variant.inventoryLevels.some((level) => level.onHand - level.reserved > 0),
+      );
+    const skip = (query.page - 1) * query.limit;
+    const pageIds = [...ranked.filter(inStock), ...ranked.filter((product) => !inStock(product))]
+      .slice(skip, skip + query.limit)
+      .map((product) => product.id);
+    const items = pageIds.length
+      ? await this.prisma.product.findMany({
+          relationLoadStrategy: 'join',
+          where: { id: { in: pageIds } },
+          include: {
+            ...productCardInclude,
+            variants: {
+              ...productCardInclude.variants,
+              where: { isActive: true },
+            },
+          },
+        })
+      : [];
+    const position = new Map(pageIds.map((id, index) => [id, index]));
+    items.sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
     return {
       items: items.map((product) => this.productCard(product)),
-      total,
+      total: ranked.length,
       page: query.page,
       limit: query.limit,
     };
