@@ -2,7 +2,6 @@
 
 import React, { FormEvent, useState } from 'react';
 import { Link, Redirect, useHistory, useLocation } from '../lib/router';
-import SEOHead from '../components/SEOHead';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { api, getCartIdentity, saveCartIdentity } from '../lib/api';
@@ -82,7 +81,6 @@ const AuthPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian font-body text-cream">
-            <SEOHead title="Sign In | Glockery Home Centre" noIndex />
             <header className="flex h-16 items-center justify-between border-b border-line px-5 sm:px-8">
                 <Link to="/" className="text-base font-bold tracking-[0.18em]">GLOCKERY</Link>
                 <Link to="/" className="text-sm text-cream/65 hover:text-cream">Return to shop</Link>

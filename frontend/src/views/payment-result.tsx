@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useHistory, useLocation } from '../lib/router';
 import Header from '../components/Header';
-import SEOHead from '../components/SEOHead';
 import StoreFooter from '../components/StoreFooter';
 import { IconAlert, IconRefresh } from '../components/Icons';
 import { useCart } from '../contexts/CartContext';
@@ -124,7 +123,6 @@ export const PaymentResultPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
-            <SEOHead title="Payment status | Glockery" noIndex />
             <Header />
             <main id="main-content" className="mx-auto w-full max-w-2xl flex-1 px-4 py-12 sm:px-8 lg:py-16">
                 {status === 'checking' ? (

@@ -5,6 +5,7 @@ export interface Category {
     description?: string | null;
     isPublished: boolean;
     sortOrder: number;
+    updatedAt?: string;
 }
 
 export interface ProductVariant {
@@ -53,6 +54,7 @@ export interface Product {
     images: ProductImage[];
     videos: ProductVideo[];
     createdAt?: string;
+    updatedAt?: string;
 }
 
 export interface PaginatedProducts {

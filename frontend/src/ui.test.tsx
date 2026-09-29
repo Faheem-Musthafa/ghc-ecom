@@ -13,7 +13,7 @@ import AdminLoginPage from './views/admin-login';
 import AuthPage from './views/auth';
 import CartPage from './views/cart';
 import ProductDetailPage from './views/product';
-import { serializeJsonLd } from './components/SEOHead';
+import { serializeJsonLd } from './lib/structured-data';
 import { saveSession } from './lib/api';
 import { catalogueCsvHeaders } from './lib/catalogue-csv';
 import { Product } from './types';
