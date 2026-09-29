@@ -27,7 +27,6 @@
     "test:load:docker": "bash scripts/run-load-test-docker.sh",
     "test:dast": "bash scripts/run-zap-api-scan.sh",
     "test:restore": "ts-node scripts/verify-restored-database.ts",
-    "test:staging:razorpay": "ts-node scripts/verify-razorpay-staging.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",

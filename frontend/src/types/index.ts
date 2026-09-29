@@ -153,33 +153,16 @@ export interface CheckoutQuote {
     expiresAt: string;
 }
 
-export interface PaymentIntent {
-    keyId: string;
-    razorpayOrderId: string;
+/** HDFC SmartGateway intent: the browser navigates to the hosted `paymentUrl`. */
+export interface HdfcPaymentIntent {
+    provider: 'hdfc';
     orderId: string;
     orderNumber: string;
+    /** Echoed back by SmartGateway as `order_id` on /checkout/result. */
+    hdfcOrderId: string;
     amount: number;
     currency: string;
-    checkout: {
-        items: CartItem[];
-        shippingAddress: ShippingAddressInput & { email?: string };
-    };
-}
-
-export type PaymentProvider = 'RAZORPAY' | 'FSS';
-
-/** Redirect-flow intent: the browser posts `gateway.fields` to `gateway.url`. */
-export interface FssPaymentIntent {
-    provider: 'fss';
-    orderId: string;
-    orderNumber: string;
-    amount: number;
-    currency: string;
-    gateway: {
-        url: string;
-        method: 'POST';
-        fields: Record<string, string>;
-    };
+    paymentUrl: string;
 }
 
 export interface OrderRefund {
@@ -194,9 +177,7 @@ export interface OrderRefund {
 
 export interface OrderPayment {
     id: string;
-    provider?: PaymentProvider;
-    razorpayPaymentId?: string | null;
-    fssTransactionId?: string | null;
+    hdfcTransactionId?: string | null;
     status: string;
     amountPaise: number;
     currency: string;
@@ -217,9 +198,7 @@ export interface Order {
     shippingPaise: number;
     taxPaise: number;
     totalPaise: number;
-    paymentProvider?: PaymentProvider;
-    razorpayOrderId?: string | null;
-    fssTrackId?: string | null;
+    hdfcOrderId?: string | null;
     confirmedAt?: string | null;
     createdAt: string;
     updatedAt: string;

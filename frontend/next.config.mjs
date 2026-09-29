@@ -21,34 +21,21 @@ const developmentScriptPolicy = isDevelopment ? " 'unsafe-inline' 'unsafe-eval'"
 const imageSource = imageOrigin ? ` ${imageOrigin.origin}` : '';
 const isManagedPlatformBuild =
   process.env.VERCEL === '1' || Boolean(process.env.NEXT_ADAPTER_PATH);
-// Bank hosted payment pages (FSS redirect flow) receive a browser form POST, so their
-// origins must be allow-listed for form-action. Comma-separated HTTPS origins.
-const paymentFormActionOrigins = (process.env.PAYMENT_FORM_ACTION_ORIGINS || '')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean)
-  .map((value) => {
-    const origin = new URL(value);
-    if (origin.protocol !== 'https:') {
-      throw new Error('PAYMENT_FORM_ACTION_ORIGINS must contain HTTPS origins only');
-    }
-    return origin.origin;
-  });
-const formActionSources = ["'self'", ...paymentFormActionOrigins].join(' ');
-
+// HDFC SmartGateway runs on its own hosted page reached by top-level navigation,
+// so checkout needs no third-party script, frame, connect or form-action origin.
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  `form-action ${formActionSources}`,
-  `script-src 'self'${developmentScriptPolicy} https://checkout.razorpay.com`,
+  "form-action 'self'",
+  `script-src 'self'${developmentScriptPolicy}`,
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
   `img-src 'self' data: blob:${imageSource}`,
   `media-src 'self'${imageSource}`,
-  "connect-src 'self' https://*.razorpay.com https://*.razorpay.in",
-  "frame-src https://www.instagram.com https://*.razorpay.com https://*.razorpay.in",
+  "connect-src 'self'",
+  'frame-src https://www.instagram.com',
 ].join('; ');
 
 /** @type {import('next').NextConfig} */
@@ -56,7 +43,16 @@ const nextConfig = {
   turbopack: {
     root: fileURLToPath(new URL('..', import.meta.url)),
   },
-  allowedDevOrigins: ['127.0.0.1', 'localhost'],
+  // Extra dev hosts (comma-separated), e.g. an HTTPS tunnel used to test the HDFC
+  // SmartGateway return URL and webhooks locally.
+  allowedDevOrigins: [
+    '127.0.0.1',
+    'localhost',
+    ...(process.env.ALLOWED_DEV_ORIGINS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ],
   // Vercel's Next.js adapter owns output tracing and deployment packaging.
   // Keep standalone output only for the Docker/self-hosted build.
   ...(!isManagedPlatformBuild && { output: 'standalone' }),

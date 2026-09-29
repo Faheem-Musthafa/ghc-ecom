@@ -8,11 +8,7 @@ import { SessionCookieService } from './session-cookie.service';
 type ParsedCookieRequest = Request & { cookies?: Record<string, string> };
 
 // Provider callbacks are posted cross-site and authenticate themselves.
-const CSRF_EXEMPT_PATH_SUFFIXES = [
-  '/webhooks/razorpay',
-  '/payments/fss/response',
-  '/payments/fss/error',
-];
+const CSRF_EXEMPT_PATH_SUFFIXES = ['/webhooks/hdfc'];
 
 function isProviderCallback(request: Request): boolean {
   const path = request.path || request.originalUrl.split('?')[0];

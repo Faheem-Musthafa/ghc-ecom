@@ -10,9 +10,7 @@ const orderInclude = {
   payments: {
     select: {
       id: true,
-      provider: true,
-      razorpayPaymentId: true,
-      fssTransactionId: true,
+      hdfcTransactionId: true,
       status: true,
       amountPaise: true,
       currency: true,
@@ -144,8 +142,7 @@ export class OrdersService {
           ? {
               OR: [
                 { orderNumber: { contains: input.search, mode: 'insensitive' } },
-                { razorpayOrderId: { contains: input.search, mode: 'insensitive' } },
-                { fssTrackId: { contains: input.search, mode: 'insensitive' } },
+                { hdfcOrderId: { contains: input.search, mode: 'insensitive' } },
                 {
                   addressSnapshot: { path: ['email'], string_contains: input.search.toLowerCase() },
                 },

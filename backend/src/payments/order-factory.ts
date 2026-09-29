@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
-import { CheckoutQuote, PaymentProvider, Prisma, QuoteStatus } from '@prisma/client';
+import { CheckoutQuote, Prisma, QuoteStatus } from '@prisma/client';
 
 export function newOrderNumber(): string {
   return `GHC-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;
@@ -15,10 +15,7 @@ export function requireActiveQuote(quote: CheckoutQuote): void {
   }
 }
 
-export function orderCreateData(
-  quote: CheckoutQuote,
-  paymentProvider: PaymentProvider,
-): Prisma.OrderUncheckedCreateInput {
+export function orderCreateData(quote: CheckoutQuote): Prisma.OrderUncheckedCreateInput {
   return {
     orderNumber: newOrderNumber(),
     quoteId: quote.id,
@@ -26,7 +23,6 @@ export function orderCreateData(
     userId: quote.userId,
     couponId: quote.couponId,
     currency: quote.currency,
-    paymentProvider,
     itemsSnapshot: toInputJson(quote.itemsSnapshot),
     addressSnapshot: toInputJson(quote.addressSnapshot),
     subtotalPaise: quote.subtotalPaise,

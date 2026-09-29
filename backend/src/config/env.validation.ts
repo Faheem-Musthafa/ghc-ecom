@@ -88,38 +88,32 @@ const environmentSchema = z
     SUPABASE_URL: z.string().url().transform(normalizeSupabaseUrl),
     SUPABASE_ANON_KEY: z.string().min(1),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-    RAZORPAY_KEY_ID: z.string().min(1),
-    RAZORPAY_KEY_SECRET: z.string().min(1),
-    RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
     ALLOW_TEST_PAYMENTS_IN_PRODUCTION: z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
-    // FSS bank payment gateway (redirect flow). Only validated when enabled.
-    FSS_ENABLED: z
+    // HDFC SmartGateway (hosted payment page). Only validated when enabled.
+    HDFC_ENABLED: z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
-    FSS_MERCHANT_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
-    FSS_MERCHANT_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
-    FSS_RESOURCE_KEY: z.preprocess(
+    HDFC_BASE_URL: z
+      .preprocess(emptyStringToUndefined, z.string().url().optional())
+      .transform((value) => value ?? 'https://smartgateway.hdfcuat.bank.in'),
+    HDFC_MERCHANT_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    HDFC_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    // Sandbox uses "hdfcmaster"; production uses the merchant id (the default).
+    HDFC_PAYMENT_PAGE_CLIENT_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    HDFC_RESELLER_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+    HDFC_RETURN_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    HDFC_WEBHOOK_USERNAME: z.preprocess(
       emptyStringToUndefined,
       z
         .string()
-        .refine((value) => [16, 24, 32].includes(Buffer.byteLength(value, 'utf8')), {
-          message: 'must be a 16, 24 or 32 byte AES key',
-        })
+        .regex(/^[A-Za-z0-9]+$/, 'must be alphanumeric (SmartGateway rejects special characters)')
         .optional(),
     ),
-    FSS_PAYMENT_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
-    FSS_RESPONSE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
-    FSS_ERROR_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
-    FSS_RESPONSE_MODE: z.enum(['redirect-body', 'http-redirect']).default('redirect-body'),
-    FSS_CURRENCY_CODE: z
-      .string()
-      .regex(/^\d{3}$/, 'must be a 3-digit ISO 4217 numeric code')
-      .default('356'),
-    FSS_LANGUAGE_ID: z.string().min(1).default('USA'),
+    HDFC_WEBHOOK_PASSWORD: z.preprocess(emptyStringToUndefined, z.string().min(16).optional()),
     EMAIL_FROM: z.string().min(1).refine(isEmailFrom, 'must be an email or Name <email>'),
     RESEND_API_KEY: z.string().min(1),
     NOTIFICATION_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
@@ -150,31 +144,34 @@ const environmentSchema = z
         message: 'must be a production secret',
       });
     }
-    if (environment.FSS_ENABLED) {
+    if (environment.HDFC_ENABLED) {
       for (const key of [
-        'FSS_MERCHANT_ID',
-        'FSS_MERCHANT_PASSWORD',
-        'FSS_RESOURCE_KEY',
-        'FSS_PAYMENT_URL',
+        'HDFC_MERCHANT_ID',
+        'HDFC_API_KEY',
+        'HDFC_WEBHOOK_USERNAME',
+        'HDFC_WEBHOOK_PASSWORD',
       ] as const) {
         if (!environment[key]) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path: [key],
-            message: 'is required when FSS_ENABLED=true',
+            message: 'is required when HDFC_ENABLED=true',
           });
         }
       }
-      if (
-        environment.NODE_ENV === 'production' &&
-        environment.FSS_PAYMENT_URL &&
-        new URL(environment.FSS_PAYMENT_URL).protocol !== 'https:'
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['FSS_PAYMENT_URL'],
-          message: 'must use HTTPS in production',
-        });
+      for (const key of ['HDFC_BASE_URL', 'HDFC_RETURN_URL'] as const) {
+        const value = environment[key];
+        if (
+          environment.NODE_ENV === 'production' &&
+          value &&
+          new URL(value).protocol !== 'https:'
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: 'must use HTTPS in production',
+          });
+        }
       }
     }
     if (environment.NODE_ENV === 'production') {
@@ -211,22 +208,24 @@ const environmentSchema = z
           message: 'must use a public HTTPS URL in production',
         });
       }
+      if (!environment.HDFC_ENABLED) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['HDFC_ENABLED'],
+          message: 'must be true in production (HDFC SmartGateway is the only payment gateway)',
+        });
+      }
       if (
-        environment.RAZORPAY_KEY_ID.startsWith('rzp_test_') &&
+        new URL(environment.HDFC_BASE_URL).hostname.includes('uat') &&
         !environment.ALLOW_TEST_PAYMENTS_IN_PRODUCTION
       ) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ['RAZORPAY_KEY_ID'],
-          message: 'test keys require ALLOW_TEST_PAYMENTS_IN_PRODUCTION=true',
+          path: ['HDFC_BASE_URL'],
+          message: 'the sandbox gateway requires ALLOW_TEST_PAYMENTS_IN_PRODUCTION=true',
         });
       }
-      for (const key of [
-        'SUPABASE_SERVICE_ROLE_KEY',
-        'RAZORPAY_KEY_SECRET',
-        'RAZORPAY_WEBHOOK_SECRET',
-        'RESEND_API_KEY',
-      ] as const) {
+      for (const key of ['SUPABASE_SERVICE_ROLE_KEY', 'RESEND_API_KEY'] as const) {
         if (environment[key].toLowerCase().includes('replace-with')) {
           context.addIssue({
             code: z.ZodIssueCode.custom,

@@ -16,8 +16,13 @@ const WishlistPage = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        api.products(new URLSearchParams({ limit: '100' }))
-            .then((result) => setProducts(result.items.filter((product) => wishlistIds.includes(product.id))))
+        if (!wishlistIds.length) {
+            setProducts([]);
+            setLoading(false);
+            return;
+        }
+        api.productsByIds(wishlistIds)
+            .then(setProducts)
             .catch(() => setProducts([]))
             .finally(() => setLoading(false));
     }, [wishlistIds]);

@@ -1,30 +1,25 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { CartModule } from '../cart/cart.module';
-import { FssController } from './fss/fss.controller';
-import { FssGatewayService } from './fss/fss-gateway.service';
-import { FssPaymentsService } from './fss/fss-payments.service';
+import { HdfcController } from './hdfc/hdfc.controller';
+import { HdfcGatewayService } from './hdfc/hdfc-gateway.service';
+import { HdfcPaymentsService } from './hdfc/hdfc-payments.service';
 import { PaymentAdminController } from './payment-admin.controller';
 import { PaymentQueueService } from './payment-queue.service';
-import { PaymentsController } from './payments.controller';
-import { PaymentsService } from './payments.service';
-import { RazorpayService } from './razorpay.service';
 import { WebhookProcessorService } from './webhook-processor.service';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 
 @Module({
   imports: [AuthModule, CartModule],
-  controllers: [PaymentsController, WebhooksController, PaymentAdminController, FssController],
+  controllers: [HdfcController, WebhooksController, PaymentAdminController],
   providers: [
-    RazorpayService,
-    FssGatewayService,
-    FssPaymentsService,
-    PaymentsService,
+    HdfcGatewayService,
+    HdfcPaymentsService,
     WebhookProcessorService,
     PaymentQueueService,
     WebhooksService,
   ],
-  exports: [PaymentsService, RazorpayService, FssPaymentsService],
+  exports: [HdfcGatewayService, HdfcPaymentsService],
 })
 export class PaymentsModule {}

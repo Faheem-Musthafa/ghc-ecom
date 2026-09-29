@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const originalVercel = process.env.VERCEL;
 const originalNextAdapterPath = process.env.NEXT_ADAPTER_PATH;
-const originalFormActionOrigins = process.env.PAYMENT_FORM_ACTION_ORIGINS;
 
 afterEach(() => {
   if (originalVercel === undefined) {
@@ -17,11 +16,6 @@ afterEach(() => {
   } else {
     process.env.NEXT_ADAPTER_PATH = originalNextAdapterPath;
   }
-  if (originalFormActionOrigins === undefined) {
-    delete process.env.PAYMENT_FORM_ACTION_ORIGINS;
-  } else {
-    process.env.PAYMENT_FORM_ACTION_ORIGINS = originalFormActionOrigins;
-  }
   vi.resetModules();
 });
 
@@ -31,28 +25,13 @@ const cspFor = async () => {
   return route.headers.find((header) => header.key === 'Content-Security-Policy')!.value;
 };
 
-describe('payment gateway form-action policy', () => {
-  it('only allows same-origin form posts by default', async () => {
-    delete process.env.PAYMENT_FORM_ACTION_ORIGINS;
-    vi.resetModules();
+describe('payment content security policy', () => {
+  it('needs no third-party payment origins for the HDFC hosted payment page', async () => {
+    const csp = await cspFor();
 
-    expect(await cspFor()).toContain("form-action 'self';");
-  });
-
-  it('allow-lists configured bank gateway origins', async () => {
-    process.env.PAYMENT_FORM_ACTION_ORIGINS = 'https://test-gateway.example.bank/PGServlet, https://pay.example.bank';
-    vi.resetModules();
-
-    expect(await cspFor()).toContain(
-      "form-action 'self' https://test-gateway.example.bank https://pay.example.bank;",
-    );
-  });
-
-  it('rejects non-HTTPS gateway origins', async () => {
-    process.env.PAYMENT_FORM_ACTION_ORIGINS = 'http://insecure.example.bank';
-    vi.resetModules();
-
-    await expect(import('../next.config.mjs')).rejects.toThrow('HTTPS origins only');
+    expect(csp).toContain("form-action 'self';");
+    expect(csp).toContain("connect-src 'self';");
+    expect(csp).not.toMatch(/razorpay|smartgateway/i);
   });
 });
 

@@ -368,7 +368,7 @@ const OrdersTable = ({
                                 {payment ? (
                                     <>
                                         <p className="font-medium text-cream">{titleCase(payment.status)}</p>
-                                        <p className="mt-0.5 text-cream/45">{payment.method ? titleCase(payment.method) : 'Razorpay'}</p>
+                                        <p className="mt-0.5 text-cream/45">{payment.method ? titleCase(payment.method) : 'HDFC SmartGateway'}</p>
                                     </>
                                 ) : (
                                     <span className="text-cream/45">Awaiting payment</span>
@@ -646,13 +646,13 @@ const OrdersAdmin = () => {
                                         <span className="font-display text-base text-gold-300">{rupees(inspectingOrder.totalPaise)}</span>
                                     </p>
                                     <p>
-                                        <strong className="text-cream">Razorpay order:</strong> {inspectingOrder.razorpayOrderId || 'Not created'}
+                                        <strong className="text-cream">HDFC order:</strong> {inspectingOrder.hdfcOrderId || 'Legacy (pre-HDFC) order'}
                                     </p>
                                     {inspectingOrder.payments?.map((payment) => (
                                         <div key={payment.id} className="border-t border-gold-500/10 pt-2">
                                             <p><strong className="text-cream">Payment:</strong> {titleCase(payment.status)} · {rupees(payment.amountPaise)}</p>
                                             <p><strong className="text-cream">Method:</strong> {payment.method ? titleCase(payment.method) : 'Not reported'}</p>
-                                            <p><strong className="text-cream">Payment ID:</strong> {payment.razorpayPaymentId || 'Awaiting Razorpay confirmation'}</p>
+                                            <p><strong className="text-cream">Payment ID:</strong> {payment.hdfcTransactionId || 'Not reported'}</p>
                                             {payment.capturedAt && <p><strong className="text-cream">Captured:</strong> {new Date(payment.capturedAt).toLocaleString('en-IN')}</p>}
                                             {payment.refunds.length > 0 && <p><strong className="text-cream">Refunds:</strong> {payment.refunds.map((refund) => `${titleCase(refund.status)} ${rupees(refund.amountPaise)}`).join(', ')}</p>}
                                         </div>
@@ -951,6 +951,7 @@ const CatalogueAdmin = () => {
 
     const [openProductModal, setOpenProductModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [openingProductId, setOpeningProductId] = useState<string | null>(null);
     const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([createVariantDraft()]);
     const [imageAssignments, setImageAssignments] = useState<Record<string, string[]>>({});
 
@@ -995,6 +996,18 @@ const CatalogueAdmin = () => {
         setImageAssignments(Object.fromEntries((product?.images || []).map((image) => [image.id, productImageVariantIds(image)])));
         setError('');
         setOpenProductModal(true);
+    };
+
+    // The list holds card images only, so fetch every image and video before editing.
+    const editProduct = async (productId: string) => {
+        setOpeningProductId(productId);
+        try {
+            openProductEditor(await api.adminProduct(productId));
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Unable to open product.');
+        } finally {
+            setOpeningProductId(null);
+        }
     };
 
     const updateVariantDraft = (key: string, update: Partial<VariantDraft>) => {
@@ -1684,9 +1697,8 @@ const CatalogueAdmin = () => {
                                         <td data-label="Actions" className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <button
-                                                    onClick={() => {
-                                                        openProductEditor(product);
-                                                    }}
+                                                    onClick={() => void editProduct(product.id)}
+                                                    disabled={openingProductId === product.id}
                                                     className="p-2 text-cream/60 hover:text-gold-300 border border-gold-500/20 rounded-sm bg-obsidian"
                                                     title="Edit Product"
                                                 >
@@ -2288,14 +2300,15 @@ const InventoryAdmin = () => {
     const warehouseDialogRef = useDialog<HTMLFormElement>(openWarehouseModal, () => setOpenWarehouseModal(false));
     const stockDialogRef = useDialog<HTMLFormElement>(Boolean(editingLevel), () => setEditingLevel(null));
 
+    // Products only add names and thumbnails, so stock levels render without them.
     const load = () =>
-        Promise.all([api.inventory(), api.adminProducts(), api.warehouses()])
-            .then(([rows, items, warehouseRows]) => {
+        Promise.all([
+            Promise.all([api.inventory(), api.warehouses()]).then(([rows, warehouseRows]) => {
                 setLevels(rows);
-                setProducts(items);
                 setWarehouses(warehouseRows);
-            })
-            .catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load inventory.'));
+            }),
+            api.adminProducts().then(setProducts),
+        ]).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load inventory.'));
 
     useEffect(() => {
         void load();
