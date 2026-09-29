@@ -3,7 +3,6 @@
 import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, Redirect } from '../lib/router';
 import { IconArrowRight, IconRefresh, IconShieldCheck } from '../components/Icons';
-import SEOHead from '../components/SEOHead';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { useDialog } from '../hooks/useDialog';
@@ -117,7 +116,6 @@ const CheckoutPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian text-cream">
-            <SEOHead title="Secure Checkout | Glockery" noIndex />
             <header className="flex h-20 items-center justify-between gap-4 border-b border-line px-4 sm:px-10">
                 <Link to="/" className="shrink-0 text-sm font-bold tracking-[0.18em] text-cream sm:text-lg">GLOCKERY</Link>
                 <span className="flex items-center gap-2 text-right text-[9px] uppercase tracking-[0.12em] text-cream/35 sm:text-[10px] sm:tracking-[0.18em]">
@@ -231,7 +229,7 @@ const CheckoutPage = () => {
                     <div className="mt-4 divide-y divide-gold-500/15">
                         {cart?.items.map((item) => (
                             <article key={item.id} className="grid grid-cols-[60px_1fr_auto] items-center gap-3 py-3">
-                                <img src={item.imageUrl || fallbackImage} alt="" className="aspect-square object-cover rounded-sm border border-gold-500/20 bg-obsidian" />
+                                <img loading="lazy" decoding="async" src={item.imageUrl || fallbackImage} alt="" className="aspect-square w-full object-contain rounded-sm border border-gold-500/20 bg-obsidian" />
                                 <div>
                                     <h4 className="text-xs font-medium text-cream">{item.productName}</h4>
                                     <p className="text-[10px] text-cream/40">{item.quantity} × {item.optionLabel || item.color || item.sku}</p>

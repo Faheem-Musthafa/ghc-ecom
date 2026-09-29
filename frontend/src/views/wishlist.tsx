@@ -5,7 +5,6 @@ import { Link } from '../lib/router';
 import Header from '../components/Header';
 import StoreFooter from '../components/StoreFooter';
 import ProductCard from '../components/ProductCard';
-import SEOHead from '../components/SEOHead';
 import { useWishlist } from '../contexts/WishlistContext';
 import { api } from '../lib/api';
 import { Product } from '../types';
@@ -29,7 +28,6 @@ const WishlistPage = () => {
 
     return (
         <div className="min-h-screen bg-obsidian text-cream flex flex-col justify-between font-body">
-            <SEOHead title="Wishlist | Glockery" noIndex />
             <Header />
             <main id="main-content" className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-8 lg:px-12 lg:py-16">
                 <header className="mb-12 border-y border-line py-9 sm:py-11">
