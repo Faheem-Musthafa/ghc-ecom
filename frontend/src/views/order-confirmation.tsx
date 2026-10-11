@@ -7,7 +7,7 @@ import StoreFooter from '../components/StoreFooter';
 import { IconCheckCircle, IconDownload } from '../components/Icons';
 import { api } from '../lib/api';
 import { rupees, shortDate } from '../lib/commerce';
-import { openTrustedUrl } from '../lib/navigation';
+import { openTrustedUrlFrom } from '../lib/navigation';
 import { Order } from '../types';
 
 export const OrderConfirmationPage = () => {
@@ -27,8 +27,7 @@ export const OrderConfirmationPage = () => {
     const handleDownloadInvoice = async () => {
         if (!order) return;
         try {
-            const res = await api.invoice(order.id);
-            if (res?.url && !openTrustedUrl(res.url)) throw new Error('Invoice URL was rejected');
+            await openTrustedUrlFrom(() => api.invoice(order.id).then((res) => res?.url));
         } catch {
             alert('Tax invoice is generating. Please check again shortly.');
         }

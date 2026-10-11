@@ -11,14 +11,17 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { AppRole, UserRole } from '@prisma/client';
 import { Request } from 'express';
-import { AdminService, AuditLogView, CreatedStaffUser, StaffUser } from './admin.service';
+import { AdminService, AuditLogPageView, CreatedStaffUser, StaffUser } from './admin.service';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
+import { GrantStaffAccessDto } from './dto/grant-staff-access.dto';
+import { ListAuditLogsDto } from './dto/list-audit-logs.dto';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -39,6 +42,20 @@ export class AdminController {
     @Req() request: Request,
   ): Promise<CreatedStaffUser> {
     return this.adminService.createStaffUser(actor.id, input, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  /** Gives staff access to an account that already exists. */
+  @Post('users/grant')
+  grantStaffAccess(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() input: GrantStaffAccessDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<StaffUser> {
+    return this.adminService.grantStaffAccess(actor.id, input, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });
@@ -79,7 +96,7 @@ export class AdminController {
   }
 
   @Get('audit-logs')
-  listAuditLogs(): Promise<AuditLogView[]> {
-    return this.adminService.listAuditLogs();
+  listAuditLogs(@Query() query: ListAuditLogsDto): Promise<AuditLogPageView> {
+    return this.adminService.listAuditLogs(query);
   }
 }

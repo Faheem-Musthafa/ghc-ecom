@@ -23,10 +23,11 @@ describe('OrdersService', () => {
       findUniqueOrThrow: jest.Mock;
     };
     $executeRaw: jest.Mock;
+    $queryRaw: jest.Mock;
   };
   let audit: { record: jest.Mock };
-  let invoices: { signedUrl: jest.Mock };
-  let carts: { requireOwnedCart: jest.Mock };
+  let invoices: { signedUrl: jest.Mock; ensure: jest.Mock };
+  let carts: { assertCartOwner: jest.Mock };
   let service: OrdersService;
 
   beforeEach(() => {
@@ -40,10 +41,14 @@ describe('OrdersService', () => {
           .mockResolvedValue({ ...order, status: OrderStatus.PROCESSING }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
+      $queryRaw: jest.fn().mockResolvedValue([{ id: order.id, item_count: 2 }]),
     };
     audit = { record: jest.fn().mockResolvedValue({}) };
-    invoices = { signedUrl: jest.fn().mockResolvedValue('https://signed.example/invoice') };
-    carts = { requireOwnedCart: jest.fn().mockResolvedValue({ id: 'guest-cart' }) };
+    invoices = {
+      signedUrl: jest.fn().mockResolvedValue('https://signed.example/invoice'),
+      ensure: jest.fn().mockResolvedValue({ storagePath: 'invoices/generated.pdf' }),
+    };
+    carts = { assertCartOwner: jest.fn().mockResolvedValue(undefined) };
     service = new OrdersService(
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
@@ -54,17 +59,17 @@ describe('OrdersService', () => {
 
   it('allows a guest to retrieve only an order belonging to their cart token', async () => {
     const guestOrder = { ...order, userId: null, cartId: 'guest-cart' };
-    prisma.order.findUnique.mockResolvedValue(guestOrder);
+    const cart = { userId: null, guestTokenHash: 'hash', status: 'ACTIVE', expiresAt: new Date() };
+    prisma.order.findUnique.mockResolvedValue({
+      ...guestOrder,
+      quote: { cartId: 'guest-cart', cart },
+    });
 
-    await expect(service.getGuest(guestOrder.id, 'guest-token')).resolves.toBe(guestOrder);
-    expect(carts.requireOwnedCart).toHaveBeenCalledWith(
-      'guest-cart',
-      undefined,
-      'guest-token',
-      false,
-    );
+    // The cart owner columns are read with the order and never returned to the caller.
+    await expect(service.getGuest(guestOrder.id, 'guest-token')).resolves.toEqual(guestOrder);
+    expect(carts.assertCartOwner).toHaveBeenCalledWith(cart, undefined, 'guest-token');
 
-    carts.requireOwnedCart.mockRejectedValueOnce(new Error('Cart access denied'));
+    carts.assertCartOwner.mockRejectedValueOnce(new Error('Cart access denied'));
     await expect(service.getGuest(guestOrder.id, 'wrong-token')).rejects.toThrow(
       'Cart access denied',
     );
@@ -111,11 +116,87 @@ describe('OrdersService', () => {
     expect(audit.record).not.toHaveBeenCalled();
   });
 
+  it('returns the full admin detail after a transition', async () => {
+    await service.transition('admin-id', order.id, OrderStatus.PROCESSING, {});
+
+    expect(prisma.order.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: order.id },
+        include: expect.objectContaining({
+          payments: expect.anything(),
+          shipments: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it('generates a missing invoice on demand for a paid order only', async () => {
+    prisma.order.findUnique.mockResolvedValueOnce({ ...order, confirmedAt: new Date() });
+    await expect(service.adminInvoiceUrl(order.id)).resolves.toEqual({
+      url: 'https://signed.example/invoice',
+      expiresIn: 300,
+    });
+    expect(invoices.ensure).toHaveBeenCalledWith(expect.objectContaining({ id: order.id }));
+    expect(invoices.signedUrl).toHaveBeenCalledWith('invoices/generated.pdf');
+
+    invoices.ensure.mockClear();
+    prisma.order.findUnique.mockResolvedValueOnce({ ...order, confirmedAt: null });
+    await expect(service.adminInvoiceUrl(order.id)).rejects.toBeInstanceOf(NotFoundException);
+    expect(invoices.ensure).not.toHaveBeenCalled();
+  });
+
+  it('lists slim admin rows with a database item count', async () => {
+    const rows = await service.listAdmin({ limit: 25, offset: 0 });
+
+    expect(prisma.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.not.objectContaining({ itemsSnapshot: true }) }),
+    );
+    expect(rows[0]).toEqual(expect.objectContaining({ id: order.id, itemCount: 2 }));
+  });
+
+  it('builds daily IST revenue as captured minus processed refunds', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      {
+        day: '2026-10-10',
+        captured_paise: BigInt(50_000),
+        captured_payments: BigInt(2),
+        refunded_paise: BigInt(10_000),
+        processed_refunds: BigInt(1),
+      },
+      {
+        day: '2026-10-11',
+        captured_paise: BigInt(0),
+        captured_payments: BigInt(0),
+        refunded_paise: BigInt(2_000),
+        processed_refunds: BigInt(1),
+      },
+    ]);
+
+    const report = await service.revenue(2);
+
+    expect(report.timezone).toBe('Asia/Kolkata');
+    expect(report.days[0]).toEqual({
+      date: '2026-10-10',
+      capturedPaise: 50_000,
+      refundedPaise: 10_000,
+      netPaise: 40_000,
+      capturedPayments: 2,
+      processedRefunds: 1,
+    });
+    expect(report.totals).toEqual({
+      capturedPaise: 50_000,
+      refundedPaise: 12_000,
+      netPaise: 38_000,
+      capturedPayments: 2,
+      processedRefunds: 2,
+    });
+  });
+
   it('applies admin status, customer, date, and search filters', async () => {
     await service.listAdmin({
       status: OrderStatus.CONFIRMED,
       userId: order.userId,
-      search: 'GHC',
+      search: '  GHC ',
       from: '2026-07-01T00:00:00.000Z',
       to: '2026-07-31T23:59:59.000Z',
       limit: 20,
@@ -131,7 +212,16 @@ describe('OrdersService', () => {
             gte: new Date('2026-07-01T00:00:00.000Z'),
             lte: new Date('2026-07-31T23:59:59.000Z'),
           },
-          OR: expect.any(Array),
+          OR: expect.arrayContaining([
+            { orderNumber: { contains: 'GHC', mode: 'insensitive' } },
+            {
+              addressSnapshot: {
+                path: ['recipientName'],
+                string_contains: 'GHC',
+                mode: 'insensitive',
+              },
+            },
+          ]),
         }),
         skip: 40,
         take: 20,

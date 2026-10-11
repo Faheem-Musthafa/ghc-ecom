@@ -21,7 +21,7 @@ import { useWishlist } from '../contexts/WishlistContext';
 import { useDialog } from '../hooks/useDialog';
 import { api } from '../lib/api';
 import { fallbackImage, rupees, shortDate, titleCase } from '../lib/commerce';
-import { openTrustedUrl } from '../lib/navigation';
+import { openTrustedUrlFrom } from '../lib/navigation';
 import { Address, Order, Product, Profile } from '../types';
 
 const panel = 'border border-gold-500/20 bg-carbon p-6 rounded-sm shadow-md';
@@ -41,8 +41,7 @@ const OrdersView = () => {
 
     const handleInvoiceDownload = async (orderId: string) => {
         try {
-            const res = await api.invoice(orderId);
-            if (res?.url && !openTrustedUrl(res.url)) throw new Error('Invoice URL was rejected');
+            await openTrustedUrlFrom(() => api.invoice(orderId).then((res) => res?.url));
         } catch {
             alert('Tax invoice is being generated. Please check back shortly.');
         }

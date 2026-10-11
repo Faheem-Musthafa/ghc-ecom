@@ -1,4 +1,6 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { AppRole } from '@prisma/client';
+import { AuthApiError } from '@supabase/supabase-js';
 import { AdminService } from './admin.service';
 
 describe('AdminService', () => {
@@ -14,21 +16,170 @@ describe('AdminService', () => {
       userAgent: null,
       createdAt: new Date(),
     };
-    const audit = { list: jest.fn().mockResolvedValue([auditLog]) };
+    const audit = {
+      list: jest.fn().mockResolvedValue({
+        items: [
+          auditLog,
+          { ...auditLog, id: 'audit-2' },
+          { ...auditLog, id: 'audit-3', actorId: null },
+        ],
+        nextCursor: 'audit-3',
+      }),
+    };
     const supabase = {
-      listAdminUsers: jest.fn().mockResolvedValue([
-        {
-          id: 'admin-id',
-          email: 'admin@example.com',
-          user_metadata: { full_name: 'Faheem' },
-        },
-      ]),
+      getAdminUserById: jest.fn().mockResolvedValue({
+        id: 'admin-id',
+        email: 'admin@example.com',
+        user_metadata: { full_name: 'Faheem' },
+      }),
     };
     const service = new AdminService({} as never, audit as never, supabase as never);
 
-    await expect(service.listAuditLogs()).resolves.toEqual([
-      expect.objectContaining({ actorLabel: 'Faheem · admin@example.com' }),
+    await expect(service.listAuditLogs({ limit: 3, entityType: 'product' })).resolves.toEqual({
+      nextCursor: 'audit-3',
+      items: [
+        expect.objectContaining({ actorLabel: 'Faheem · admin@example.com' }),
+        expect.objectContaining({ actorLabel: 'Faheem · admin@example.com' }),
+        expect.objectContaining({ actorLabel: 'System' }),
+      ],
+    });
+    expect(audit.list).toHaveBeenCalledWith({ limit: 3, entityType: 'product' });
+    // Only the distinct actor is looked up, never the whole account list.
+    expect(supabase.getAdminUserById).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists staff from role assignments and looks up only those accounts', async () => {
+    const prisma = {
+      userRole: {
+        findMany: jest.fn().mockResolvedValue([
+          { userId: 'staff-a', role: AppRole.SUPPORT_AGENT },
+          { userId: 'staff-b', role: AppRole.ADMIN },
+          { userId: 'staff-a', role: AppRole.CATALOGUE_MANAGER },
+          { userId: 'deleted', role: AppRole.WAREHOUSE_MANAGER },
+        ]),
+      },
+    };
+    const accounts: Record<string, unknown> = {
+      'staff-a': {
+        id: 'staff-a',
+        email: 'a@example.com',
+        user_metadata: { full_name: 'Asha' },
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      'staff-b': {
+        id: 'staff-b',
+        email: 'b@example.com',
+        user_metadata: {},
+        created_at: '2026-02-01T00:00:00.000Z',
+      },
+    };
+    const supabase = {
+      getAdminUserById: jest.fn(async (id: string) => accounts[id] ?? null),
+    };
+    const service = new AdminService(prisma as never, {} as never, supabase as never);
+
+    await expect(service.listStaffUsers()).resolves.toEqual([
+      expect.objectContaining({ id: 'staff-b', fullName: null, roles: [AppRole.ADMIN] }),
+      expect.objectContaining({
+        id: 'staff-a',
+        fullName: 'Asha',
+        roles: [AppRole.SUPPORT_AGENT, AppRole.CATALOGUE_MANAGER],
+      }),
     ]);
+    expect(prisma.userRole.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { role: { not: AppRole.CUSTOMER } } }),
+    );
+    expect(supabase.getAdminUserById).toHaveBeenCalledTimes(3);
+
+    await service.listStaffUsers();
+    expect(supabase.getAdminUserById).toHaveBeenCalledTimes(3);
+  });
+
+  it('answers 409 when a new staff email already has an account', async () => {
+    const supabase = {
+      createAdminUser: jest
+        .fn()
+        .mockRejectedValue(
+          new AuthApiError(
+            'A user with this email address has already been registered',
+            422,
+            'email_exists',
+          ),
+        ),
+      deleteAdminUser: jest.fn(),
+    };
+    const service = new AdminService({} as never, {} as never, supabase as never);
+
+    await expect(
+      service.createStaffUser(
+        'admin-id',
+        { email: 'taken@example.com', role: AppRole.SUPPORT_AGENT },
+        {},
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(supabase.deleteAdminUser).not.toHaveBeenCalled();
+  });
+
+  it('grants staff access to an existing account found by email', async () => {
+    const user = {
+      id: 'existing-id',
+      email: 'existing@example.com',
+      user_metadata: { full_name: 'Existing Person' },
+      created_at: '2026-03-01T00:00:00.000Z',
+    };
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'existing-id' }]),
+      userRole: {
+        upsert: jest.fn().mockResolvedValue({}),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([{ role: AppRole.WAREHOUSE_MANAGER }]),
+      },
+    };
+    const audit = { record: jest.fn().mockResolvedValue({}) };
+    const supabase = {
+      getAdminUserById: jest.fn().mockResolvedValue(user),
+      findAdminUserByEmail: jest.fn(),
+    };
+    const service = new AdminService(prisma as never, audit as never, supabase as never);
+
+    await expect(
+      service.grantStaffAccess(
+        'admin-id',
+        { email: ' Existing@Example.com ', role: AppRole.WAREHOUSE_MANAGER },
+        {},
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: 'existing-id', roles: [AppRole.WAREHOUSE_MANAGER] }),
+    );
+    expect(supabase.findAdminUserByEmail).not.toHaveBeenCalled();
+    expect(prisma.userRole.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'existing-id', role: AppRole.CUSTOMER },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'user.role.assigned',
+        metadata: {
+          role: AppRole.WAREHOUSE_MANAGER,
+          entityLabel: 'existing@example.com',
+          email: 'existing@example.com',
+        },
+      }),
+    );
+  });
+
+  it('falls back to the Auth API email search and reports a missing account', async () => {
+    const prisma = { $queryRaw: jest.fn().mockRejectedValue(new Error('permission denied')) };
+    const supabase = { findAdminUserByEmail: jest.fn().mockResolvedValue(null) };
+    const service = new AdminService(prisma as never, {} as never, supabase as never);
+
+    await expect(
+      service.grantStaffAccess(
+        'admin-id',
+        { email: 'nobody@example.com', role: AppRole.ADMIN },
+        {},
+      ),
+    ).rejects.toThrow(NotFoundException);
+    expect(supabase.findAdminUserByEmail).toHaveBeenCalledWith('nobody@example.com');
   });
 
   it('records actor, action, target, and role for an admin role assignment', async () => {
@@ -47,9 +198,9 @@ describe('AdminService', () => {
       record: jest.fn().mockResolvedValue({ id: 'audit-id' }),
     };
     const supabase = {
-      createAdminUser: jest.fn(),
-      deleteAdminUser: jest.fn(),
-      listAdminUsers: jest.fn(),
+      getAdminUserById: jest
+        .fn()
+        .mockResolvedValue({ id: 'target-id', email: 'target@example.com' }),
     };
     const service = new AdminService(prisma as never, audit as never, supabase as never);
 
@@ -65,7 +216,11 @@ describe('AdminService', () => {
       action: 'user.role.assigned',
       entityType: 'user',
       entityId: 'target-id',
-      metadata: { role: AppRole.SUPPORT_AGENT },
+      metadata: {
+        role: AppRole.SUPPORT_AGENT,
+        entityLabel: 'target@example.com',
+        email: 'target@example.com',
+      },
       ipAddress: '127.0.0.1',
       userAgent: 'test-agent',
     });
@@ -79,7 +234,13 @@ describe('AdminService', () => {
     };
     const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
     const redis = { delete: jest.fn().mockResolvedValue(1) };
-    const service = new AdminService(prisma as never, audit as never, {} as never, redis as never);
+    const supabase = { getAdminUserById: jest.fn().mockRejectedValue(new Error('offline')) };
+    const service = new AdminService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      redis as never,
+    );
 
     await service.removeRole('admin-id', 'staff-id', AppRole.SUPPORT_AGENT, {
       ipAddress: '127.0.0.1',
@@ -140,7 +301,8 @@ describe('AdminService', () => {
     };
     const prisma = { $transaction: jest.fn((callback) => callback(transaction)) };
     const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
-    const service = new AdminService(prisma as never, audit as never, {} as never);
+    const supabase = { getAdminUserById: jest.fn().mockResolvedValue(null) };
+    const service = new AdminService(prisma as never, audit as never, supabase as never);
 
     await service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {});
 
@@ -168,7 +330,6 @@ describe('AdminService', () => {
     const supabase = {
       createAdminUser: jest.fn().mockResolvedValue(user),
       deleteAdminUser: jest.fn(),
-      listAdminUsers: jest.fn(),
     };
     const service = new AdminService(prisma as never, audit as never, supabase as never);
 

@@ -1,10 +1,17 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Session, User } from '@supabase/supabase-js';
 import { AppRole } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { SupabaseService } from '../supabase/supabase.service';
+import { isTransientAuthError, SupabaseService } from '../supabase/supabase.service';
 import { RegisterDto } from './dto/register.dto';
 
 export interface AuthResult {
@@ -15,13 +22,24 @@ export interface AuthResult {
 export const rolesCacheKey = (userId: string): string => `auth:roles:${userId}`;
 const ROLES_CACHE_TTL_SECONDS = 60;
 
+export interface SignInContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+const unavailable = (): ServiceUnavailableException =>
+  new ServiceUnavailableException('Sign-in service is temporarily unavailable. Please retry.');
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly supabase: SupabaseService,
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly redis?: RedisService,
+    private readonly audit?: AuditService,
   ) {}
 
   async register(input: RegisterDto): Promise<AuthResult> {
@@ -53,17 +71,52 @@ export class AuthService {
   async login(email: string, password: string): Promise<AuthResult> {
     const { data, error } = await this.supabase.login(email, password);
     if (error) {
+      if (isTransientAuthError(error)) throw unavailable();
       throw new UnauthorizedException('Invalid email or password');
     }
     return data;
   }
 
+  /**
+   * Throws UnauthorizedException only when Supabase rejects the refresh token. Outages, timeouts
+   * and rate limits become 503 so the browser keeps its session and retries.
+   */
   async refresh(refreshToken: string): Promise<AuthResult> {
     const { data, error } = await this.supabase.refresh(refreshToken);
     if (error) {
+      if (isTransientAuthError(error)) throw unavailable();
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
     return data;
+  }
+
+  /** Records a successful staff sign-in in the audit log. Customer sign-ins are not recorded. */
+  async recordSignIn(
+    user: { id: string; email: string | null },
+    roles: AppRole[],
+    context: SignInContext,
+  ): Promise<void> {
+    const staffRoles = roles.filter((role) => role !== AppRole.CUSTOMER);
+    if (!staffRoles.length || !this.audit) return;
+    try {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.staff.signed_in',
+        entityType: 'user',
+        entityId: user.id,
+        metadata: {
+          ...(user.email ? { entityLabel: user.email, email: user.email } : {}),
+          roles: staffRoles,
+        },
+        ipAddress: context.ipAddress,
+        userAgent: context.userAgent,
+      });
+    } catch (error) {
+      // Signing in must not fail because the audit write did.
+      this.logger.error(
+        `Staff sign-in audit failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   verifyAccessToken(accessToken: string): Promise<User> {

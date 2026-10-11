@@ -37,7 +37,7 @@ import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
-import { GoogleDriveImageService } from './google-drive-image.service';
+import { GoogleDriveImageService, googleDriveFileId } from './google-drive-image.service';
 
 const imageInterceptor = FileInterceptor('file', {
   storage: memoryStorage(),
@@ -267,7 +267,14 @@ export class AdminCatalogueController {
     @Body() input: ImportGoogleDriveImageDto,
     @Ip() ipAddress: string,
     @Req() request: Request,
-  ): Promise<ProductImage> {
+  ): Promise<ProductImage & { reused?: boolean }> {
+    // Re-running an import (or retrying a failed save) must not store the same Drive file
+    // twice, so the existing image is returned as-is and the caller adjusts its links.
+    const existing = await this.catalogue.findGoogleDriveImage(
+      productId,
+      googleDriveFileId(input.driveUrl),
+    );
+    if (existing) return { ...existing, reused: true };
     const file = await this.googleDriveImages.download(input.driveUrl);
     return this.catalogue.addProductImage(actor.id, productId, file, input, {
       ipAddress,
