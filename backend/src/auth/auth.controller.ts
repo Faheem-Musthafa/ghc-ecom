@@ -63,10 +63,16 @@ export class AuthController {
     if (accessToken) {
       try {
         const user = await this.authService.verifyAccessToken(accessToken);
+        const access = await this.authService.access(user.id);
+        if (access.suspended) {
+          // A suspended account's access token may still verify; end the browser session now.
+          this.cookies.clear(response);
+          return { authenticated: false, user: null, roles: [], expired: true };
+        }
         return {
           authenticated: true,
           user: this.publicUser({ user, session: null }),
-          roles: await this.authService.roles(user.id),
+          roles: access.roles,
         };
       } catch (error) {
         if (!(error instanceof UnauthorizedException)) throw error;

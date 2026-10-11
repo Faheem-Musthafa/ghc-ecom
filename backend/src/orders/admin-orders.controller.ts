@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -17,6 +18,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
+import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ListAdminOrdersDto } from './dto/list-admin-orders.dto';
 import { TransitionOrderDto } from './dto/transition-order.dto';
 import { AdminOrderSummary, OrderDetail, OrdersService, RevenueReport } from './orders.service';
@@ -51,7 +53,9 @@ export class AdminOrdersController {
     return this.orders.adminInvoiceUrl(orderId);
   }
 
+  /** Fulfilment moves are warehouse work; support staff only view orders and handle returns. */
   @Patch(':orderId/status')
+  @Roles(AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER)
   transition(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -60,6 +64,22 @@ export class AdminOrdersController {
     @Req() request: Request,
   ): Promise<OrderDetail> {
     return this.orders.transition(actor.id, orderId, input.status, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  /** Cancels a paid, unshipped order; stock is released and the payment refunded automatically. */
+  @Post(':orderId/cancel')
+  @Roles(AppRole.ADMIN)
+  cancel(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() input: CancelOrderDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<OrderDetail> {
+    return this.orders.cancelAdmin(actor.id, orderId, input.reason, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

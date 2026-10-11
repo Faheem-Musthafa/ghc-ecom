@@ -15,6 +15,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AppRole, UserRole } from '@prisma/client';
 import { Request } from 'express';
 import { AdminService, AuditLogPageView, CreatedStaffUser, StaffUser } from './admin.service';
@@ -90,6 +91,51 @@ export class AdminController {
     @Req() request: Request,
   ): Promise<void> {
     return this.adminService.removeRole(actor.id, userId, role, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  /** Bans the account in Supabase Auth and revokes its sessions. */
+  @Post('users/:userId/suspend')
+  @HttpCode(HttpStatus.OK)
+  suspendStaffUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<StaffUser> {
+    return this.adminService.suspendStaffUser(actor.id, userId, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  @Post('users/:userId/reinstate')
+  @HttpCode(HttpStatus.OK)
+  reinstateStaffUser(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<StaffUser> {
+    return this.adminService.reinstateStaffUser(actor.id, userId, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  /** Sends Supabase's reset-password email; the link is never returned to the caller. */
+  @Post('users/:userId/password-reset')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  sendPasswordReset(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<void> {
+    return this.adminService.sendPasswordReset(actor.id, userId, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

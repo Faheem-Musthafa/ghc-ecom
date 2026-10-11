@@ -1,8 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Order, OrderStatus, Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { Order, OrderStatus, Prisma, ShipmentStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { CartService, orderCart, orderQuoteCartSelect } from '../cart/cart.service';
+import { PUBLIC_CATALOGUE_CACHE_VERSION_KEY } from '../catalogue/catalogue.service';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { ListAdminOrdersDto } from './dto/list-admin-orders.dto';
 import { InvoiceService } from './invoice.service';
 
@@ -86,13 +96,19 @@ export interface RevenueReport {
 
 const REVENUE_TIMEZONE = 'Asia/Kolkata';
 
+/** Paid orders staff may still cancel: nothing has left the warehouse yet. */
+const ADMIN_CANCELLABLE = new Set(['confirmed', 'processing']);
+
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly invoices: InvoiceService,
     private readonly carts: CartService,
+    @Optional() private readonly redis?: RedisService,
   ) {}
 
   listMine(userId: string): Promise<OrderDetail[]> {
@@ -276,6 +292,126 @@ export class OrdersService {
       throw this.transitionError(error);
     }
     return this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+  }
+
+  /**
+   * Admin cancellation of a paid order that has not shipped. It ends in the same
+   * `orders.status = 'cancelled'` update as a customer cancellation, so the
+   * `order.cancelled` outbox event refunds the captured payment through HDFC
+   * (RefundsService.refundOrderCancellation) and notifies the customer.
+   */
+  async cancelAdmin(
+    actorId: string,
+    orderId: string,
+    reason: string,
+    context: { ipAddress?: string; userAgent?: string },
+  ): Promise<OrderDetail> {
+    const note = reason.trim();
+    if (!note) throw new BadRequestException('A cancellation reason is required');
+    try {
+      await this.prisma.$transaction(async (transaction) => {
+        // The row lock serialises two staff cancelling (or shipping) the same order at once.
+        const [row] = await transaction.$queryRaw<Array<{ status: string; cart_id: string }>>`
+          select status::text as status, cart_id::text as cart_id
+          from public.orders where id = ${orderId}::uuid for update`;
+        if (!row) throw new NotFoundException('Order not found');
+        if (row.status === 'cancelled') {
+          throw new ConflictException('This order is already cancelled');
+        }
+        if (!ADMIN_CANCELLABLE.has(row.status)) {
+          throw new BadRequestException(
+            'Only confirmed or processing orders that have not shipped can be cancelled',
+          );
+        }
+        if (row.status === 'confirmed') {
+          await transaction.$executeRaw`select public.cancel_order(${orderId}::uuid)`;
+        } else {
+          const active = await transaction.shipment.findFirst({
+            where: { orderId, status: { not: ShipmentStatus.CANCELLED } },
+            select: { id: true },
+          });
+          if (active) {
+            throw new ConflictException(
+              'This order has a shipment; cancel the shipment before cancelling the order',
+            );
+          }
+          await this.releaseConsumedStock(transaction, orderId, row.cart_id);
+          await transaction.$executeRaw`
+            update public.orders set status = 'cancelled' where id = ${orderId}::uuid`;
+        }
+        await transaction.auditLog.create({
+          data: {
+            actorId,
+            action: 'order.admin_cancelled',
+            entityType: 'order',
+            entityId: orderId,
+            metadata: { from: row.status.toUpperCase(), reason: note },
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent,
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw this.transitionError(error);
+    }
+    await this.invalidateCatalogue();
+    return this.getAdmin(orderId);
+  }
+
+  /**
+   * `public.cancel_order` only accepts confirmed orders, but a processing order
+   * holds stock the same way (reservations consumed at payment, no shipment).
+   * This mirrors that function's confirmed branch statement for statement.
+   */
+  private async releaseConsumedStock(
+    transaction: Prisma.TransactionClient,
+    orderId: string,
+    cartId: string,
+  ): Promise<void> {
+    const reservations = await transaction.$queryRaw<
+      Array<{ id: string; warehouse_id: string; variant_id: string; quantity: number }>
+    >`
+      select id::text as id, warehouse_id::text as warehouse_id,
+        variant_id::text as variant_id, quantity
+      from public.inventory_reservations
+      where cart_id = ${cartId}::uuid and status = 'consumed'
+      order by variant_id
+      for update`;
+    for (const reservation of reservations) {
+      const restored = await transaction.$executeRaw`
+        update public.inventory_levels
+        set on_hand = on_hand + ${reservation.quantity}
+        where warehouse_id = ${reservation.warehouse_id}::uuid
+          and variant_id = ${reservation.variant_id}::uuid`;
+      if (restored === 0) throw new Error('inventory level missing for cancellation');
+      await transaction.$executeRaw`
+        update public.inventory_reservations set status = 'released'
+        where id = ${reservation.id}::uuid`;
+      await transaction.$executeRaw`
+        insert into public.stock_movements (
+          warehouse_id, variant_id, type, quantity, reference_type, reference_id, metadata
+        ) values (
+          ${reservation.warehouse_id}::uuid,
+          ${reservation.variant_id}::uuid,
+          'return',
+          ${reservation.quantity},
+          'order_cancellation',
+          ${orderId},
+          jsonb_build_object('reason', 'cancelled_before_fulfilment')
+        )`;
+    }
+  }
+
+  private async invalidateCatalogue(): Promise<void> {
+    try {
+      await this.redis?.increment(PUBLIC_CATALOGUE_CACHE_VERSION_KEY);
+    } catch (error) {
+      // Released stock is already committed; the cache catches up on its own TTL.
+      this.logger.warn(
+        `Catalogue cache version bump failed: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
   }
 
   async listAdmin(input: ListAdminOrdersDto): Promise<AdminOrderSummary[]> {

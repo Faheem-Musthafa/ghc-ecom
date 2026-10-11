@@ -19,8 +19,24 @@ export interface AuthResult {
   session: Session | null;
 }
 
-export const rolesCacheKey = (userId: string): string => `auth:roles:${userId}`;
+/**
+ * Roles and suspension are cached together. The key changed from auth:roles when the cached value
+ * became an object, so instances of the previous release never read the new shape mid-deploy.
+ */
+export const rolesCacheKey = (userId: string): string => `auth:access:${userId}`;
 const ROLES_CACHE_TTL_SECONDS = 60;
+
+export interface AccountAccess {
+  roles: AppRole[];
+  /** The account is banned in Supabase Auth (staff suspension). */
+  suspended: boolean;
+}
+
+const isAccountAccess = (value: unknown): value is AccountAccess =>
+  typeof value === 'object' &&
+  value !== null &&
+  Array.isArray((value as AccountAccess).roles) &&
+  typeof (value as AccountAccess).suspended === 'boolean';
 
 export interface SignInContext {
   ipAddress?: string;
@@ -33,6 +49,7 @@ const unavailable = (): ServiceUnavailableException =>
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private suspensionLookupWarned = false;
 
   constructor(
     private readonly supabase: SupabaseService,
@@ -51,21 +68,59 @@ export class AuthService {
     return data;
   }
 
+  /** Roles that authorize requests. A suspended account has none, whatever it holds. */
   async roles(userId: string): Promise<AppRole[]> {
+    const access = await this.access(userId);
+    return access.suspended ? [] : access.roles;
+  }
+
+  /**
+   * Roles plus suspension, cached for ROLES_CACHE_TTL_SECONDS. Suspending or reinstating an account
+   * clears this entry, so an access token that is still valid stops (or resumes) working at once.
+   */
+  async access(userId: string): Promise<AccountAccess> {
     try {
-      const cached = await this.redis?.getJson<AppRole[]>(rolesCacheKey(userId));
-      if (cached) return cached;
+      const cached = await this.redis?.getJson<unknown>(rolesCacheKey(userId));
+      if (isAccountAccess(cached)) return cached;
     } catch {
       // Role authorization falls back to PostgreSQL if Redis is unavailable.
     }
-    const rows = await this.prisma.userRole.findMany({ where: { userId }, select: { role: true } });
-    const roles = rows.map((row) => row.role);
+    const [rows, suspended] = await Promise.all([
+      this.prisma.userRole.findMany({ where: { userId }, select: { role: true } }),
+      this.isSuspended(userId),
+    ]);
+    const access: AccountAccess = { roles: rows.map((row) => row.role), suspended };
     try {
-      await this.redis?.setJson(rolesCacheKey(userId), roles, ROLES_CACHE_TTL_SECONDS);
+      await this.redis?.setJson(rolesCacheKey(userId), access, ROLES_CACHE_TTL_SECONDS);
     } catch {
       // Role authorization remains correct without caching.
     }
-    return roles;
+    return access;
+  }
+
+  /**
+   * Reads the Supabase ban from auth.users. If the database role cannot read auth.users this
+   * answers false, and a suspension is enforced only by Supabase refusing sign-in and refresh.
+   */
+  private async isSuspended(userId: string): Promise<boolean> {
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ suspended: boolean }>>`
+        select coalesce(banned_until > now(), false) as suspended
+        from auth.users
+        where id = ${userId}::uuid
+      `;
+      return rows[0]?.suspended === true;
+    } catch (error) {
+      if (!this.suspensionLookupWarned) {
+        this.suspensionLookupWarned = true;
+        this.logger.warn(
+          `Suspension lookup in auth.users failed; relying on Supabase session checks: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+      return false;
+    }
   }
 
   async login(email: string, password: string): Promise<AuthResult> {

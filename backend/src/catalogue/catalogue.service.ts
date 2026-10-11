@@ -26,6 +26,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
+import { ListAdminProductsDto } from './dto/list-admin-products.dto';
 import { ListProductsDto } from './dto/list-products.dto';
 import { ProductImageMetadataDto } from './dto/product-image-metadata.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
@@ -137,6 +138,15 @@ export interface PaginatedProducts {
   page: number;
   limit: number;
 }
+
+export interface PaginatedAdminProducts {
+  items: CatalogueProductCard[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export type CatalogueProductImage = ProductImage & { variantLinks: { variantId: string }[] };
 
 interface RequestContext {
   ipAddress?: string;
@@ -367,13 +377,75 @@ export class CatalogueService {
     });
   }
 
+  /** Every product, newest first: catalogue export and import matching read the whole list. */
   async listAdminProducts(): Promise<CatalogueProductCard[]> {
     const products = await this.prisma.product.findMany({
       relationLoadStrategy: 'join',
       include: productCardInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     return products.map((product) => this.productCard(product));
+  }
+
+  /** One page of the admin product table, newest first, with the number of matches. */
+  async listAdminProductPage(query: ListAdminProductsDto): Promise<PaginatedAdminProducts> {
+    const skip = (query.page - 1) * query.limit;
+    // ILIKE treats % and _ as wildcards, so a search for "50%" must match the literal text.
+    const pattern = query.q ? `%${query.q.replace(/[\\%_]/g, '\\$&')}%` : null;
+    const filters = Prisma.sql`
+      true
+      ${query.status ? Prisma.sql`and product.status = ${query.status.toLowerCase()}::public.product_status` : Prisma.empty}
+      ${query.category ? Prisma.sql`and product.category_id = ${query.category}::uuid` : Prisma.empty}
+      ${
+        pattern
+          ? Prisma.sql`and (
+              product.name ilike ${pattern}
+              or product.slug ilike ${pattern}
+              or exists (
+                select 1
+                from public.product_variants as variant
+                where variant.product_id = product.id
+                  and (variant.sku ilike ${pattern} or variant.alias ilike ${pattern})
+              )
+            )`
+          : Prisma.empty
+      }`;
+    const ranked = await this.prisma.$queryRaw<{ id: string; total: number }[]>`
+      select product.id, (count(*) over ())::integer as total
+      from public.products as product
+      where ${filters}
+      order by product.created_at desc, product.id desc
+      limit ${query.limit}
+      offset ${skip}
+    `;
+    const total =
+      ranked[0]?.total ??
+      (skip > 0
+        ? // Past the last page the window count has no row to ride on.
+          (
+            await this.prisma.$queryRaw<{ total: number }[]>`
+              select count(*)::integer as total
+              from public.products as product
+              where ${filters}
+            `
+          )[0].total
+        : 0);
+    const pageIds = ranked.map((row) => row.id);
+    const products = pageIds.length
+      ? await this.prisma.product.findMany({
+          relationLoadStrategy: 'join',
+          where: { id: { in: pageIds } },
+          include: productCardInclude,
+        })
+      : [];
+    const position = new Map(pageIds.map((id, index) => [id, index]));
+    products.sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
+    return {
+      items: products.map((product) => this.productCard(product)),
+      total,
+      page: query.page,
+      limit: query.limit,
+    };
   }
 
   async getAdminProduct(productId: string): Promise<CatalogueProduct> {
@@ -931,6 +1003,77 @@ export class CatalogueService {
       ),
     );
     return updated;
+  }
+
+  /**
+   * Puts every image of a product in the given order (sortOrder 0..n-1) in one transaction.
+   * The list must name each of the product's images exactly once, so an editor working from
+   * a stale gallery (an image added or deleted elsewhere) is refused instead of half-applied.
+   */
+  async reorderProductImages(
+    actorId: string,
+    productId: string,
+    imageIds: string[],
+    context: RequestContext,
+  ): Promise<CatalogueProductImage[]> {
+    const product = await this.requireProduct(productId);
+    const imageSelect = {
+      orderBy: productInclude.images.orderBy,
+      include: productInclude.images.include,
+    };
+    const { before, after, changed } = await this.prisma.$transaction(async (transaction) => {
+      // Serializes reorders (and keeps the image set stable) for this product until commit.
+      await transaction.$queryRaw`
+        select id from public.product_images where product_id = ${productId}::uuid for update
+      `;
+      const current = await transaction.productImage.findMany({
+        where: { productId },
+        ...imageSelect,
+      });
+      const currentIds = new Set(current.map((image) => image.id));
+      if (
+        imageIds.length !== currentIds.size ||
+        new Set(imageIds).size !== imageIds.length ||
+        imageIds.some((id) => !currentIds.has(id))
+      ) {
+        throw new BadRequestException(
+          'The image order must list every image of this product exactly once. Reload the product and try again.',
+        );
+      }
+      const changed = await transaction.$executeRaw`
+        update public.product_images as image
+        set sort_order = ordered.position - 1
+        from unnest(${imageIds}::uuid[]) with ordinality as ordered(id, position)
+        where image.id = ordered.id
+          and image.product_id = ${productId}::uuid
+          and image.sort_order <> ordered.position - 1
+      `;
+      return {
+        before: current,
+        after: changed
+          ? await transaction.productImage.findMany({ where: { productId }, ...imageSelect })
+          : current,
+        changed,
+      };
+    });
+    // Saving the order it already has changes nothing, so there is nothing to audit or expire.
+    if (!changed) return after;
+    const order = (images: CatalogueProductImage[]): string[] =>
+      images.map((image) => image.sourceFilename || image.altText);
+    await this.auditMutation(
+      actorId,
+      'catalogue.product.images_reordered',
+      'product',
+      productId,
+      context,
+      auditChangeMetadata(
+        product.name,
+        { imageOrder: order(before) },
+        { imageOrder: order(after) },
+        ['imageOrder'],
+      ),
+    );
+    return after;
   }
 
   async deleteProductImage(

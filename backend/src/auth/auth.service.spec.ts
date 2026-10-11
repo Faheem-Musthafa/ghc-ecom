@@ -197,5 +197,58 @@ describe('AuthService', () => {
     await cachedService.roles('user-id');
 
     expect(findMany).toHaveBeenCalledTimes(1);
+    expect(values.get('auth:access:user-id')).toEqual({ roles: ['CUSTOMER'], suspended: false });
+  });
+
+  it('reads suspension with the roles and grants a suspended account no roles', async () => {
+    const queryRaw = jest.fn().mockResolvedValue([{ suspended: true }]);
+    const suspendedService = new AuthService(
+      supabase as never,
+      config as never,
+      {
+        userRole: { findMany: jest.fn().mockResolvedValue([{ role: AppRole.ADMIN }]) },
+        $queryRaw: queryRaw,
+      } as never,
+    );
+
+    await expect(suspendedService.access('staff-id')).resolves.toEqual({
+      roles: [AppRole.ADMIN],
+      suspended: true,
+    });
+    await expect(suspendedService.roles('staff-id')).resolves.toEqual([]);
+    expect(queryRaw).toHaveBeenCalled();
+  });
+
+  it('treats an unreadable auth.users as not suspended', async () => {
+    const unreadable = new AuthService(
+      supabase as never,
+      config as never,
+      {
+        userRole: { findMany: jest.fn().mockResolvedValue([{ role: AppRole.SUPPORT_AGENT }]) },
+        $queryRaw: jest.fn().mockRejectedValue(new Error('permission denied for schema auth')),
+      } as never,
+    );
+
+    await expect(unreadable.roles('staff-id')).resolves.toEqual([AppRole.SUPPORT_AGENT]);
+  });
+
+  it('ignores role cache entries written in the previous array format', async () => {
+    const findMany = jest.fn().mockResolvedValue([{ role: AppRole.ADMIN }]);
+    const redis = {
+      getJson: jest.fn().mockResolvedValue([AppRole.ADMIN]),
+      setJson: jest.fn().mockResolvedValue(undefined),
+    };
+    const migrated = new AuthService(
+      supabase as never,
+      config as never,
+      { userRole: { findMany }, $queryRaw: jest.fn().mockResolvedValue([]) } as never,
+      redis as never,
+    );
+
+    await expect(migrated.access('staff-id')).resolves.toEqual({
+      roles: [AppRole.ADMIN],
+      suspended: false,
+    });
+    expect(findMany).toHaveBeenCalledTimes(1);
   });
 });

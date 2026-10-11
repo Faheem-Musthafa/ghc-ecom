@@ -75,7 +75,7 @@ export const OrderConfirmationPage = () => {
                                     onClick={handleDownloadInvoice}
                                     className="mt-6 flex items-center gap-2 rounded-sm border border-gold-500/30 bg-obsidian px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gold-300 hover:border-gold-400 hover:bg-gold-400 hover:text-obsidian transition w-full justify-center shadow-sm"
                                 >
-                                    <IconDownload size={16} /> Download Tax Invoice
+                                    <IconDownload size={16} /> Download Invoice
                                 </button>
                             </div>
 

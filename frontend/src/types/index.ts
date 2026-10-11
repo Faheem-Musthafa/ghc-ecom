@@ -404,6 +404,9 @@ export interface StaffUser {
     fullName: string | null;
     roles: Array<'ADMIN' | 'CATALOGUE_MANAGER' | 'WAREHOUSE_MANAGER' | 'SUPPORT_AGENT'>;
     createdAt: string;
+    /** True while the account is suspended (banned in Supabase Auth). */
+    suspended?: boolean;
+    bannedUntil?: string | null;
 }
 
 export interface CreatedStaffUser {

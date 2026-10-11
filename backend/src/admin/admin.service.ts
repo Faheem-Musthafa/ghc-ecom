@@ -1,22 +1,26 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-import { AppRole, AuditLog, UserRole } from '@prisma/client';
-import { User } from '@supabase/supabase-js';
+import { AppRole, AuditLog, Prisma, UserRole } from '@prisma/client';
+import { isAuthError, User } from '@supabase/supabase-js';
 import { AuditLogQuery, AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import {
+  isBannedUser,
   isEmailTakenError,
   isTransientAuthError,
   SupabaseService,
 } from '../supabase/supabase.service';
-import { rolesCacheKey } from '../auth/auth.service';
+import { AuthService, rolesCacheKey } from '../auth/auth.service';
 import { CreateStaffUserDto } from './dto/create-staff-user.dto';
 import { GrantStaffAccessDto } from './dto/grant-staff-access.dto';
 
@@ -31,6 +35,9 @@ export interface StaffUser {
   fullName: string | null;
   roles: AppRole[];
   createdAt: string;
+  /** Supabase Auth ban expiry; set while the account is suspended. */
+  bannedUntil: string | null;
+  suspended: boolean;
 }
 
 export interface CreatedStaffUser {
@@ -62,16 +69,32 @@ const fullNameOf = (user: User): string | null => {
   return typeof fullName === 'string' && fullName.trim() ? fullName.trim() : null;
 };
 
-const toStaffUser = (user: User, roles: AppRole[]): StaffUser => ({
-  id: user.id,
-  email: user.email || '',
-  fullName: fullNameOf(user),
-  roles,
-  createdAt: user.created_at,
-});
+const toStaffUser = (user: User, roles: AppRole[]): StaffUser => {
+  const suspended = isBannedUser(user);
+  return {
+    id: user.id,
+    email: user.email || '',
+    fullName: fullNameOf(user),
+    roles,
+    createdAt: user.created_at,
+    bannedUntil: suspended ? (user.banned_until ?? null) : null,
+    suspended,
+  };
+};
+
+/** Serializes every change that could leave the store without an active administrator. */
+const ADMIN_INVARIANT_LOCK = Prisma.sql`select pg_advisory_xact_lock(
+  hashtextextended('staff-admin-role-invariant', 0)
+)`;
+/** The lock is held while Supabase Auth is asked about each administrator. */
+const ADMIN_INVARIANT_TRANSACTION = { timeout: 20_000, maxWait: 10_000 };
+
+const unavailable = (): ServiceUnavailableException =>
+  new ServiceUnavailableException('The account service is temporarily unavailable. Please retry.');
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
   private readonly directory = new Map<string, DirectoryEntry>();
 
   constructor(
@@ -79,6 +102,7 @@ export class AdminService {
     private readonly audit: AuditService,
     private readonly supabase: SupabaseService,
     private readonly redis?: RedisService,
+    private readonly auth?: AuthService,
   ) {}
 
   async createStaffUser(
@@ -237,17 +261,12 @@ export class AdminService {
     const result =
       role === AppRole.ADMIN
         ? await this.prisma.$transaction(async (transaction) => {
-            await transaction.$executeRaw`select pg_advisory_xact_lock(
-              hashtextextended('staff-admin-role-invariant', 0)
-            )`;
-            const administratorCount = await transaction.userRole.count({
-              where: { role: AppRole.ADMIN },
-            });
-            if (administratorCount <= 1) {
+            await transaction.$executeRaw(ADMIN_INVARIANT_LOCK);
+            if (!(await this.hasOtherActiveAdministrator(transaction, userId))) {
               throw new BadRequestException('The final administrator cannot be removed');
             }
             return transaction.userRole.deleteMany({ where: { userId, role } });
-          })
+          }, ADMIN_INVARIANT_TRANSACTION)
         : await this.prisma.userRole.deleteMany({ where: { userId, role } });
     if (!result.count) return;
 
@@ -260,6 +279,98 @@ export class AdminService {
       ...context,
     });
     await this.forgetCachedRoles(userId);
+  }
+
+  /**
+   * Bans a staff account in Supabase Auth and revokes its sessions. Supabase then refuses its
+   * sign-ins and refresh tokens, and the role guard rejects its still-valid access tokens.
+   */
+  async suspendStaffUser(
+    actorId: string,
+    userId: string,
+    context: RequestContext,
+  ): Promise<StaffUser> {
+    if (actorId === userId) {
+      throw new BadRequestException('You cannot suspend your own account');
+    }
+    const roles = await this.staffRolesOf(userId);
+    let user: User;
+    if (roles.includes(AppRole.ADMIN)) {
+      user = await this.prisma.$transaction(async (transaction) => {
+        await transaction.$executeRaw(ADMIN_INVARIANT_LOCK);
+        if (!(await this.hasOtherActiveAdministrator(transaction, userId))) {
+          throw new BadRequestException('The final active administrator cannot be suspended');
+        }
+        // Banned while the lock is held, so two administrators cannot suspend each other at once.
+        return this.callAuth(() => this.supabase.suspendAdminUser(userId));
+      }, ADMIN_INVARIANT_TRANSACTION);
+    } else {
+      user = await this.callAuth(() => this.supabase.suspendAdminUser(userId));
+    }
+    this.remember(user);
+    await this.forgetCachedRoles(userId);
+    const sessionsRevoked = await this.revokeSessions(userId);
+    await this.audit.record({
+      actorId,
+      action: 'user.suspended',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { ...this.userLabel(user), roles, sessionsRevoked },
+      ...context,
+    });
+    return toStaffUser(user, roles);
+  }
+
+  async reinstateStaffUser(
+    actorId: string,
+    userId: string,
+    context: RequestContext,
+  ): Promise<StaffUser> {
+    const roles = await this.staffRolesOf(userId);
+    const user = await this.callAuth(() => this.supabase.reinstateAdminUser(userId));
+    this.remember(user);
+    await this.forgetCachedRoles(userId);
+    await this.audit.record({
+      actorId,
+      action: 'user.reinstated',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { ...this.userLabel(user), roles },
+      ...context,
+    });
+    return toStaffUser(user, roles);
+  }
+
+  /** Emails the staff member Supabase's reset link, using the storefront's reset-password page. */
+  async sendPasswordReset(actorId: string, userId: string, context: RequestContext): Promise<void> {
+    if (!this.auth) throw new ServiceUnavailableException('Password reset is unavailable');
+    await this.staffRolesOf(userId);
+    const user = await this.callAuth(() => this.supabase.getAdminUserById(userId));
+    if (!user) throw new NotFoundException('Staff account not found');
+    if (!user.email) throw new BadRequestException('This account has no email address');
+    if (isBannedUser(user)) {
+      throw new BadRequestException('Reinstate this account before sending a password reset');
+    }
+    try {
+      await this.auth.requestPasswordReset(user.email);
+    } catch (error) {
+      if (isAuthError(error) && error.status === 429) {
+        throw new HttpException(
+          'A reset email was sent recently. Wait a minute before sending another.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      if (isTransientAuthError(error)) throw unavailable();
+      throw error;
+    }
+    await this.audit.record({
+      actorId,
+      action: 'user.password_reset.sent',
+      entityType: 'user',
+      entityId: userId,
+      metadata: this.userLabel(user),
+      ...context,
+    });
   }
 
   async listAuditLogs(query: AuditLogQuery = {}): Promise<AuditLogPageView> {
@@ -301,6 +412,77 @@ export class AdminService {
       }
     }
     return email ? { role, entityLabel: email, email } : { role };
+  }
+
+  /** Staff roles of the account, or 404 when it is not a staff account. */
+  private async staffRolesOf(userId: string): Promise<AppRole[]> {
+    const assignments = await this.prisma.userRole.findMany({
+      where: { userId, role: { not: AppRole.CUSTOMER } },
+      orderBy: { assignedAt: 'asc' },
+    });
+    if (!assignments.length) throw new NotFoundException('Staff account not found');
+    return assignments.map((assignment) => assignment.role);
+  }
+
+  /**
+   * True when an administrator other than userId exists and is not suspended. Accounts are read
+   * fresh from Supabase Auth (not the directory cache) because the caller holds the invariant lock.
+   */
+  private async hasOtherActiveAdministrator(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<boolean> {
+    const administrators = await transaction.userRole.findMany({
+      where: { role: AppRole.ADMIN, userId: { not: userId } },
+      select: { userId: true },
+    });
+    for (const { userId: administratorId } of administrators) {
+      const administrator = await this.callAuth(() =>
+        this.supabase.getAdminUserById(administratorId),
+      );
+      if (administrator && !isBannedUser(administrator)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Deletes the account's Supabase sessions (their refresh tokens cascade). Supabase's admin
+   * sign-out needs the user's own JWT, so this goes through auth.sessions. The ban already blocks
+   * refresh, so a database role that cannot write auth.sessions only loses this extra step.
+   */
+  private async revokeSessions(userId: string): Promise<boolean> {
+    try {
+      await this.prisma.$executeRaw`delete from auth.sessions where user_id = ${userId}::uuid`;
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Sessions for suspended account ${userId} were not revoked: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
+  }
+
+  private async callAuth<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isTransientAuthError(error)) throw unavailable();
+      if (isAuthError(error) && (error.status === 404 || error.code === 'user_not_found')) {
+        throw new NotFoundException('Staff account not found');
+      }
+      throw error;
+    }
+  }
+
+  private userLabel(user: User): { entityLabel?: string; email?: string } {
+    return user.email ? { entityLabel: user.email, email: user.email } : {};
+  }
+
+  private remember(user: User): void {
+    if (this.directory.size >= DIRECTORY_MAX_ENTRIES) this.directory.clear();
+    this.directory.set(user.id, { user, expiresAt: Date.now() + DIRECTORY_TTL_MS });
   }
 
   private async forgetCachedRoles(userId: string): Promise<void> {

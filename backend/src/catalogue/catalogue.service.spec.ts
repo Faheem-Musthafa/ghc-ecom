@@ -923,4 +923,207 @@ describe('CatalogueService', () => {
       new ConflictException('A category with this name already exists'),
     );
   });
+
+  it('pages the admin product list newest first with escaped search across names, slugs, SKUs and aliases', async () => {
+    const cards = [
+      { id: 'older', images: [], variants: [] },
+      { id: 'newer', images: [], variants: [] },
+    ];
+    const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        { id: 'newer', total: 42 },
+        { id: 'older', total: 42 },
+      ]),
+      product: { findMany: jest.fn().mockResolvedValue(cards) },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+    const categoryId = '3d659f24-eebd-4245-a36d-c0e0d64b028f';
+
+    const result = await service.listAdminProductPage({
+      page: 3,
+      limit: 20,
+      q: '50%_off',
+      status: 'DRAFT' as never,
+      category: categoryId,
+    });
+
+    expect(result).toMatchObject({ total: 42, page: 3, limit: 20 });
+    expect(result.items.map((item) => item.id)).toEqual(['newer', 'older']);
+    const ranking = rawSql(prisma.$queryRaw);
+    expect(ranking.text).toContain('product.status = $1::public.product_status');
+    expect(ranking.text).toContain('product.category_id = $2::uuid');
+    expect(ranking.text).toMatch(/product\.name ilike \$3\s+or product\.slug ilike \$4/);
+    expect(ranking.text).toContain('variant.sku ilike $5 or variant.alias ilike $6');
+    expect(ranking.text).toContain('order by product.created_at desc, product.id desc');
+    const pattern = '%50\\%\\_off%';
+    expect(ranking.values).toEqual([
+      'draft',
+      categoryId,
+      pattern,
+      pattern,
+      pattern,
+      pattern,
+      20,
+      40,
+    ]);
+    expect(prisma.product.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['newer', 'older'] } } }),
+    );
+  });
+
+  it('counts admin matches separately when the page is past the last one', async () => {
+    const prisma = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 7 }]),
+      product: { findMany: jest.fn() },
+    };
+    const service = new CatalogueService(
+      prisma as never,
+      audit as never,
+      supabase as never,
+      imageProcessor as never,
+    );
+
+    await expect(service.listAdminProductPage({ page: 5, limit: 50 })).resolves.toEqual({
+      items: [],
+      total: 7,
+      page: 5,
+      limit: 50,
+    });
+    expect(rawSql(prisma.$queryRaw, 1).text).toContain('select count(*)::integer as total');
+    expect(prisma.product.findMany).not.toHaveBeenCalled();
+  });
+
+  describe('reorderProductImages', () => {
+    interface ImageRow {
+      id: string;
+      productId: string;
+      altText: string;
+      sourceFilename: string;
+      sortOrder: number;
+      variantLinks: { variantId: string }[];
+    }
+    interface Setup {
+      service: CatalogueService;
+      transaction: {
+        $queryRaw: jest.Mock;
+        $executeRaw: jest.Mock;
+        productImage: { findMany: jest.Mock };
+      };
+      redis: { increment: jest.Mock };
+      after: ImageRow[];
+    }
+    const image = (id: string, sortOrder: number): ImageRow => ({
+      id,
+      productId: 'product-id',
+      altText: `Image ${id}`,
+      sourceFilename: `${id}.webp`,
+      sortOrder,
+      variantLinks: [],
+    });
+    const setup = (rowsChanged: number): Setup => {
+      const before = [image('a', 0), image('b', 0), image('c', 1)];
+      const after = [image('c', 0), image('a', 1), image('b', 2)];
+      const transaction = {
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        $executeRaw: jest.fn().mockResolvedValue(rowsChanged),
+        productImage: {
+          findMany: jest.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after),
+        },
+      };
+      const prisma = {
+        product: { findUnique: jest.fn().mockResolvedValue({ id: 'product-id', name: 'Tea Set' }) },
+        $transaction: jest.fn((callback) => callback(transaction)),
+      };
+      const redis = { increment: jest.fn() };
+      const service = new CatalogueService(
+        prisma as never,
+        audit as never,
+        supabase as never,
+        imageProcessor as never,
+        videoProcessor as never,
+        redis as never,
+      );
+      return { service, transaction, redis, after };
+    };
+
+    it('writes positions 0..n-1 in one statement, audits once and expires the storefront cache', async () => {
+      const { service, transaction, redis, after } = setup(3);
+
+      await expect(
+        service.reorderProductImages('actor-id', 'product-id', ['c', 'a', 'b'], {}),
+      ).resolves.toEqual(after);
+
+      expect(transaction.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(rawSql(transaction.$queryRaw).text).toContain('for update');
+      expect(transaction.$executeRaw).toHaveBeenCalledTimes(1);
+      const update = rawSql(transaction.$executeRaw);
+      expect(update.text).toContain('set sort_order = ordered.position - 1');
+      expect(update.text).toContain('with ordinality');
+      expect(update.values).toEqual([['c', 'a', 'b'], 'product-id']);
+      expect(redis.increment).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'catalogue.product.images_reordered',
+          entityType: 'product',
+          entityId: 'product-id',
+          metadata: {
+            entityLabel: 'Tea Set',
+            changes: {
+              imageOrder: {
+                before: ['a.webp', 'b.webp', 'c.webp'],
+                after: ['c.webp', 'a.webp', 'b.webp'],
+              },
+            },
+          },
+        }),
+      );
+    });
+
+    it.each([
+      ['an image of another product', ['c', 'a', 'x']],
+      ['a missing image', ['c', 'a']],
+      ['a repeated image', ['c', 'a', 'a']],
+    ])('refuses an order that names %s', async (_label, imageIds) => {
+      const { service, transaction, redis } = setup(0);
+
+      await expect(
+        service.reorderProductImages('actor-id', 'product-id', imageIds, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(transaction.$executeRaw).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(redis.increment).not.toHaveBeenCalled();
+    });
+
+    it('neither audits nor expires the cache when the order is unchanged', async () => {
+      const { service, redis } = setup(0);
+
+      await service.reorderProductImages('actor-id', 'product-id', ['a', 'b', 'c'], {});
+
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(redis.increment).not.toHaveBeenCalled();
+    });
+
+    it('reports an unknown product as not found', async () => {
+      const prisma = { product: { findUnique: jest.fn().mockResolvedValue(null) } };
+      const service = new CatalogueService(
+        prisma as never,
+        audit as never,
+        supabase as never,
+        imageProcessor as never,
+      );
+
+      await expect(
+        service.reorderProductImages('actor-id', 'missing', ['a'], {}),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
 });

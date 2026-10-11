@@ -12,6 +12,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
@@ -26,13 +27,21 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { SupabaseAuthGuard } from '../auth/guards/supabase-auth.guard';
-import { CatalogueProduct, CatalogueProductCard, CatalogueService } from './catalogue.service';
+import {
+  CatalogueProduct,
+  CatalogueProductCard,
+  CatalogueProductImage,
+  CatalogueService,
+  PaginatedAdminProducts,
+} from './catalogue.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { ImageMetadataDto } from './dto/image-metadata.dto';
 import { ImportGoogleDriveImageDto } from './dto/import-google-drive-image.dto';
+import { ListAdminProductsDto } from './dto/list-admin-products.dto';
 import { ProductImageMetadataDto } from './dto/product-image-metadata.dto';
+import { ReorderProductImagesDto } from './dto/reorder-product-images.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductImageDto } from './dto/update-product-image.dto';
@@ -121,7 +130,13 @@ export class AdminCatalogueController {
   }
 
   @Get('products')
-  listProducts(): Promise<CatalogueProductCard[]> {
+  listProducts(@Query() query: ListAdminProductsDto): Promise<PaginatedAdminProducts> {
+    return this.catalogue.listAdminProductPage(query);
+  }
+
+  /** The whole catalogue for CSV export and import matching; declared before products/:productId. */
+  @Get('products/all')
+  listAllProducts(): Promise<CatalogueProductCard[]> {
     return this.catalogue.listAdminProducts();
   }
 
@@ -277,6 +292,21 @@ export class AdminCatalogueController {
     if (existing) return { ...existing, reused: true };
     const file = await this.googleDriveImages.download(input.driveUrl);
     return this.catalogue.addProductImage(actor.id, productId, file, input, {
+      ipAddress,
+      userAgent: request.header('user-agent'),
+    });
+  }
+
+  // Declared before products/:productId/images/:imageId so "order" is not read as an image id.
+  @Put('products/:productId/images/order')
+  reorderImages(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() input: ReorderProductImagesDto,
+    @Ip() ipAddress: string,
+    @Req() request: Request,
+  ): Promise<CatalogueProductImage[]> {
+    return this.catalogue.reorderProductImages(actor.id, productId, input.imageIds, {
       ipAddress,
       userAgent: request.header('user-agent'),
     });

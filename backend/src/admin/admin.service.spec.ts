@@ -258,7 +258,7 @@ describe('AdminService', () => {
         metadata: { role: AppRole.SUPPORT_AGENT },
       }),
     );
-    expect(redis.delete).toHaveBeenCalledWith('auth:roles:staff-id');
+    expect(redis.delete).toHaveBeenCalledWith('auth:access:staff-id');
   });
 
   it('does not let an administrator remove their own administrator access', async () => {
@@ -271,18 +271,24 @@ describe('AdminService', () => {
     expect(prisma.userRole.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('protects the final administrator from removal', async () => {
+  it('protects the final active administrator from removal', async () => {
     const transaction = {
       $executeRaw: jest.fn().mockResolvedValue(1),
       userRole: {
-        count: jest.fn().mockResolvedValue(1),
+        // The only other administrator is suspended, so it does not count.
+        findMany: jest.fn().mockResolvedValue([{ userId: 'suspended-admin-id' }]),
         deleteMany: jest.fn(),
       },
     };
     const prisma = {
       $transaction: jest.fn((callback) => callback(transaction)),
     };
-    const service = new AdminService(prisma as never, {} as never, {} as never);
+    const supabase = {
+      getAdminUserById: jest
+        .fn()
+        .mockResolvedValue({ id: 'suspended-admin-id', banned_until: '2126-01-01T00:00:00Z' }),
+    };
+    const service = new AdminService(prisma as never, {} as never, supabase as never);
 
     await expect(
       service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {}),
@@ -295,21 +301,251 @@ describe('AdminService', () => {
     const transaction = {
       $executeRaw: jest.fn().mockResolvedValue(1),
       userRole: {
-        count: jest.fn().mockResolvedValue(2),
+        findMany: jest.fn().mockResolvedValue([{ userId: 'admin-id' }]),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const prisma = { $transaction: jest.fn((callback) => callback(transaction)) };
     const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
-    const supabase = { getAdminUserById: jest.fn().mockResolvedValue(null) };
+    const supabase = {
+      getAdminUserById: jest.fn(async (id: string) =>
+        id === 'admin-id' ? { id, email: 'admin@example.com' } : null,
+      ),
+    };
     const service = new AdminService(prisma as never, audit as never, supabase as never);
 
     await service.removeRole('admin-id', 'other-admin-id', AppRole.ADMIN, {});
 
     expect(transaction.$executeRaw).toHaveBeenCalled();
-    expect(transaction.userRole.count).toHaveBeenCalledWith({ where: { role: AppRole.ADMIN } });
+    expect(transaction.userRole.findMany).toHaveBeenCalledWith({
+      where: { role: AppRole.ADMIN, userId: { not: 'other-admin-id' } },
+      select: { userId: true },
+    });
     expect(transaction.userRole.deleteMany).toHaveBeenCalledWith({
       where: { userId: 'other-admin-id', role: AppRole.ADMIN },
+    });
+  });
+
+  describe('suspension and password reset', () => {
+    const context = { ipAddress: '127.0.0.1', userAgent: 'test-agent' };
+    const banned = {
+      id: 'staff-id',
+      email: 'staff@example.com',
+      user_metadata: {},
+      created_at: '2026-08-01T00:00:00.000Z',
+      banned_until: '2126-08-01T00:00:00.000Z',
+    };
+
+    interface Fixture {
+      service: AdminService;
+      prisma: { $transaction: jest.Mock; $executeRaw: jest.Mock };
+      transaction: { $executeRaw: jest.Mock; userRole: { findMany: jest.Mock } };
+      audit: { record: jest.Mock };
+      supabase: {
+        suspendAdminUser: jest.Mock;
+        reinstateAdminUser: jest.Mock;
+        getAdminUserById: jest.Mock;
+      };
+      redis: { delete: jest.Mock };
+      auth: { requestPasswordReset: jest.Mock };
+    }
+
+    const setup = (
+      roles: AppRole[],
+      administrators: Array<Record<string, unknown> | null> = [],
+    ): Fixture => {
+      const transaction = {
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        userRole: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue(administrators.map((_, index) => ({ userId: `admin-${index}` }))),
+        },
+      };
+      const prisma = {
+        userRole: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue(roles.map((role) => ({ userId: 'staff-id', role }))),
+        },
+        $transaction: jest.fn((callback) => callback(transaction)),
+        $executeRaw: jest.fn().mockResolvedValue(2),
+      };
+      const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-id' }) };
+      const supabase = {
+        suspendAdminUser: jest.fn().mockResolvedValue(banned),
+        reinstateAdminUser: jest.fn().mockResolvedValue({ ...banned, banned_until: undefined }),
+        getAdminUserById: jest.fn(async (id: string) =>
+          id === 'staff-id'
+            ? { ...banned, banned_until: undefined }
+            : (administrators[Number(id.replace('admin-', ''))] ?? null),
+        ),
+      };
+      const redis = { delete: jest.fn().mockResolvedValue(1) };
+      const auth = { requestPasswordReset: jest.fn().mockResolvedValue(undefined) };
+      const service = new AdminService(
+        prisma as never,
+        audit as never,
+        supabase as never,
+        redis as never,
+        auth as never,
+      );
+      return { service, prisma, transaction, audit, supabase, redis, auth };
+    };
+
+    it('does not let an administrator suspend their own account', async () => {
+      const { service, supabase } = setup([AppRole.ADMIN]);
+      await expect(service.suspendStaffUser('staff-id', 'staff-id', context)).rejects.toThrow(
+        'You cannot suspend your own account',
+      );
+      expect(supabase.suspendAdminUser).not.toHaveBeenCalled();
+    });
+
+    it('suspends staff, revokes sessions, clears cached access and records the target', async () => {
+      const { service, prisma, audit, supabase, redis } = setup([AppRole.SUPPORT_AGENT]);
+
+      await expect(service.suspendStaffUser('admin-id', 'staff-id', context)).resolves.toEqual(
+        expect.objectContaining({
+          id: 'staff-id',
+          suspended: true,
+          bannedUntil: '2126-08-01T00:00:00.000Z',
+          roles: [AppRole.SUPPORT_AGENT],
+        }),
+      );
+      expect(supabase.suspendAdminUser).toHaveBeenCalledWith('staff-id');
+      // Only administrators need the invariant lock.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(redis.delete).toHaveBeenCalledWith('auth:access:staff-id');
+      expect(audit.record).toHaveBeenCalledWith({
+        actorId: 'admin-id',
+        action: 'user.suspended',
+        entityType: 'user',
+        entityId: 'staff-id',
+        metadata: {
+          entityLabel: 'staff@example.com',
+          email: 'staff@example.com',
+          roles: [AppRole.SUPPORT_AGENT],
+          sessionsRevoked: true,
+        },
+        ...context,
+      });
+    });
+
+    it('still suspends when sessions cannot be revoked from the database', async () => {
+      const { service, prisma, audit } = setup([AppRole.SUPPORT_AGENT]);
+      prisma.$executeRaw.mockRejectedValueOnce(new Error('permission denied for schema auth'));
+      jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await service.suspendStaffUser('admin-id', 'staff-id', context);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ sessionsRevoked: false }),
+        }),
+      );
+    });
+
+    it('refuses to suspend the final active administrator', async () => {
+      const { service, transaction, supabase } = setup(
+        [AppRole.ADMIN],
+        [{ id: 'admin-0', banned_until: '2126-01-01T00:00:00.000Z' }, null],
+      );
+
+      await expect(service.suspendStaffUser('admin-0', 'staff-id', context)).rejects.toThrow(
+        'The final active administrator cannot be suspended',
+      );
+      expect(transaction.$executeRaw).toHaveBeenCalled();
+      expect(transaction.userRole.findMany).toHaveBeenCalledWith({
+        where: { role: AppRole.ADMIN, userId: { not: 'staff-id' } },
+        select: { userId: true },
+      });
+      expect(supabase.suspendAdminUser).not.toHaveBeenCalled();
+    });
+
+    it('suspends an administrator under the invariant lock while another stays active', async () => {
+      const { service, transaction, supabase } = setup(
+        [AppRole.ADMIN],
+        [{ id: 'admin-0', email: 'other@example.com' }],
+      );
+
+      await service.suspendStaffUser('admin-0', 'staff-id', context);
+
+      expect(transaction.$executeRaw).toHaveBeenCalled();
+      expect(supabase.suspendAdminUser).toHaveBeenCalledWith('staff-id');
+    });
+
+    it('answers 404 for an account without staff access', async () => {
+      const { service, supabase } = setup([]);
+      await expect(service.suspendStaffUser('admin-id', 'customer-id', context)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.sendPasswordReset('admin-id', 'customer-id', context)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(supabase.suspendAdminUser).not.toHaveBeenCalled();
+    });
+
+    it('reinstates a suspended account and records it', async () => {
+      const { service, audit, supabase, redis } = setup([AppRole.CATALOGUE_MANAGER]);
+
+      await expect(service.reinstateStaffUser('admin-id', 'staff-id', context)).resolves.toEqual(
+        expect.objectContaining({ suspended: false, bannedUntil: null }),
+      );
+      expect(supabase.reinstateAdminUser).toHaveBeenCalledWith('staff-id');
+      expect(redis.delete).toHaveBeenCalledWith('auth:access:staff-id');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user.reinstated',
+          entityId: 'staff-id',
+          metadata: {
+            entityLabel: 'staff@example.com',
+            email: 'staff@example.com',
+            roles: [AppRole.CATALOGUE_MANAGER],
+          },
+        }),
+      );
+    });
+
+    it('sends the reset email through the storefront reset flow and returns nothing', async () => {
+      const { service, audit, auth } = setup([AppRole.SUPPORT_AGENT]);
+
+      await expect(
+        service.sendPasswordReset('admin-id', 'staff-id', context),
+      ).resolves.toBeUndefined();
+      expect(auth.requestPasswordReset).toHaveBeenCalledWith('staff@example.com');
+      expect(audit.record).toHaveBeenCalledWith({
+        actorId: 'admin-id',
+        action: 'user.password_reset.sent',
+        entityType: 'user',
+        entityId: 'staff-id',
+        metadata: { entityLabel: 'staff@example.com', email: 'staff@example.com' },
+        ...context,
+      });
+    });
+
+    it('does not send a reset to a suspended account', async () => {
+      const { service, supabase, auth } = setup([AppRole.SUPPORT_AGENT]);
+      supabase.getAdminUserById.mockResolvedValueOnce(banned);
+      await expect(service.sendPasswordReset('admin-id', 'staff-id', context)).rejects.toThrow(
+        'Reinstate this account before sending a password reset',
+      );
+      expect(auth.requestPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('reports a Supabase email rate limit as 429 without auditing', async () => {
+      const { service, audit, auth } = setup([AppRole.SUPPORT_AGENT]);
+      auth.requestPasswordReset.mockRejectedValueOnce(
+        new AuthApiError(
+          'For security purposes, you can only request this after 60 seconds.',
+          429,
+          'over_email_send_rate_limit',
+        ),
+      );
+      await expect(
+        service.sendPasswordReset('admin-id', 'staff-id', context),
+      ).rejects.toMatchObject({ status: 429 });
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 

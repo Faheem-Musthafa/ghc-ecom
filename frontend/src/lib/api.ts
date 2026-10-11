@@ -35,6 +35,16 @@ import {
 } from '../types';
 import { resolveApiBaseUrl } from './api-url';
 
+export interface AdminProductQuery {
+    page: number;
+    limit: 20 | 50 | 100;
+    /** Name, slug, SKU or alias (case-insensitive). */
+    q?: string;
+    status?: Product['status'] | '';
+    /** Category id. */
+    category?: string;
+}
+
 export const API_BASE_URL = resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 const CART_KEY = 'ghc_cart';
 const GUEST_ORDER_KEY = 'ghc_guest_orders';
@@ -425,8 +435,16 @@ export const api = {
         request<unknown>(`/orders/${id}/returns`, { method: 'POST', body: JSON.stringify({ reason }) }, { auth: true }),
 
     // List rows carry card images only and no videos; open a product with adminProduct.
-    adminProducts: (signal?: AbortSignal) =>
-        request<Product[]>('/admin/catalogue/products', { signal }, { auth: true, timeoutMs: 45_000 }),
+    adminProducts: (query: AdminProductQuery, signal?: AbortSignal) => {
+        const params = new URLSearchParams({ page: String(query.page), limit: String(query.limit) });
+        if (query.q?.trim()) params.set('q', query.q.trim());
+        if (query.status) params.set('status', query.status);
+        if (query.category) params.set('category', query.category);
+        return request<PaginatedProducts>(`/admin/catalogue/products?${params}`, { signal }, { auth: true });
+    },
+    // Every product (card images only) for catalogue export and import matching.
+    adminAllProducts: (signal?: AbortSignal) =>
+        request<Product[]>('/admin/catalogue/products/all', { signal }, { auth: true, timeoutMs: 45_000 }),
     adminProduct: (id: string) => request<Product>(`/admin/catalogue/products/${id}`, {}, { auth: true }),
     adminCategories: (signal?: AbortSignal) => request<Category[]>('/admin/catalogue/categories', { signal }, { auth: true }),
     createProduct: (input: unknown) => request<Product>('/admin/catalogue/products', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
@@ -461,6 +479,13 @@ export const api = {
         ),
     updateProductImage: (productId: string, imageId: string, input: { variantIds?: string[]; variantId?: string | null; altText?: string; sortOrder?: number }) =>
         request<ProductImage>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(input) }, { auth: true }),
+    // Lists every image of the product, first to last; returns them in their new order.
+    reorderProductImages: (productId: string, imageIds: string[]) =>
+        request<ProductImage[]>(
+            `/admin/catalogue/products/${productId}/images/order`,
+            { method: 'PUT', body: JSON.stringify({ imageIds }) },
+            { auth: true },
+        ),
     deleteProductImage: (productId: string, imageId: string) =>
         request<void>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }, { auth: true }),
     uploadProductVideo: (productId: string, form: FormData) =>
@@ -479,6 +504,9 @@ export const api = {
     adminInvoice: (id: string) => request<{ url: string; expiresIn: number }>(`/admin/orders/${id}/invoice`, {}, { auth: true }),
     transitionOrder: (id: string, status: string) =>
         request<Order>(`/admin/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }, { auth: true }),
+    /** Admin-only: cancels a paid, unshipped order; stock is released and the payment refunded automatically. */
+    cancelAdminOrder: (id: string, reason: string) =>
+        request<Order>(`/admin/orders/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }, { auth: true }),
     createShipment: (orderId: string, carrier?: string) =>
         request<Shipment>(`/admin/orders/${orderId}/shipments`, { method: 'POST', body: JSON.stringify({ carrier: carrier || undefined }) }, { auth: true }),
     addTrackingEvent: (shipmentId: string, input: { providerEventId: string; status: string; message?: string; location?: string; occurredAt: string }) =>
@@ -547,6 +575,14 @@ export const api = {
     /** Gives staff access to an account that already exists (the person keeps their password). */
     grantStaffAccess: (input: { email: string; role: string }) =>
         request<StaffUser>('/admin/users/grant', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
+    /** Blocks sign-in and ends the member's sessions until reinstated. */
+    suspendStaffUser: (userId: string) =>
+        request<StaffUser>(`/admin/users/${userId}/suspend`, { method: 'POST' }, { auth: true }),
+    reinstateStaffUser: (userId: string) =>
+        request<StaffUser>(`/admin/users/${userId}/reinstate`, { method: 'POST' }, { auth: true }),
+    /** Emails the member a reset-password link; the link itself is never returned. */
+    sendStaffPasswordReset: (userId: string) =>
+        request<void>(`/admin/users/${userId}/password-reset`, { method: 'POST' }, { auth: true }),
     createWarehouse: (input: { code: string; name: string; isActive?: boolean }) =>
         request<Warehouse>('/admin/inventory/warehouses', { method: 'POST', body: JSON.stringify(input) }, { auth: true }),
 };

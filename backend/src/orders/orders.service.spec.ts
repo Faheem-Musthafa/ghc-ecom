@@ -1,5 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { AppRole, OrderStatus } from '@prisma/client';
+import { ROLES_KEY } from '../auth/decorators/roles.decorator';
+import { FulfilmentController } from '../fulfilment/fulfilment.controller';
+import { AdminOrdersController } from './admin-orders.controller';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
 import { InvoiceService } from './invoice.service';
@@ -227,5 +230,145 @@ describe('OrdersService', () => {
         take: 20,
       }),
     );
+  });
+
+  describe('admin cancellation', () => {
+    const cartId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    let tx: {
+      $queryRaw: jest.Mock;
+      $executeRaw: jest.Mock;
+      shipment: { findFirst: jest.Mock };
+      auditLog: { create: jest.Mock };
+    };
+    let redis: { increment: jest.Mock };
+
+    beforeEach(() => {
+      tx = {
+        $queryRaw: jest.fn().mockResolvedValue([{ status: 'confirmed', cart_id: cartId }]),
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        shipment: { findFirst: jest.fn().mockResolvedValue(null) },
+        auditLog: { create: jest.fn().mockResolvedValue({}) },
+      };
+      redis = { increment: jest.fn().mockResolvedValue(2) };
+      Object.assign(prisma, {
+        $transaction: jest.fn((run: (client: typeof tx) => Promise<unknown>) => run(tx)),
+      });
+      prisma.order.findUnique.mockResolvedValue({ ...order, status: OrderStatus.CANCELLED });
+      service = new OrdersService(
+        prisma as unknown as PrismaService,
+        audit as unknown as AuditService,
+        invoices as unknown as InvoiceService,
+        carts as unknown as CartService,
+        redis as never,
+      );
+    });
+
+    const sql = (mock: jest.Mock, call: number): string =>
+      (mock.mock.calls[call][0] as TemplateStringsArray).join('?');
+
+    it('cancels a confirmed order through cancel_order and audits the reason', async () => {
+      const result = await service.cancelAdmin('admin-id', order.id, '  Customer asked  ', {
+        ipAddress: '127.0.0.1',
+      });
+
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(sql(tx.$executeRaw, 0)).toContain('public.cancel_order(');
+      expect(tx.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          actorId: 'admin-id',
+          action: 'order.admin_cancelled',
+          entityId: order.id,
+          metadata: { from: 'CONFIRMED', reason: 'Customer asked' },
+          ipAddress: '127.0.0.1',
+        }),
+      });
+      expect(redis.increment).toHaveBeenCalled();
+      // The full admin detail, so the dialog can refresh in place.
+      expect(prisma.order.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({ payments: expect.anything() }),
+        }),
+      );
+      expect(result.status).toBe(OrderStatus.CANCELLED);
+    });
+
+    it('releases consumed stock itself for a processing order with no shipment', async () => {
+      tx.$queryRaw
+        .mockResolvedValueOnce([{ status: 'processing', cart_id: cartId }])
+        .mockResolvedValueOnce([
+          { id: 'r1', warehouse_id: 'w1', variant_id: 'v1', quantity: 2 },
+          { id: 'r2', warehouse_id: 'w1', variant_id: 'v2', quantity: 1 },
+        ]);
+
+      await service.cancelAdmin('admin-id', order.id, 'Out of stock', {});
+
+      const statements = tx.$executeRaw.mock.calls.map((_, index) => sql(tx.$executeRaw, index));
+      expect(
+        statements.filter((text) => text.includes('update public.inventory_levels')),
+      ).toHaveLength(2);
+      expect(statements.filter((text) => text.includes("set status = 'released'"))).toHaveLength(2);
+      expect(
+        statements.filter((text) => text.includes('insert into public.stock_movements')),
+      ).toHaveLength(2);
+      expect(statements.at(-1)).toContain("set status = 'cancelled'");
+      expect(statements.some((text) => text.includes('cancel_order'))).toBe(false);
+      expect(tx.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ metadata: { from: 'PROCESSING', reason: 'Out of stock' } }),
+      });
+    });
+
+    it('refuses a processing order that already has a live shipment', async () => {
+      tx.$queryRaw.mockResolvedValueOnce([{ status: 'processing', cart_id: cartId }]);
+      tx.shipment.findFirst.mockResolvedValue({ id: 'shipment-1' });
+
+      await expect(service.cancelAdmin('admin-id', order.id, 'Late', {})).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(tx.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a second cancellation and orders that already shipped', async () => {
+      tx.$queryRaw.mockResolvedValueOnce([{ status: 'cancelled', cart_id: cartId }]);
+      await expect(service.cancelAdmin('admin-id', order.id, 'Again', {})).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      tx.$queryRaw.mockResolvedValueOnce([{ status: 'shipped', cart_id: cartId }]);
+      await expect(service.cancelAdmin('admin-id', order.id, 'Late', {})).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      tx.$queryRaw.mockResolvedValueOnce([]);
+      await expect(service.cancelAdmin('admin-id', order.id, 'Gone', {})).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(tx.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a reason and maps database failures to a bad request', async () => {
+      await expect(service.cancelAdmin('admin-id', order.id, '   ', {})).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      tx.$executeRaw.mockRejectedValue(new Error('order cannot be cancelled from status shipped'));
+      await expect(service.cancelAdmin('admin-id', order.id, 'Reason', {})).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(redis.increment).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps fulfilment moves to admins and warehouse managers, cancellation to admins', () => {
+    const roles = (target: object): AppRole[] =>
+      Reflect.getMetadata(ROLES_KEY, target) as AppRole[];
+    const orders = AdminOrdersController.prototype;
+    const fulfilment = FulfilmentController.prototype;
+
+    expect(roles(orders.transition)).toEqual([AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER]);
+    expect(roles(orders.cancel)).toEqual([AppRole.ADMIN]);
+    expect(roles(fulfilment.addTracking)).toEqual([AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER]);
+    expect(roles(fulfilment.createShipment)).toEqual([AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER]);
+    // Support still views orders and handles returns.
+    expect(roles(AdminOrdersController)).toContain(AppRole.SUPPORT_AGENT);
+    expect(roles(fulfilment.reviewReturn)).toContain(AppRole.SUPPORT_AGENT);
   });
 });

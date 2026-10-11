@@ -38,6 +38,9 @@ const actionLabels: Record<string, string> = {
     'user.role.assigned': 'Staff role granted',
     'user.role.removed': 'Staff role removed',
     'auth.staff.signed_in': 'Staff sign-in',
+    'user.suspended': 'Staff account suspended',
+    'user.reinstated': 'Staff account reinstated',
+    'user.password_reset.sent': 'Password reset email sent',
 };
 
 const roleLabels: Record<string, string> = {

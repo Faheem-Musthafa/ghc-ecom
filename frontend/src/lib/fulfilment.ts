@@ -1,4 +1,4 @@
-import type { OrderPayment } from '../types';
+import type { Order, OrderPayment } from '../types';
 
 /**
  * Shipment states an admin may move to from each state. Mirrors
@@ -52,4 +52,21 @@ export const returnRefundKey = (returnId: string, payment: Pick<OrderPayment, 'r
         (refund) => refund.returnRequestId === returnId && refund.status === 'FAILED',
     ).length;
     return `return_${returnId}_${failedAttempts}`;
+};
+
+/**
+ * Whether an admin may cancel the order: paid but not yet shipped, with no live
+ * shipment. Mirrors the checks in OrdersService.cancelAdmin.
+ */
+export const canAdminCancelOrder = (order: Pick<Order, 'status' | 'shipments'>): boolean =>
+    (order.status === 'CONFIRMED' || order.status === 'PROCESSING') &&
+    !(order.shipments ?? []).some((shipment) => shipment.status !== 'CANCELLED');
+
+/**
+ * What the automatic cancellation refund will return: the captured payment
+ * minus refunds that have not failed (as RefundsService.refundOrderCancellation).
+ */
+export const cancellationRefundPaise = (order: Pick<Order, 'payments'>): number => {
+    const payment = order.payments?.find((item) => item.status === 'CAPTURED' || item.status === 'REFUNDED');
+    return payment ? refundablePaise(payment) : 0;
 };

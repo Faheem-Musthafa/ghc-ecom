@@ -40,7 +40,15 @@ import {
 } from '../lib/catalogue-csv';
 import { inventoryCsvExport, inventoryCsvTemplate, parseInventoryCsv, planInventoryImport, validateInventoryCsvRows } from '../lib/inventory-csv';
 import { fallbackImage, rupees, shortDate, slugify, titleCase } from '../lib/commerce';
-import { nextShipmentStatuses, paiseToRupeesInput as refundAmountInput, parseRupeesToPaise, refundablePaise, returnRefundKey } from '../lib/fulfilment';
+import {
+    canAdminCancelOrder,
+    cancellationRefundPaise,
+    nextShipmentStatuses,
+    paiseToRupeesInput as refundAmountInput,
+    parseRupeesToPaise,
+    refundablePaise,
+    returnRefundKey,
+} from '../lib/fulfilment';
 import { openTrustedUrlFrom } from '../lib/navigation';
 import { lowestPricedVariant, productImageVariantIds, variantOptionLabel, variantPricesDiffer } from '../lib/product-options';
 import {
@@ -422,7 +430,8 @@ type OrderActionForm =
     | { kind: 'shipment'; carrier: string }
     | { kind: 'tracking'; shipmentId: string; status: string; note: string }
     | { kind: 'review'; returnId: string; status: 'APPROVED' | 'REJECTED' | 'RECEIVED'; note: string; restock: boolean }
-    | { kind: 'refund'; returnId: string; amount: string; error: string };
+    | { kind: 'refund'; returnId: string; amount: string; error: string }
+    | { kind: 'cancel'; reason: string; error: string };
 
 const actionButton = 'rounded-sm border px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50';
 const ORDER_PAGE_SIZE = 100;
@@ -432,8 +441,11 @@ const OrdersAdmin = () => {
     const roles = session?.roles ?? [];
     const can = (...allowed: AppRole[]) => allowed.some((role) => roles.includes(role));
     // Mirrors the @Roles on each backend route so nobody is offered a button that will 403.
+    // Support staff view orders and handle returns; fulfilment moves belong to the warehouse.
     const canShip = can('ADMIN', 'WAREHOUSE_MANAGER');
-    const canTrack = can('ADMIN', 'WAREHOUSE_MANAGER', 'SUPPORT_AGENT');
+    const canTransition = can('ADMIN', 'WAREHOUSE_MANAGER');
+    const canTrack = can('ADMIN', 'WAREHOUSE_MANAGER');
+    const canCancel = can('ADMIN');
     const canReviewReturns = can('ADMIN', 'SUPPORT_AGENT', 'WAREHOUSE_MANAGER');
     const canRestock = can('ADMIN', 'WAREHOUSE_MANAGER');
     const canRefund = can('ADMIN', 'SUPPORT_AGENT');
@@ -640,6 +652,22 @@ const OrdersAdmin = () => {
         }, 'Unable to create refund.');
     };
 
+    const submitCancel = (reason: string) => {
+        if (!detail) return;
+        const trimmed = reason.trim();
+        if (trimmed.length < 3) {
+            setForm({ kind: 'cancel', reason, error: 'Enter a reason of at least 3 characters; it is kept in the audit log.' });
+            return;
+        }
+        const refundPaise = cancellationRefundPaise(detail);
+        void run('cancel', async () => {
+            replaceOrder(await api.cancelAdminOrder(detail.id, trimmed));
+            return refundPaise > 0
+                ? `Order cancelled and stock released. A refund of ${rupees(refundPaise)} is being sent to HDFC automatically.`
+                : 'Order cancelled and stock released.';
+        }, 'Unable to cancel this order.');
+    };
+
     const reconcileRefunds = () => {
         if (busy) return;
         setBusy('reconcile');
@@ -840,9 +868,9 @@ const OrdersAdmin = () => {
                                         onClick={() => downloadInvoice(detail.id)}
                                         className="flex items-center gap-2 rounded-sm border border-gold-500/30 bg-carbon px-3 py-2 text-xs text-gold-300 hover:border-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
-                                        <IconDownload size={14} /> {busy === 'invoice' ? 'Preparing invoice…' : 'Download Tax Invoice'}
+                                        <IconDownload size={14} /> {busy === 'invoice' ? 'Preparing invoice…' : 'Download Invoice'}
                                     </button>
-                                    {detail.status === 'CONFIRMED' && (
+                                    {detail.status === 'CONFIRMED' && canTransition && (
                                         <button type="button" disabled={busy !== null} onClick={() => transition('PROCESSING')} className="rounded-sm bg-gold-400 px-3 py-2 text-xs font-bold text-obsidian disabled:cursor-not-allowed disabled:opacity-50">
                                             {busy === 'transition' ? 'Updating…' : 'Start processing'}
                                         </button>
@@ -852,7 +880,66 @@ const OrdersAdmin = () => {
                                             Create shipment
                                         </button>
                                     )}
+                                    {canCancel && canAdminCancelOrder(detail) && form?.kind !== 'cancel' && (
+                                        <button
+                                            type="button"
+                                            disabled={busy !== null}
+                                            onClick={() => setForm({ kind: 'cancel', reason: '', error: '' })}
+                                            className={`${actionButton} border-red-500/40 text-red-300 hover:border-red-400`}
+                                        >
+                                            Cancel order
+                                        </button>
+                                    )}
                                 </div>
+                                {form?.kind === 'cancel' && (
+                                    <form
+                                        role="alertdialog"
+                                        aria-labelledby="cancel-order-title"
+                                        aria-describedby="cancel-order-summary"
+                                        noValidate
+                                        className="mt-4 space-y-3 rounded-sm border border-red-500/40 bg-red-950/20 p-4 text-xs text-cream/80"
+                                        onSubmit={(event) => {
+                                            event.preventDefault();
+                                            submitCancel(form.reason);
+                                        }}
+                                    >
+                                        <h5 id="cancel-order-title" className="text-sm font-bold text-red-200">Cancel order {detail.orderNumber}?</h5>
+                                        <div id="cancel-order-summary" className="space-y-1">
+                                            {cancellationRefundPaise(detail) > 0 ? (
+                                                detail.hdfcOrderId ? (
+                                                    <p>The customer will be refunded <strong className="text-cream">{rupees(cancellationRefundPaise(detail))}</strong> through HDFC automatically.</p>
+                                                ) : (
+                                                    <p>This is a legacy (pre-HDFC) payment of <strong className="text-cream">{rupees(cancellationRefundPaise(detail))}</strong>; refund it manually.</p>
+                                                )
+                                            ) : (
+                                                <p>No captured payment remains to refund.</p>
+                                            )}
+                                            <p>Its stock goes back to inventory and the customer is notified. This cannot be undone.</p>
+                                        </div>
+                                        <label className="block">
+                                            Reason (required, kept in the audit log)
+                                            <textarea
+                                                value={form.reason}
+                                                maxLength={500}
+                                                required
+                                                onChange={(event) => setForm({ ...form, reason: event.target.value, error: '' })}
+                                                className={`${textareaStyle} mt-1`}
+                                                aria-invalid={Boolean(form.error)}
+                                                aria-describedby={form.error ? 'cancel-order-error' : undefined}
+                                                autoFocus
+                                            />
+                                        </label>
+                                        {form.error && <p id="cancel-order-error" className="text-red-300" role="alert">{form.error}</p>}
+                                        <div className="flex flex-wrap gap-2">
+                                            <button type="submit" disabled={busy !== null} className="rounded-sm bg-red-400 px-3 py-2 text-xs font-bold text-obsidian disabled:cursor-not-allowed disabled:opacity-50">
+                                                {busy === 'cancel' ? 'Cancelling…' : 'Cancel order and refund'}
+                                            </button>
+                                            <button type="button" disabled={busy !== null} onClick={() => setForm(null)} className={`${actionButton} border-gold-500/30 text-cream/70`}>
+                                                Keep order
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
                                 {form?.kind === 'shipment' && (
                                     <form
                                         className="mt-4 space-y-3 border-t border-gold-500/10 pt-4"
@@ -1173,13 +1260,14 @@ interface VariantDraft {
 
 interface CatalogueImportProgress {
     fileName: string;
-    phase: 'categories' | 'products' | 'rollback' | 'refreshing';
+    phase: 'loading' | 'categories' | 'products' | 'rollback' | 'refreshing';
     detail: string;
     completedProducts: number;
     totalProducts: number;
 }
 
 const catalogueImportPhaseLabel: Record<CatalogueImportProgress['phase'], string> = {
+    loading: 'Reading current catalogue',
     categories: 'Preparing categories',
     products: 'Importing catalogue',
     rollback: 'Reverting changes',
@@ -1433,16 +1521,26 @@ const assignmentMode = (variantIds: string[], drafts: VariantDraft[]): string =>
 
 const PRODUCT_PAGE_SIZES = [20, 50, 100] as const;
 type ProductPageSize = (typeof PRODUCT_PAGE_SIZES)[number];
+// The product search is sent to the server once typing pauses this long.
+const PRODUCT_SEARCH_DEBOUNCE_MS = 300;
 
 const CatalogueAdmin = () => {
     const [activeTab, setActiveTab] = useState<'products' | 'categories'>('products');
+    // The current page of products; the server filters, searches and pages the catalogue.
     const [products, setProducts] = useState<Product[]>([]);
+    const [productTotal, setProductTotal] = useState(0);
+    const [productsLoaded, setProductsLoaded] = useState(false);
+    const [productsLoading, setProductsLoading] = useState(true);
+    // Bumped to fetch the current page again (after an import, a delete or a new product).
+    const [productsVersion, setProductsVersion] = useState(0);
     const [categories, setCategories] = useState<Category[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
-    const [statusFilter, setStatusFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState<Product['status'] | ''>('');
     const [productPage, setProductPage] = useState(1);
     const [productPageSize, setProductPageSize] = useState<ProductPageSize>(20);
+    const [exportingCatalogue, setExportingCatalogue] = useState(false);
 
     const [openProductModal, setOpenProductModal] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1459,9 +1557,13 @@ const CatalogueAdmin = () => {
     const [bulkImporting, setBulkImporting] = useState(false);
     const [bulkImportProgress, setBulkImportProgress] = useState<CatalogueImportProgress | null>(null);
     const [bulkImportErrors, setBulkImportErrors] = useState<string[]>([]);
+    // Categories have loaded; an import needs them to match category names.
     const [catalogueLoaded, setCatalogueLoaded] = useState(false);
-    // The variant or image being deleted from the open product (`variant:<key>` / `image:<id>`).
+    // The variant or image being changed in the open product
+    // (`variant:<key>` / `image:<id>` while deleting, `image-order:<id>` while moving).
     const [busyItem, setBusyItem] = useState<string | null>(null);
+    // Announces the result of moving an image for screen readers (and shows it beside the gallery).
+    const [imageOrderNotice, setImageOrderNotice] = useState('');
     // Files and Drive links already uploaded by an earlier, partly failed save of the open
     // product; a retry skips them instead of storing duplicates.
     const uploadedFilesRef = React.useRef(new Set<string>());
@@ -1479,11 +1581,10 @@ const CatalogueAdmin = () => {
         setEditingCategory(null);
     });
 
-    const load = (signal?: AbortSignal) =>
-        Promise.all([api.adminProducts(signal), api.adminCategories(signal)])
-            .then(([items, cats]) => {
+    const loadCategories = (signal?: AbortSignal) =>
+        api.adminCategories(signal)
+            .then((cats) => {
                 if (signal?.aborted) return;
-                setProducts(items);
                 setCategories(cats);
                 setCatalogueLoaded(true);
             })
@@ -1493,14 +1594,55 @@ const CatalogueAdmin = () => {
 
     useEffect(() => {
         const controller = new AbortController();
-        void load(controller.signal);
+        void loadCategories(controller.signal);
         return () => controller.abort();
     }, []);
 
+    const reloadProducts = () => setProductsVersion((version) => version + 1);
+
+    // Search typing settles before it reaches the server; a new search starts from page 1.
+    useEffect(() => {
+        const query = searchQuery.trim();
+        if (query === debouncedSearch) return;
+        const timer = window.setTimeout(() => {
+            setDebouncedSearch(query);
+            setProductPage(1);
+        }, PRODUCT_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [searchQuery, debouncedSearch]);
+
+    // Fetches the page being viewed; a newer request aborts the one still in flight.
+    useEffect(() => {
+        const controller = new AbortController();
+        setProductsLoading(true);
+        api.adminProducts(
+            { page: productPage, limit: productPageSize, q: debouncedSearch, status: statusFilter, category: categoryFilter },
+            controller.signal,
+        )
+            .then((result) => {
+                if (controller.signal.aborted) return;
+                // Deletes can leave this page past the end; show the last page instead.
+                const lastPage = Math.max(1, Math.ceil(result.total / productPageSize));
+                if (productPage > lastPage) {
+                    setProductPage(lastPage);
+                    return;
+                }
+                setProducts(result.items);
+                setProductTotal(result.total);
+                setProductsLoaded(true);
+                setProductsLoading(false);
+            })
+            .catch((caught) => {
+                if (controller.signal.aborted) return;
+                setError(caught instanceof Error ? caught.message : 'Unable to load products.');
+                setProductsLoading(false);
+            });
+        return () => controller.abort();
+    }, [productPage, productPageSize, debouncedSearch, statusFilter, categoryFilter, productsVersion]);
+
+    // Updates a product on the current page in place, so saving keeps the page and its position.
     const upsertProduct = (product: Product) =>
-        setProducts((current) => current.some((item) => item.id === product.id)
-            ? current.map((item) => (item.id === product.id ? product : item))
-            : [product, ...current]);
+        setProducts((current) => current.map((item) => (item.id === product.id ? product : item)));
 
     // Refreshes one product in the list instead of reloading the whole catalogue.
     const refreshProduct = async (productId: string): Promise<Product | null> => {
@@ -1509,13 +1651,19 @@ const CatalogueAdmin = () => {
             upsertProduct(product);
             return product;
         } catch {
-            await load();
+            reloadProducts();
             return null;
         }
     };
 
+    const refreshCatalogue = async () => {
+        reloadProducts();
+        await loadCategories();
+    };
+
     const openProductEditor = (product: Product | null) => {
         setEditingProduct(product);
+        setImageOrderNotice('');
         setVariantDrafts(product?.variants.length ? product.variants.map(createVariantDraft) : [createVariantDraft()]);
         setImageAssignments(Object.fromEntries((product?.images || []).map((image) => [image.id, productImageVariantIds(image)])));
         uploadedFilesRef.current = new Set();
@@ -1708,13 +1856,16 @@ const CatalogueAdmin = () => {
             setSuccessMessage(isNewProduct ? 'New product created successfully.' : 'Product updated successfully.');
             setOpenProductModal(false);
             setEditingProduct(null);
-            await refreshProduct(productId);
+            // A new product may belong on this page (or move others along), so fetch it again.
+            if (isNewProduct) reloadProducts();
+            else await refreshProduct(productId);
         } catch (caught) {
             const message = caught instanceof Error ? caught.message : 'Product save failed.';
             setError(productSaved
                 ? `${message} Saved steps were kept; fix the problem and save again to finish.`
                 : message);
             if (product) {
+                if (isNewProduct) reloadProducts();
                 // Show what was saved (new images, option ids) so the retry continues from there.
                 const fresh = await refreshProduct(product.id);
                 if (fresh) {
@@ -1732,17 +1883,16 @@ const CatalogueAdmin = () => {
 
     const handleDeleteProduct = async (productId: string, name: string) => {
         if (!window.confirm(`Are you sure you want to delete product "${name}"?`)) return;
-        let deleted = false;
         try {
             await api.deleteProduct(productId);
-            deleted = true;
             setProducts((current) => current.filter((product) => product.id !== productId));
+            setProductTotal((current) => Math.max(0, current - 1));
             setSuccessMessage(`Product "${name}" deleted.`);
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Product deletion failed.');
         } finally {
-            // After a failure the product may or may not be gone, so show the real list.
-            if (!deleted) await load();
+            // Refill the page from the next one; after a failure the product may or may not be gone.
+            reloadProducts();
         }
     };
 
@@ -1827,6 +1977,43 @@ const CatalogueAdmin = () => {
         }
     };
 
+    // Moving an image saves the new order at once (not on Save): the gallery changes straight
+    // away and goes back if the server refuses the order.
+    const handleMoveImage = async (productId: string, imageId: string, offset: -1 | 1) => {
+        if (saving || busyItem !== null || editingProduct?.id !== productId) return;
+        const previous = editingProduct.images;
+        const from = previous.findIndex((image) => image.id === imageId);
+        const to = from + offset;
+        if (from < 0 || to < 0 || to >= previous.length) return;
+        const reordered = [...previous];
+        [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+        const optimistic = reordered.map((image, index) => ({ ...image, sortOrder: index }));
+        setBusyItem(`image-order:${imageId}`);
+        setError('');
+        setImageOrderNotice('Saving image order…');
+        setEditingProduct((current) => (current?.id === productId ? { ...current, images: optimistic } : current));
+        try {
+            const saved = await api.reorderProductImages(productId, optimistic.map((image) => image.id));
+            setEditingProduct((current) => {
+                if (current?.id !== productId) return current;
+                const currentById = new Map(current.images.map((image) => [image.id, image]));
+                return {
+                    ...current,
+                    images: saved.map((image) => ({ ...(currentById.get(image.id) ?? image), sortOrder: image.sortOrder })),
+                };
+            });
+            setImageOrderNotice(`Image moved to position ${to + 1} of ${previous.length}.`);
+            // Keeps the list row's thumbnail in step with the new first image.
+            void refreshProduct(productId);
+        } catch (caught) {
+            setEditingProduct((current) => (current?.id === productId ? { ...current, images: previous } : current));
+            setImageOrderNotice('');
+            setError(caught instanceof Error ? `Image order not saved: ${caught.message}` : 'Image order not saved.');
+        } finally {
+            setBusyItem(null);
+        }
+    };
+
     const handleBulkImport = async (file: File) => {
         setBulkImporting(true);
         setBulkImportErrors([]);
@@ -1859,16 +2046,30 @@ const CatalogueAdmin = () => {
 
             setBulkImportProgress({
                 fileName: file.name,
+                phase: 'loading',
+                detail: 'Loading every product to match slugs and SKUs…',
+                completedProducts: 0,
+                totalProducts: groups.size,
+            });
+            // The list shows one page, so read the whole catalogue now to match rows against it.
+            let existingProducts: Product[];
+            try {
+                existingProducts = await api.adminAllProducts();
+            } catch (caught) {
+                const message = caught instanceof Error ? caught.message : 'Request failed.';
+                setError(`Import stopped before any changes: the current catalogue could not be loaded. ${message}`);
+                return;
+            }
+            setBulkImportProgress((current) => current ? {
+                ...current,
                 phase: missingCategoryNames.length ? 'categories' : 'products',
                 detail: missingCategoryNames.length
                     ? `Preparing ${missingCategoryNames.length} new categor${missingCategoryNames.length === 1 ? 'y' : 'ies'}…`
                     : 'Preparing the first product…',
-                completedProducts: 0,
-                totalProducts: groups.size,
-            });
+            } : current);
 
-            const productBySlug = new Map(products.map((product) => [product.slug, product]));
-            const productBySku = new Map(products.flatMap((product) => product.variants.map((variant) => [variant.sku.toUpperCase(), product] as const)));
+            const productBySlug = new Map(existingProducts.map((product) => [product.slug, product]));
+            const productBySku = new Map(existingProducts.flatMap((product) => product.variants.map((variant) => [variant.sku.toUpperCase(), product] as const)));
             // Existing product id → the file's name for it, so two groups cannot update one product.
             const claimedProducts = new Map<string, string>();
             const importErrors: string[] = [];
@@ -2117,7 +2318,7 @@ const CatalogueAdmin = () => {
                     phase: 'refreshing',
                     detail: 'Refreshing the catalogue after rollback…',
                 } : current);
-                await load();
+                await refreshCatalogue();
                 return;
             }
 
@@ -2131,7 +2332,7 @@ const CatalogueAdmin = () => {
                 completedProducts: current.totalProducts,
                 detail: 'Refreshing the catalogue with the imported products…',
             } : current);
-            await load();
+            await refreshCatalogue();
         } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Could not read the catalogue CSV.');
         } finally {
@@ -2175,25 +2376,21 @@ const CatalogueAdmin = () => {
         }
     };
 
-    const filteredProducts = useMemo(() => {
-        const query = searchQuery.trim().toLowerCase();
-        return products.filter((p) => {
-            const matchesSearch = !query
-                || p.name.toLowerCase().includes(query)
-                || p.slug.includes(query)
-                || p.variants.some((variant) => variant.sku.toLowerCase().includes(query) || (variant.alias || '').toLowerCase().includes(query));
-            const matchesCat = !categoryFilter || p.categoryId === categoryFilter;
-            const matchesStatus = !statusFilter || p.status === statusFilter;
-            return matchesSearch && matchesCat && matchesStatus;
-        });
-    }, [products, searchQuery, categoryFilter, statusFilter]);
+    // The export holds every product, so it is read when asked for rather than with the page.
+    const handleExportCatalogue = async () => {
+        setExportingCatalogue(true);
+        setError('');
+        try {
+            downloadCsv('glockery-catalogue-export.csv', catalogueCsvExport(await api.adminAllProducts()));
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Could not export the catalogue.');
+        } finally {
+            setExportingCatalogue(false);
+        }
+    };
 
-    // New filters start from the first page; deletes can shrink the list below the current page.
-    useEffect(() => setProductPage(1), [searchQuery, categoryFilter, statusFilter, productPageSize]);
-    const productPageCount = Math.max(1, Math.ceil(filteredProducts.length / productPageSize));
-    const currentProductPage = Math.min(productPage, productPageCount);
-    const productPageStart = (currentProductPage - 1) * productPageSize;
-    const pagedProducts = filteredProducts.slice(productPageStart, productPageStart + productPageSize);
+    const productPageCount = Math.max(1, Math.ceil(productTotal / productPageSize));
+    const productPageStart = (productPage - 1) * productPageSize;
 
     return (
         <AdminShell
@@ -2208,20 +2405,21 @@ const CatalogueAdmin = () => {
                         <IconDownload size={15} /> Import Template
                     </button>
                     <button
-                        onClick={() => downloadCsv('glockery-catalogue-export.csv', catalogueCsvExport(products))}
-                        disabled={!products.length}
+                        onClick={() => void handleExportCatalogue()}
+                        disabled={exportingCatalogue}
+                        aria-busy={exportingCatalogue}
                         className="flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream hover:border-gold-400 disabled:opacity-40"
                     >
-                        <IconDownload size={15} /> Export Catalogue
+                        <IconDownload size={15} /> {exportingCatalogue ? 'Exporting…' : 'Export Catalogue'}
                     </button>
                     <label
                         className={`flex h-11 items-center gap-2 border border-gold-500/30 bg-carbon px-3 text-xs font-bold uppercase tracking-wider text-cream ${
                             bulkImporting || !catalogueLoaded ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:border-gold-400'
                         }`}
-                        title={catalogueLoaded ? undefined : 'Available once the catalogue has loaded'}
+                        title={catalogueLoaded ? undefined : 'Available once the categories have loaded'}
                     >
                         <IconPlus size={15} /> {bulkImporting ? 'Importing…' : 'Import File'}
-                        {/* Import matches rows against the loaded catalogue, so it waits for it. */}
+                        {/* Import matches category names against the loaded categories, so it waits for them. */}
                         <input
                             type="file"
                             accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -2281,7 +2479,7 @@ const CatalogueAdmin = () => {
                         activeTab === 'products' ? 'border-b-2 border-gold-400 text-gold-300' : 'text-cream/50 hover:text-cream'
                     }`}
                 >
-                    Products ({products.length})
+                    Products{productsLoaded ? ` (${productTotal})` : ''}
                 </button>
                 <button
                     onClick={() => setActiveTab('categories')}
@@ -2300,15 +2498,21 @@ const CatalogueAdmin = () => {
                         <div className="flex min-w-0 flex-1 rounded-sm border border-gold-500/25 bg-carbon sm:col-span-2 lg:min-w-[240px]">
                             <IconSearch className="m-3 text-gold-400" />
                             <input
+                                type="search"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                                aria-label="Search products"
                                 placeholder="Search by name, slug, SKU or alias…"
                                 className="min-w-0 flex-1 bg-transparent text-sm text-cream outline-none"
                             />
                         </div>
                         <select
                             value={categoryFilter}
-                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            onChange={(e) => {
+                                setCategoryFilter(e.target.value);
+                                setProductPage(1);
+                            }}
+                            aria-label="Filter by category"
                             className="h-11 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none lg:w-auto"
                         >
                             <option value="">All Categories</option>
@@ -2320,7 +2524,11 @@ const CatalogueAdmin = () => {
                         </select>
                         <select
                             value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
+                            onChange={(e) => {
+                                setStatusFilter(e.target.value as Product['status'] | '');
+                                setProductPage(1);
+                            }}
+                            aria-label="Filter by status"
                             className="h-11 w-full rounded-sm border border-gold-500/25 bg-obsidian px-4 text-xs text-cream outline-none lg:w-auto"
                         >
                             <option value="">All Statuses</option>
@@ -2331,8 +2539,8 @@ const CatalogueAdmin = () => {
                     </div>
 
                     {/* Products Table */}
-                    <div className={`${box} overflow-x-auto`}>
-                        <table className="admin-responsive-table w-full min-w-[850px] text-left text-sm">
+                    <div className={`${box} overflow-x-auto`} aria-busy={productsLoading}>
+                        <table className={`admin-responsive-table w-full min-w-[850px] text-left text-sm transition-opacity ${productsLoading && productsLoaded ? 'opacity-60' : ''}`}>
                             <thead className="border-b border-gold-500/20 text-[9px] uppercase tracking-[0.2em] text-gold-400 bg-obsidian/60">
                                 <tr>
                                     <th className="p-4">Product</th>
@@ -2344,7 +2552,7 @@ const CatalogueAdmin = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gold-500/10">
-                                {pagedProducts.map((product) => (
+                                {products.map((product) => (
                                     <tr key={product.id} className="transition-colors hover:bg-gold-400/[.03]">
                                         <td data-label="Product" className="p-4">
                                             <div className="flex items-center gap-3">
@@ -2405,20 +2613,24 @@ const CatalogueAdmin = () => {
                                 ))}
                             </tbody>
                         </table>
-                        {!filteredProducts.length && <p className="p-10 text-center text-sm text-cream/40">No matching products found in catalogue.</p>}
+                        {!productsLoaded && productsLoading && <p className="p-10 text-center text-sm text-cream/40" role="status">Loading products…</p>}
+                        {productsLoaded && !productsLoading && !products.length && <p className="p-10 text-center text-sm text-cream/40">No matching products found in catalogue.</p>}
                     </div>
 
-                    {filteredProducts.length > 0 && (
+                    {productTotal > 0 && products.length > 0 && (
                         <div className="mt-4 flex flex-col gap-3 text-xs text-cream/60 sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex items-center gap-3">
                                 <span>
-                                    Showing {productPageStart + 1}–{productPageStart + pagedProducts.length} of {filteredProducts.length}
+                                    Showing {productPageStart + 1}–{productPageStart + products.length} of {productTotal}
                                 </span>
                                 <label className="flex items-center gap-2">
                                     <span className="sr-only sm:not-sr-only">Per page</span>
                                     <select
                                         value={productPageSize}
-                                        onChange={(e) => setProductPageSize(Number(e.target.value) as ProductPageSize)}
+                                        onChange={(e) => {
+                                            setProductPageSize(Number(e.target.value) as ProductPageSize);
+                                            setProductPage(1);
+                                        }}
                                         className="h-9 rounded-sm border border-gold-500/25 bg-obsidian px-3 text-xs text-cream outline-none"
                                         aria-label="Products per page"
                                     >
@@ -2433,19 +2645,19 @@ const CatalogueAdmin = () => {
                             {productPageCount > 1 && (
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => setProductPage(currentProductPage - 1)}
-                                        disabled={currentProductPage <= 1}
+                                        onClick={() => setProductPage(productPage - 1)}
+                                        disabled={productPage <= 1}
                                         className="flex size-9 items-center justify-center rounded-sm border border-gold-500/25 bg-carbon text-cream hover:border-gold-400 disabled:pointer-events-none disabled:opacity-30"
                                         aria-label="Previous page"
                                     >
                                         <IconChevronLeft size={16} />
                                     </button>
                                     <span className="px-2">
-                                        Page <strong className="text-gold-300">{currentProductPage}</strong> of {productPageCount}
+                                        Page <strong className="text-gold-300">{productPage}</strong> of {productPageCount}
                                     </span>
                                     <button
-                                        onClick={() => setProductPage(currentProductPage + 1)}
-                                        disabled={currentProductPage >= productPageCount}
+                                        onClick={() => setProductPage(productPage + 1)}
+                                        disabled={productPage >= productPageCount}
                                         className="flex size-9 items-center justify-center rounded-sm border border-gold-500/25 bg-carbon text-cream hover:border-gold-400 disabled:pointer-events-none disabled:opacity-30"
                                         aria-label="Next page"
                                     >
@@ -2794,18 +3006,50 @@ const CatalogueAdmin = () => {
                             {editingProduct && editingProduct.images.length > 0 && (
                                 <section className="sm:col-span-2" aria-labelledby="existing-images-heading">
                                     <h3 id="existing-images-heading" className="text-sm font-semibold text-cream">
-                                        Assign existing images
+                                        Order and assign existing images
                                     </h3>
                                     <p className="mt-1 text-xs text-cream/55">
-                                        Keep an image product-wide, reuse it for every combination of one colour, or choose exact combinations.
+                                        The storefront shows images in this order, each option&rsquo;s own images before shared ones. A product card uses the first image of its lowest-priced option, or the first shared image when that option has none. Moving an image saves at once. Keep an image product-wide, reuse it for every combination of one colour, or choose exact combinations.
                                     </p>
-                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                                        {editingProduct.images.map((image) => {
+                                    <p role="status" aria-live="polite" className="mt-1 min-h-4 text-[11px] text-gold-300">
+                                        {imageOrderNotice}
+                                    </p>
+                                    <ol className="mt-2 grid gap-3 sm:grid-cols-2" aria-label="Product images in storefront order">
+                                        {editingProduct.images.map((image, imageIndex) => {
                                             const assignedIds = imageAssignments[image.id] ?? [];
                                             const mode = assignmentMode(assignedIds, variantDrafts);
+                                            const imageCount = editingProduct.images.length;
+                                            const reorderBlocked = saving || busyItem !== null;
+                                            const moveButtonClass = 'flex size-11 items-center justify-center rounded-sm border border-gold-500/25 bg-carbon text-cream hover:border-gold-400 aria-disabled:cursor-not-allowed aria-disabled:opacity-30';
                                             return (
-                                            <div key={image.id} className="flex items-start gap-3 bg-obsidian/55 p-2">
-                                                <img loading="lazy" decoding="async" src={image.thumbnailUrl} alt={image.altText} className="size-16 shrink-0 bg-obsidian object-contain" />
+                                            <li key={image.id} className="flex items-start gap-3 bg-obsidian/55 p-2" aria-busy={busyItem === `image-order:${image.id}`}>
+                                                <span className="flex shrink-0 flex-col items-center gap-1.5">
+                                                    <img loading="lazy" decoding="async" src={image.thumbnailUrl} alt={image.altText} className="size-16 bg-obsidian object-contain" />
+                                                    <span className="text-[10px] tabular-nums text-cream/55">{imageIndex + 1} of {imageCount}</span>
+                                                    {imageCount > 1 && (
+                                                        <span className="flex gap-1">
+                                                            {/* aria-disabled rather than disabled keeps keyboard focus on the button while it moves. */}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void handleMoveImage(editingProduct.id, image.id, -1)}
+                                                                aria-disabled={reorderBlocked || imageIndex === 0}
+                                                                aria-label={`Move image ${imageIndex + 1} of ${imageCount} earlier`}
+                                                                className={moveButtonClass}
+                                                            >
+                                                                <IconChevronLeft size={16} aria-hidden="true" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void handleMoveImage(editingProduct.id, image.id, 1)}
+                                                                aria-disabled={reorderBlocked || imageIndex === imageCount - 1}
+                                                                aria-label={`Move image ${imageIndex + 1} of ${imageCount} later`}
+                                                                className={moveButtonClass}
+                                                            >
+                                                                <IconChevronRight size={16} aria-hidden="true" />
+                                                            </button>
+                                                        </span>
+                                                    )}
+                                                </span>
                                                 <label className="min-w-0 flex-1">
                                                     <span className="mb-1 block text-[11px] text-cream/55">Gallery assignment</span>
                                                     <select
@@ -2859,10 +3103,10 @@ const CatalogueAdmin = () => {
                                                 >
                                                     <IconTrash size={15} />
                                                 </button>
-                                            </div>
+                                            </li>
                                             );
                                         })}
-                                    </div>
+                                    </ol>
                                 </section>
                             )}
 
@@ -4481,23 +4725,51 @@ const staffRoleOptions: Array<{
 
 const roleLabel = (role: StaffRole) => staffRoleOptions.find((option) => option.value === role)?.label || role;
 
+type StaffAccountAction = 'suspend' | 'reinstate' | 'reset';
+
+const staffAccountPrompts: Record<StaffAccountAction, { title: (member: { name: string; email: string }) => string; detail: string; confirm: string; busy: string }> = {
+    suspend: {
+        title: ({ name }) => `Suspend ${name}?`,
+        detail: 'They are signed out everywhere and cannot sign in until reinstated. Their roles stay in place for when they return.',
+        confirm: 'Suspend account',
+        busy: 'Suspending…',
+    },
+    reinstate: {
+        title: ({ name }) => `Reinstate ${name}?`,
+        detail: 'They can sign in again with their existing password and roles.',
+        confirm: 'Reinstate account',
+        busy: 'Reinstating…',
+    },
+    reset: {
+        title: ({ email }) => `Email a password reset link to ${email}?`,
+        detail: 'They choose a new password from the link in the email. Their current password keeps working until they do.',
+        confirm: 'Send reset email',
+        busy: 'Sending…',
+    },
+};
+
 const StaffRoleEditor = ({
     user,
     currentUserId,
     onSaved,
     onCancel,
     onError,
+    onAccountChanged,
 }: {
     user: StaffUser;
     currentUserId?: string;
     onSaved: (success: boolean) => Promise<void>;
     onCancel: () => void;
     onError: (message: string) => void;
+    onAccountChanged: (message: string) => Promise<void>;
 }) => {
     const [selectedRoles, setSelectedRoles] = useState<StaffRole[]>(user.roles);
     const [saving, setSaving] = useState(false);
     const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+    const [accountAction, setAccountAction] = useState<StaffAccountAction | null>(null);
+    const [accountBusy, setAccountBusy] = useState(false);
     const isSelf = user.id === currentUserId;
+    const memberName = user.fullName || user.email;
     const removingAllAccess = selectedRoles.length === 0;
     const changed = staffRoleOptions.some(({ value }) => selectedRoles.includes(value) !== user.roles.includes(value));
 
@@ -4533,6 +4805,30 @@ const StaffRoleEditor = ({
         }
     };
 
+    const runAccountAction = async (action: StaffAccountAction) => {
+        setAccountBusy(true);
+        onError('');
+        try {
+            if (action === 'suspend') await api.suspendStaffUser(user.id);
+            else if (action === 'reinstate') await api.reinstateStaffUser(user.id);
+            else await api.sendStaffPasswordReset(user.id);
+            setAccountAction(null);
+            await onAccountChanged(
+                action === 'suspend'
+                    ? `${memberName} is suspended and has been signed out.`
+                    : action === 'reinstate'
+                        ? `${memberName} can sign in again.`
+                        : `Password reset email sent to ${user.email}.`,
+            );
+        } catch (caught) {
+            onError(caught instanceof Error ? caught.message : 'The account change could not be completed.');
+        } finally {
+            setAccountBusy(false);
+        }
+    };
+
+    const accountPrompt = accountAction && staffAccountPrompts[accountAction];
+
     return (
         <div className="border-t border-[#e8e5dc] bg-[#fbfaf7] px-4 py-5 sm:px-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
@@ -4551,7 +4847,7 @@ const StaffRoleEditor = ({
                                     <input
                                         type="checkbox"
                                         checked={checked}
-                                        disabled={locked || saving}
+                                        disabled={locked || saving || accountBusy}
                                         onChange={() => toggleRole(option.value)}
                                         className="mt-0.5 size-4 accent-[#b87820]"
                                     />
@@ -4579,9 +4875,59 @@ const StaffRoleEditor = ({
                 ) : (
                     <div className="flex shrink-0 items-center gap-2">
                         <button type="button" onClick={onCancel} disabled={saving} className="button-secondary">Cancel</button>
-                        <button type="button" onClick={() => void save()} disabled={!changed || saving} className="button-primary disabled:cursor-not-allowed disabled:opacity-45">
+                        <button type="button" onClick={() => void save()} disabled={!changed || saving || accountBusy} className="button-primary disabled:cursor-not-allowed disabled:opacity-45">
                             {saving ? 'Saving…' : removingAllAccess ? 'Remove access…' : 'Save access'}
                         </button>
+                    </div>
+                )}
+            </div>
+            <div className="mt-5 flex flex-col gap-4 border-t border-[#e8e5dc] pt-5 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#252925]">Account</p>
+                    <p className="mt-1 max-w-xl text-xs leading-5 text-[#747971]">
+                        {user.suspended
+                            ? 'Suspended: this person cannot sign in until the account is reinstated. Their roles are kept.'
+                            : 'Send a password reset link, or suspend sign-in without removing any roles.'}
+                    </p>
+                </div>
+                {accountAction && accountPrompt ? (
+                    <div className={`max-w-md rounded-xl border p-4 ${accountAction === 'suspend' ? 'border-[#e3b8a9] bg-[#fff4f0]' : 'border-[#dedbd2] bg-white'}`} role="alertdialog" aria-labelledby={`account-action-${user.id}`}>
+                        <p id={`account-action-${user.id}`} className={`text-sm font-semibold ${accountAction === 'suspend' ? 'text-[#7c2f1d]' : 'text-[#252925]'}`}>{accountPrompt.title({ name: memberName, email: user.email })}</p>
+                        <p className={`mt-1 text-xs leading-5 ${accountAction === 'suspend' ? 'text-[#8f4a37]' : 'text-[#747971]'}`}>{accountPrompt.detail}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" onClick={() => setAccountAction(null)} disabled={accountBusy} className="button-secondary">Keep as is</button>
+                            <button
+                                type="button"
+                                onClick={() => void runAccountAction(accountAction)}
+                                disabled={accountBusy}
+                                className={`button-primary disabled:opacity-45 ${accountAction === 'suspend' ? '!bg-[#a44c36]' : ''}`}
+                            >
+                                {accountBusy ? accountPrompt.busy : accountPrompt.confirm}
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setAccountAction('reset')}
+                            disabled={saving || accountBusy || Boolean(user.suspended)}
+                            title={user.suspended ? 'Reinstate the account before sending a password reset' : undefined}
+                            className="button-secondary disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                            Send password reset
+                        </button>
+                        {user.suspended ? (
+                            <button type="button" onClick={() => setAccountAction('reinstate')} disabled={saving || accountBusy} className="button-secondary disabled:opacity-45">
+                                Reinstate account
+                            </button>
+                        ) : isSelf ? (
+                            <span className="text-[11px] text-[#777c75]">You cannot suspend your own account.</span>
+                        ) : (
+                            <button type="button" onClick={() => setAccountAction('suspend')} disabled={saving || accountBusy} className="button-secondary !text-[#a44c36] disabled:opacity-45">
+                                Suspend account
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -4663,7 +5009,8 @@ const UsersAdmin = () => {
         const matchesRole = roleFilter === 'ALL' || user.roles.includes(roleFilter);
         return matchesSearch && matchesRole;
     });
-    const administratorCount = staffUsers.filter((user) => user.roles.includes('ADMIN')).length;
+    const administratorCount = staffUsers.filter((user) => user.roles.includes('ADMIN') && !user.suspended).length;
+    const suspendedCount = staffUsers.filter((user) => user.suspended).length;
 
     const copyTemporaryPassword = async () => {
         if (!createdUser) return;
@@ -4696,8 +5043,9 @@ const UsersAdmin = () => {
                     <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : staffUsers.length}</p>
                 </div>
                 <div className="border-b border-[#e5e2da] px-4 py-4 min-[420px]:border-b-0 min-[420px]:border-r min-[420px]:px-3 sm:px-5">
-                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Administrators</p>
+                    <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Active administrators</p>
                     <p className="mt-1 text-2xl font-bold tracking-[-0.03em] text-[#252925]">{loading ? '—' : administratorCount}</p>
+                    {!loading && suspendedCount > 0 && <p className="mt-0.5 text-[11px] font-medium text-[#a44c36]">{suspendedCount} suspended {suspendedCount === 1 ? 'account' : 'accounts'}</p>}
                 </div>
                 <div className="px-4 py-4 min-[420px]:px-3 sm:px-5">
                     <p className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#8a8e88] sm:text-[10px] sm:tracking-[0.13em]">Access model</p>
@@ -4841,6 +5189,9 @@ const UsersAdmin = () => {
                                             <div className="min-w-0">
                                                 <p className="truncate text-sm font-semibold text-[#303530]">{user.fullName || 'Unnamed staff member'}</p>
                                                 {user.id === session?.user?.id && <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9b671d]">You</p>}
+                                                {user.suspended && (
+                                                    <span className="mt-1 inline-flex rounded-md border border-[#e3b8a9] bg-[#fff4f0] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#a44c36]">Suspended</span>
+                                                )}
                                             </div>
                                         </div>
                                         <p className="break-all text-xs text-[#626861]"><span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[#969a94] lg:hidden">Email</span>{user.email}</p>
@@ -4859,6 +5210,10 @@ const UsersAdmin = () => {
                                             currentUserId={session?.user?.id}
                                             onCancel={() => setEditingUserId(null)}
                                             onError={setError}
+                                            onAccountChanged={async (message) => {
+                                                setSuccessMsg(message);
+                                                await load();
+                                            }}
                                             onSaved={async (success) => {
                                                 await load();
                                                 if (success) {

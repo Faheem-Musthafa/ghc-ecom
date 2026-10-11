@@ -19,6 +19,16 @@ interface RegisterInput {
 /** Pages of 1000 scanned at most when looking an account up by email (Supabase has no email filter). */
 const EMAIL_LOOKUP_MAX_PAGES = 50;
 
+/** About 100 years: Supabase Auth's ban_duration takes a Go duration and has no "indefinite" value. */
+export const SUSPENSION_BAN_DURATION = '876000h';
+
+/** True while the account carries a Supabase ban that has not yet expired. */
+export const isBannedUser = (user: Pick<User, 'banned_until'>, now = Date.now()): boolean => {
+  if (!user.banned_until) return false;
+  const until = Date.parse(user.banned_until);
+  return Number.isFinite(until) && until > now;
+};
+
 /**
  * True when Supabase Auth could not answer (network failure, timeout, rate limit or a 5xx), as
  * opposed to rejecting the credentials. Callers must not treat these as "signed out".
@@ -107,6 +117,27 @@ export class SupabaseService {
   async deleteAdminUser(userId: string): Promise<void> {
     const { error } = await this.adminClient.auth.admin.deleteUser(userId);
     if (error) throw error;
+  }
+
+  /**
+   * Bans the account so Supabase refuses its sign-ins and refresh tokens. Supabase Auth has no
+   * "forever" value, so a suspension is a ban long enough to outlive the account.
+   */
+  async suspendAdminUser(userId: string): Promise<User> {
+    return this.updateBan(userId, SUSPENSION_BAN_DURATION);
+  }
+
+  /** Lifts a ban set by suspendAdminUser ("none" clears banned_until). */
+  async reinstateAdminUser(userId: string): Promise<User> {
+    return this.updateBan(userId, 'none');
+  }
+
+  private async updateBan(userId: string, banDuration: string): Promise<User> {
+    const { data, error } = await this.adminClient.auth.admin.updateUserById(userId, {
+      ban_duration: banDuration,
+    });
+    if (error || !data.user) throw error || new Error('Supabase did not update the user');
+    return data.user;
   }
 
   /** Returns null when the account no longer exists. */

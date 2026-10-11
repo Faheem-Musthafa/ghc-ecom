@@ -48,7 +48,7 @@ const OrdersView = () => {
     };
 
     return (
-        <AccountShell title="Order History" intro="Every order, payment status, tax invoice, and return detail stored securely in your account.">
+        <AccountShell title="Order History" intro="Every order, payment status, invoice, and return detail stored securely in your account.">
             {error && <p className="border border-red-500/30 p-4 text-xs text-red-200 rounded-sm mb-4">{error}</p>}
             {loading ? (
                 <div className="space-y-4">
@@ -97,7 +97,7 @@ const OrdersView = () => {
                                 <button
                                     onClick={() => handleInvoiceDownload(order.id)}
                                     className="p-2.5 text-gold-300 border border-gold-500/25 rounded-sm hover:border-gold-400 hover:bg-gold-400 hover:text-obsidian transition bg-obsidian"
-                                    title="Download Tax Invoice"
+                                    title="Download Invoice"
                                     aria-label="Download Invoice"
                                 >
                                     <IconDownload size={18} />

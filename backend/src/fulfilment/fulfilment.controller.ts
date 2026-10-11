@@ -61,9 +61,10 @@ export class FulfilmentController {
     return this.fulfilment.createShipment(actor.id, orderId, input);
   }
 
+  /** Tracking moves the order to shipped/delivered, so it is fulfilment work, not support. */
   @Post('admin/shipments/:shipmentId/events')
   @UseGuards(RolesGuard)
-  @Roles(AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER, AppRole.SUPPORT_AGENT)
+  @Roles(AppRole.ADMIN, AppRole.WAREHOUSE_MANAGER)
   addTracking(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('shipmentId', ParseUUIDPipe) shipmentId: string,
